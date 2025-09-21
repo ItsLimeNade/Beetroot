@@ -1,5 +1,6 @@
 mod commands;
 mod utils;
+mod tests;
 
 use serenity::prelude::*;
 use serenity::all::{Command, CreateInteractionResponse, CreateInteractionResponseMessage, Interaction, Ready};
