@@ -1,9 +1,11 @@
 #[cfg(test)]
 pub mod tests {
-    use httpmock::MockServer;
+    use crate::utils::nightscout::{
+        Entry, Nightscout, NightscoutError, NightscoutRequestOptions, Trend,
+    };
     use httpmock::Method::GET;
+    use httpmock::MockServer;
     use serde_json::json;
-    use crate::utils::nightscout::{Nightscout, NightscoutRequestOptions, NightscoutError, Entry, Trend};
 
     #[tokio::test]
     async fn test_get_entry_success() {
@@ -21,8 +23,7 @@ pub mod tests {
             when.method(GET)
                 .path("/api/v1/entries/sgv")
                 .query_param("count", "1");
-            then.status(200)
-                .json_body(response.clone());
+            then.status(200).json_body(response.clone());
         });
 
         let ns = Nightscout::new();
@@ -42,8 +43,7 @@ pub mod tests {
             when.method(GET)
                 .path("/api/v1/entries/sgv")
                 .query_param("count", "1");
-            then.status(200)
-                .json_body(json!([]));
+            then.status(200).json_body(json!([]));
         });
 
         let ns = Nightscout::new();
@@ -62,8 +62,7 @@ pub mod tests {
             when.method(GET)
                 .path("/api/v1/entries/sgv")
                 .query_param("count", "2");
-            then.status(200)
-                .json_body(response.clone());
+            then.status(200).json_body(response.clone());
         });
 
         let ns = Nightscout::new();
@@ -96,7 +95,8 @@ pub mod tests {
             "_id": "test1",
             "sgv": 120.0,
             "direction": "Flat"
-        })).unwrap();
+        }))
+        .unwrap();
         assert_eq!(entry_flat.trend(), Trend::Flat);
 
         // Test DoubleUp
@@ -104,7 +104,8 @@ pub mod tests {
             "_id": "test2",
             "sgv": 120.0,
             "direction": "DoubleUp"
-        })).unwrap();
+        }))
+        .unwrap();
         assert_eq!(entry_up.trend(), Trend::DoubleUp);
 
         // Test invalid direction defaults to Else
@@ -112,14 +113,16 @@ pub mod tests {
             "_id": "test3",
             "sgv": 120.0,
             "direction": "InvalidDirection"
-        })).unwrap();
+        }))
+        .unwrap();
         assert_eq!(entry_invalid.trend(), Trend::Else);
 
         // Test None direction defaults to Else
         let entry_none: Entry = serde_json::from_value(json!({
             "_id": "test4",
             "sgv": 120.0
-        })).unwrap();
+        }))
+        .unwrap();
         assert_eq!(entry_none.trend(), Trend::Else);
     }
 }
