@@ -3,7 +3,7 @@ pub mod tests {
     use httpmock::MockServer;
     use httpmock::Method::GET;
     use serde_json::json;
-    use crate::utils::nightscout::{Nightscout, NightscoutRequestOptions, NightscoutError};
+    use crate::utils::nightscout::{Nightscout, NightscoutRequestOptions, NightscoutError, Entry, Trend};
 
     #[tokio::test]
     async fn test_get_entry_success() {
@@ -12,8 +12,8 @@ pub mod tests {
             "_id": "abc123",
             "sgv": 120.0,
             "direction": "Flat",
-            "delta": 1.5,
             "date": 1234567890,
+            "delta": 1.5,
             "dateString": "2024-06-01T12:00:00Z",
             "mills": 1234567890
         }]);
@@ -87,5 +87,39 @@ pub mod tests {
         // Port 0 is invalid, should fail to connect
         let err = ns.get_entry("http://127.0.0.1:0/").await.unwrap_err();
         matches!(err, NightscoutError::Network(_));
+    }
+
+    #[test]
+    fn test_trend() {
+        // Test Flat trend
+        let entry_flat: Entry = serde_json::from_value(json!({
+            "_id": "test1",
+            "sgv": 120.0,
+            "direction": "Flat"
+        })).unwrap();
+        assert_eq!(entry_flat.trend(), Trend::Flat);
+
+        // Test DoubleUp
+        let entry_up: Entry = serde_json::from_value(json!({
+            "_id": "test2",
+            "sgv": 120.0,
+            "direction": "DoubleUp"
+        })).unwrap();
+        assert_eq!(entry_up.trend(), Trend::DoubleUp);
+
+        // Test invalid direction defaults to Else
+        let entry_invalid: Entry = serde_json::from_value(json!({
+            "_id": "test3",
+            "sgv": 120.0,
+            "direction": "InvalidDirection"
+        })).unwrap();
+        assert_eq!(entry_invalid.trend(), Trend::Else);
+
+        // Test None direction defaults to Else
+        let entry_none: Entry = serde_json::from_value(json!({
+            "_id": "test4",
+            "sgv": 120.0
+        })).unwrap();
+        assert_eq!(entry_none.trend(), Trend::Else);
     }
 }

@@ -1,6 +1,7 @@
 use reqwest::{Client, Url};
 use serde::Deserialize;
 use thiserror::Error;
+use std::convert::From;
 
 #[derive(Debug)]
 /// Represents a Nightscout client for interacting with the Nightscout API.
@@ -28,7 +29,7 @@ pub enum NightscoutError {
 }
 
 #[allow(dead_code)]
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Entry {
     #[serde(rename = "_id")]
@@ -45,12 +46,92 @@ pub struct Entry {
     #[serde(default)]
     pub mills: Option<u64>,
 }
+#[allow(dead_code)]
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum Trend {
+    DoubleUp,
+    SingleUp,
+    FortyFiveUp,
+    Flat,
+    FortyFiveDown,
+    SingleDown,
+    DoubleDown,
+    Else,
+}
 
+#[allow(dead_code)]
+impl Trend {
+    pub fn to_arrow(&self) -> &str {
+        match self {
+            Self::DoubleUp => "↑↑",
+            Self::SingleUp => "↑",
+            Self::FortyFiveUp => "↗",
+            Self::Flat => "→",
+            Self::FortyFiveDown => "↘",
+            Self::SingleDown => "↓",
+            Self::DoubleDown => "↓↓",
+            Self::Else => "↮",
+        }
+    }
+}
+
+//? Tried implementing Into For &str, but apparently rust's std automatically implements `Into` when creating
+//? a `From`. So no need to explicitely write it otherwise it will create a conflict with the compiler's
+//? automatic implementation.
+impl From<&str> for Trend {
+    /// Converts a slice into a Trend.
+    /// 
+    /// If the slice isn't one of the default values the Trend will default to `Trend::Else`.
+    fn from(direction: &str) -> Self {
+        match direction {
+            "DoubleUp" => Self::DoubleUp,
+            "SingleUp" => Self::SingleUp,
+            "FortyFiveUp" => Self::FortyFiveUp,
+            "Flat" => Self::Flat,
+            "FortyFiveDown" => Self::FortyFiveDown,
+            "SingleDown" => Self::SingleDown,
+            "DoubleDown" => Self::DoubleDown,
+            //? I was wondering if we should throw an error if string is invalid or we just give no trend?
+            _ => Self::Else,
+        }
+    }
+}
+
+#[allow(dead_code)]
+impl Entry {
+    fn delta(&mut self, delta_value: f32) {
+        self.delta = Some(delta_value);
+    }
+
+    /// Converts the Nightscout trend text into a Trend enum.
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use crate::utils::nightscout::{Entry, Trend};
+    /// 
+    /// // Create an entry with Flat direction
+    /// let entry_json = r#"{"_id": "test", "sgv": 120.0, "direction": "Flat"}"#;
+    /// let entry: Entry = serde_json::from_str(entry_json).unwrap();
+    /// 
+    /// assert_eq!(entry.get_trend(), Trend::Flat);
+    /// ```
+    /// 
+    pub fn trend(&self) -> Trend {
+        if let Some(trend) = &self.direction {
+            return Trend::from(trend.as_str());
+        }
+        Trend::Else
+    }
+}
+
+#[allow(dead_code)]
 #[derive(Debug, Default, Clone, Copy)]
 pub struct NightscoutRequestOptions {
     pub count: Option<u8>
 }
 
+#[allow(dead_code)]
 impl NightscoutRequestOptions {
     /// Sets the ammount of entries that will be fetched from Nightscout.
     /// 
@@ -64,6 +145,7 @@ impl NightscoutRequestOptions {
     }
 }
 
+#[allow(dead_code)]
 impl Nightscout {
     /// Creates a new instance of `Nightscout` with a default HTTP client.
     pub fn new() -> Self {
