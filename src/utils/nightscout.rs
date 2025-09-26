@@ -1,3 +1,4 @@
+use chrono::{Local, TimeZone};
 use reqwest::{Client, Url};
 use serde::Deserialize;
 use std::convert::From;
@@ -35,7 +36,8 @@ pub enum NightscoutError {
 #[serde(rename_all = "camelCase")]
 pub struct Entry {
     #[serde(rename = "_id")]
-    id: String,
+    // ! Change it back to a private field when not testing.
+    pub id: String,
     pub sgv: f32,
     #[serde(default)]
     pub direction: Option<String>,
@@ -113,6 +115,16 @@ impl Delta {
 
 #[allow(dead_code)]
 impl Entry {
+    pub fn millis_to_timestamp(&self) -> chrono::DateTime<Local> {
+        if let Some(ms) = self.mills {
+            Local
+                .timestamp_millis_opt(ms as i64)
+                .single()
+                .unwrap_or_else(Local::now) // fallback to now if invalid
+        } else {
+            Local::now()
+        }
+    }
     /// Converts the Nightscout trend text into a Trend enum.
     ///
     /// # Examples

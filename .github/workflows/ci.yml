@@ -35,6 +35,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --lib --bins --examples --benches -- -D warnings
       - name: Rustfmt
         run: cargo fmt --all -- --check

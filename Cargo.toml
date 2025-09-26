@@ -6,7 +6,6 @@ edition = "2024"
 [dependencies]
 serenity = { version = "0.12", features = ["client", "gateway", "model", "cache"] }
 tokio = { version = "1", features = ["full"] }
-sled = "0.34"
 reqwest = { version = "0.12", features = ["json"] }
 serde = { version = "1.0.226", features = ["derive"] }
 dotenvy = "0.15.7"
@@ -16,3 +15,7 @@ thiserror = "2.0.16"
 url = "2.5.7"
 httpmock = "0.7.0"
 serde_json = "1.0.145"
+imageproc = "0.25.0"
+image = "0.25.8"
+ab_glyph = "0.2.31"
+rand = "0.9.2"
