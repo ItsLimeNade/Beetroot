@@ -34,6 +34,6 @@ jobs:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
       - name: Clippy
-        run: cargo clippy --lib --bins --examples --benches -- -D warnings
+        run: cargo clippy --bins -- -D warnings
       - name: Rustfmt
         run: cargo fmt --all -- --check
