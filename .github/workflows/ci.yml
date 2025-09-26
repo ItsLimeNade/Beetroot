@@ -2,7 +2,6 @@ name: CI
 
 on:
   push:
-    
   pull_request:
 
 jobs:
@@ -10,20 +9,17 @@ jobs:
     name: Build & Test
     runs-on: ubuntu-latest
     steps:
-      # Checkout code
       - uses: actions/checkout@v4
 
-      # Install stable Rust (uses caching by default)
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      # Cache cargo registry + target directory for faster builds
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
-      # Build and run tests
       - name: Build
         run: cargo build --verbose
+
       - name: Test
         run: cargo test --all --verbose
 
@@ -32,7 +28,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust (with Clippy & Rustfmt)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
       - name: Clippy
         run: cargo clippy --lib --bins --examples --benches -- -D warnings
