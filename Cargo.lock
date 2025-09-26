@@ -2384,6 +2384,7 @@ dependencies = [
  "rand",
  "reqwest 0.12.23",
  "serde",
+ "serde_json",
  "serenity",
  "sqlx",
  "tokio",
