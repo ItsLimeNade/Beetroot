@@ -1,5 +1,7 @@
+use crate::Handler;
+
 use super::nightscout::{Entry, Profile};
-use ab_glyph::{FontArc, PxScale};
+use ab_glyph::PxScale;
 use anyhow::{Result, anyhow};
 use chrono::Utc;
 use chrono_tz::Tz;
@@ -7,7 +9,6 @@ use image::{DynamicImage, Rgba, RgbaImage};
 use imageproc::drawing::{draw_filled_circle_mut, draw_line_segment_mut, draw_text_mut};
 use std::io::Cursor;
 
-/// Which unit the user prefers to see first on the Y axis
 #[derive(Clone, Copy, Debug)]
 #[allow(dead_code)]
 enum PrefUnit {
@@ -15,53 +16,58 @@ enum PrefUnit {
     Mmol,
 }
 
-/// Draw the graph to PNG bytes. Optionally saves to `save_path`.
-///
-/// Returns: Vec<u8> (PNG bytes)
 #[allow(dead_code)]
 pub fn draw_graph(
     entries: &[Entry],
     profile: &Profile,
+    handler: &Handler,
     save_path: Option<&str>,
 ) -> Result<Vec<u8>> {
-    // I'm gonna try my best to make this file readable. Often times when I look at image generations code I never undderstand
-    // a single line so I am going to comment and label every part that might confuse people!
-    // Have fun reading :)
 
     if entries.is_empty() {
         return Err(anyhow!("No entries provided"));
     }
 
     let default_profile_name = &profile.default_profile;
-    let profile_store = profile
+    let profile_store: &crate::utils::nightscout::ProfileStore = profile
         .store
         .get(default_profile_name)
         .ok_or_else(|| anyhow!("Default profile not found"))?;
 
     let user_timezone = &profile_store.timezone;
-    println!("{:#?}", profile_store.units.to_lowercase());
-    let pref = if profile_store.units.to_lowercase() == "mmol/l" {
+    println!(
+        "{:#?}",
+        profile_store
+            .units
+            .clone()
+            .unwrap_or(String::from("mg/dl"))
+            .to_lowercase()
+    );
+    let pref = if profile_store
+        .units
+        .clone()
+        .unwrap_or(String::from("mg/dl"))
+        .to_lowercase()
+        == "mmol/l"
+    {
         PrefUnit::Mmol
     } else {
         PrefUnit::MgDl
     };
 
-    // ---------- Configuration ----------
-    let num_y_labels = 8; // Numbers of lines inside the graph to use as reference, also dictates how many X axis labels are drawn.
-    let approximation = false; // Enables the approximations with the ± sign
+    let num_y_labels = 8;
+    let approximation = false;
     let width = 850u32;
     let height = 550u32;
 
-    // Palette
     let bg = Rgba([15u8, 18u8, 15u8, 255u8]);
     let grid_col = Rgba([51u8, 61u8, 61u8, 255u8]);
     let axis_col = Rgba([154u8, 184u8, 184u8, 255u8]);
     let bright = Rgba([220u8, 220u8, 220u8, 255u8]);
     let dim = Rgba([150u8, 150u8, 150u8, 255u8]);
-    let high_col = Rgba([255u8, 184u8, 0u8, 255u8]); // >180
-    let low_col = Rgba([255u8, 64u8, 64u8, 255u8]); // <70
+    let high_col = Rgba([255u8, 184u8, 0u8, 255u8]);
+    let low_col = Rgba([255u8, 64u8, 64u8, 255u8]);
 
-    // Margins and plotting rectangle
     let left_margin = 80.0_f32;
     let right_margin = 40.0_f32;
     let top_margin = 40.0_f32;
@@ -74,9 +80,8 @@ pub fn draw_graph(
     let plot_right = plot_left + plot_w;
     let plot_bottom = plot_top + plot_h;
 
-    let plot_padding = 10.0; // Padding inside the plot so the graph does not overlap with the plot's border making it look wierd.
+    let plot_padding = 10.0;
 
-    // Inner plot area with padding
     let inner_plot_left = plot_left + plot_padding;
     let inner_plot_right = plot_right - plot_padding;
     let inner_plot_top = plot_top + plot_padding;
@@ -84,11 +89,6 @@ pub fn draw_graph(
     let inner_plot_w = inner_plot_right - inner_plot_left;
     let inner_plot_h = inner_plot_bottom - inner_plot_top;
 
-    let font_bytes = std::fs::read("assets/fonts/GeistMono-Regular.ttf")
-        .map_err(|e| anyhow!("Failed to read font: {}", e))?;
-    let font = FontArc::try_from_vec(font_bytes).map_err(|_| anyhow!("Failed to parse font"))?;
-
-    // Text sizes and stuff
     let y_label_size_primary = 20.0_f32;
     let y_label_size_secondary = 18.0_f32;
     let x_label_size_primary = 20.0_f32;
@@ -96,17 +96,12 @@ pub fn draw_graph(
     let primary_legend_font_size: f32 = 20.0_f32;
     let secondary_legend_font_size: f32 = 18.0_f32;
 
-    // When more than 100 readings shown, this makes the svg point radius a bit smaller for readablility!
     let svg_radius: i32 = if entries.len() < 100 { 4 } else { 3 };
 
-    // ---------- Compute Y scaling ----------
-    // We're making the graph start at 40 mg/dl (2.2 mmol) and go up to y_max
     let y_min = 40.0_f32;
     let max_mg = entries.iter().map(|e| e.sgv).fold(0.0_f32, |a, b| a.max(b));
-    // round up to nearest 50 mg/dL, but make sure it's at least 200 and making sure the graph will never excede 400mg/dl :3
     let y_max = ((max_mg / 50.0).ceil() * 50.0).clamp(200., 400.);
 
-    // Calculate exact step to get exactly num_y_labels labels with even numbers
     let y_range = y_max - y_min;
     let _ = match pref {
         PrefUnit::MgDl => {
@@ -128,19 +123,11 @@ pub fn draw_graph(
         PrefUnit::Mmol => ((y_min / 18.0).round()) * 18.0,
     };
 
-    // helper to project mg value to pixel Y (now based on inner plot area)
-    // Projects a data-space y value (`mg`) into a screen-space y coordinate within the inner plot area.
-    //
-    // The value is normalized from the range `[y_min, y_max]` to the plot height `inner_plot_h` and
-    // inverted so that larger data values appear higher on the screen (smaller y), offset from
-    // `inner_plot_bottom`.
     let project_y =
         |mg: f32| -> f32 { inner_plot_bottom - ((mg - y_min) / (y_max - y_min)) * inner_plot_h };
 
-    // ---------- Start image ----------
     let mut img = RgbaImage::from_pixel(width, height, bg);
 
-    // Draw axis lines (left and bottom)
     draw_line_segment_mut(
         &mut img,
         (plot_left, plot_top),
@@ -154,20 +141,16 @@ pub fn draw_graph(
         axis_col,
     );
 
-    // Calculate exact step to get exactly num_y_labels labels evenly distributed
     let y_range = y_max - y_min;
     let step_mg = y_range / (num_y_labels - 1) as f32;
 
-    // Generate exactly num_y_labels values evenly spaced from y_min to y_max
     let y_values: Vec<f32> = (0..num_y_labels)
         .map(|i| y_min + step_mg * i as f32)
         .collect();
 
-    // ---------- Horizontal grid lines + Y labels ----------
     for y_val in y_values.iter() {
         let y_px = project_y(*y_val);
 
-        // Only draw grid lines that don't overlap with plot borders
         if y_px > inner_plot_top && y_px < inner_plot_bottom {
             draw_line_segment_mut(
                 &mut img,
@@ -177,16 +160,12 @@ pub fn draw_graph(
             );
         }
 
-        // Labels: primary (preferred) bright, secondary dim below/above
         let mmol_v = y_val / 18.0;
 
-        // Where to place labels (left side)
         let label_x = (plot_left - 68.0) as i32;
 
         match pref {
             PrefUnit::MgDl => {
-                // Primary: mg/dL (always accurate, no ± sign)
-                // Round to nearest even number for display
                 let mg_val = (*y_val / 20.0).round() * 20.0;
                 draw_text_mut(
                     &mut img,
@@ -194,11 +173,10 @@ pub fn draw_graph(
                     label_x,
                     (y_px - 8.0) as i32,
                     PxScale::from(y_label_size_primary),
-                    &font,
+                    &handler.font,
                     &format!("{}", mg_val as i32),
                 );
 
-                // Secondary: mmol (approximated to nearest 0.5 with ± sign)
                 let mmol_rounded = (mmol_v * 2.0).round() / 2.0;
                 let mmol_display = if approximation {
                     format!("±{:.1}", mmol_rounded)
@@ -211,7 +189,7 @@ pub fn draw_graph(
                     label_x,
                     (y_px + 6.0) as i32,
                     PxScale::from(y_label_size_secondary),
-                    &font,
+                    &handler.font,
                     &mmol_display,
                 );
             }
@@ -223,7 +201,7 @@ pub fn draw_graph(
                     label_x,
                     (y_px - 8.0) as i32,
                     PxScale::from(y_label_size_primary),
-                    &font,
+                    &handler.font,
                     &format!("{}", mmol_val as i32),
                 );
 
@@ -239,25 +217,21 @@ pub fn draw_graph(
                     label_x,
                     (y_px + 6.0) as i32,
                     PxScale::from(y_label_size_secondary),
-                    &font,
+                    &handler.font,
                     &mg_display,
                 );
             }
         }
     }
 
-    // ---------- X axis labels ----------
-    // Show max 8 labels, entries[0] is newest (rightmost), entries[n-1] is oldest (leftmost)
     let n = entries.len();
     let max_x_labels = 8.min(n);
     let spacing_x = inner_plot_w / n as f32;
     let user_tz: Tz = user_timezone.parse().unwrap_or(chrono_tz::UTC);
     let now = Utc::now().with_timezone(&user_tz);
 
-    // Always include the first entry (most recent, should be rightmost)
     let mut label_indices = vec![0];
 
-    // Add additional evenly spaced indices if we have room for more labels
     if max_x_labels > 1 {
         let step = if max_x_labels == 1 {
             1
@@ -265,7 +239,6 @@ pub fn draw_graph(
             (n as f32 / (max_x_labels - 1) as f32).ceil() as usize
         };
 
-        // Add other indices, avoiding duplicates
         for i in (step..n).step_by(step).take(max_x_labels - 1) {
             if !label_indices.contains(&i) {
                 label_indices.push(i);
@@ -277,11 +250,9 @@ pub fn draw_graph(
 
     for &i in &label_indices {
         let e = &entries[i];
-        // entries[0] is newest (rightmost), entries[n-1] is oldest (leftmost)
-        // So x position: i=0 gets rightmost position, i=n-1 gets leftmost position
         let x_center = inner_plot_left + spacing_x * ((n - 1 - i) as f32 + 0.5);
         let time_label = e
-            .millis_to_user_timezone(user_timezone)
+            .millis_to_user_timezone(user_timezone.as_str())
             .format("%H:%M")
             .to_string();
 
@@ -295,11 +266,11 @@ pub fn draw_graph(
             x_text,
             (plot_bottom + 8.0) as i32,
             PxScale::from(x_label_size_primary),
-            &font,
+            &handler.font,
             &time_label,
         );
 
-        let diff = now.signed_duration_since(e.millis_to_user_timezone(user_timezone));
+        let diff = now.signed_duration_since(e.millis_to_user_timezone(user_timezone.as_str()));
         let hours = diff.num_hours().max(0);
         let rel = format!("-{}h", hours);
         let approx_w2 = (rel.chars().count() as f32) * (x_label_size_secondary * 0.6);
@@ -310,21 +281,17 @@ pub fn draw_graph(
             x_text2,
             (plot_bottom + 28.0) as i32,
             PxScale::from(x_label_size_secondary),
-            &font,
+            &handler.font,
             &rel,
         );
     }
-    // ---------- Data line + points ----------
-    // Compute pixel coordinates with correct positioning
     let mut points_px: Vec<(f32, f32)> = Vec::with_capacity(entries.len());
     for (i, e) in entries.iter().enumerate() {
-        // entries[0] is newest (rightmost), entries[n-1] is oldest (leftmost)
         let x = inner_plot_left + spacing_x * ((n - 1 - i) as f32 + 0.5);
         let y = project_y(e.sgv.clamp(y_min, y_max));
         points_px.push((x, y));
     }
 
-    // draw points
     for (i, e) in entries.iter().enumerate() {
         let (x, y) = points_px[i];
         let color = if e.sgv > 180.0 {
@@ -342,7 +309,6 @@ pub fn draw_graph(
         );
     }
 
-    // ---------- Y-axis header (preferred unit first, other unit below it) ----------
     let header_x = (plot_left - 72.0) as i32;
     let header_y = (plot_bottom + 30.) as i32;
     match pref {
@@ -353,7 +319,7 @@ pub fn draw_graph(
                 header_x,
                 header_y,
                 PxScale::from(primary_legend_font_size),
-                &font,
+                &handler.font,
                 "mg/dL",
             );
             draw_text_mut(
@@ -362,7 +328,7 @@ pub fn draw_graph(
                 header_x,
                 header_y + 18,
                 PxScale::from(secondary_legend_font_size),
-                &font,
+                &handler.font,
                 "mmol/L",
             );
         }
@@ -373,7 +339,7 @@ pub fn draw_graph(
                 header_x,
                 header_y,
                 PxScale::from(primary_legend_font_size),
-                &font,
+                &handler.font,
                 "mmol/L",
             );
             draw_text_mut(
@@ -382,7 +348,7 @@ pub fn draw_graph(
                 header_x,
                 header_y + 18,
                 PxScale::from(secondary_legend_font_size),
-                &font,
+                &handler.font,
                 "mg/dL",
             );
         }
@@ -395,7 +361,7 @@ pub fn draw_graph(
         10,
         5,
         PxScale::from(secondary_legend_font_size),
-        &font,
+        &handler.font,
         "Beetroot",
     );
 

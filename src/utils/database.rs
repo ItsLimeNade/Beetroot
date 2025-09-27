@@ -1,16 +1,21 @@
 use serde_json;
-use sqlx::{Row, SqlitePool as Pool, sqlite::SqlitePool};
+use sqlx::{
+    Row, SqlitePool as Pool,
+    sqlite::{SqliteConnectOptions, SqlitePool},
+};
 
+#[derive(Clone, Debug)]
 pub struct NightscoutInfo {
-    nightscout_url: Option<String>,
-    nightscout_token: Option<String>,
-    allowed_people: Vec<u64>,
-    is_private: bool,
+    pub nightscout_url: Option<String>,
+    pub nightscout_token: Option<String>,
+    pub allowed_people: Vec<u64>,
+    pub is_private: bool,
 }
 
+#[derive(Clone, Debug)]
 pub struct UserInfo {
-    nightscout: NightscoutInfo,
-    stickers: Vec<String>,
+    pub nightscout: NightscoutInfo,
+    pub stickers: Vec<String>,
 }
 
 pub struct Database {
@@ -18,10 +23,13 @@ pub struct Database {
 }
 
 impl Database {
-    pub async fn new(database_url: &str) -> Result<Self, sqlx::Error> {
-        let pool = SqlitePool::connect(database_url).await?;
+    pub async fn new() -> Result<Self, sqlx::Error> {
+        let opts = SqliteConnectOptions::new()
+            .filename("db.sqlite")
+            .create_if_missing(true);
 
-        // create tables if they don't exist
+        let pool = SqlitePool::connect_with(opts).await?;
+
         Self::setup_tables(&pool).await?;
 
         Ok(Database { pool })
@@ -31,27 +39,25 @@ impl Database {
         sqlx::query(
             r#"
             CREATE TABLE IF NOT EXISTS users (
-                discord_id BIGINT,
-                -- only used if is_private is set to true
+                discord_id INTEGER PRIMARY KEY,
                 allowed_people TEXT DEFAULT '[]',
-                -- allows other people to also view your blood glucose (set to true by default)
                 is_private INTEGER NOT NULL DEFAULT 1,
                 nightscout_url TEXT,
-                -- used for treatments
-                nightscout_token TEXT,
-                -- fields
-                PRIMARY KEY (discord_id)
-            );
+                nightscout_token TEXT
+            )
+            "#,
+        )
+        .execute(pool)
+        .await?;
 
+        sqlx::query(
+            r#"
             CREATE TABLE IF NOT EXISTS stickers (
-                id INT AUTOINCREMENT,
-                -- images/stickers/$file_name
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
                 file_name TEXT NOT NULL,
-                discord_id BIGINT NOT NULL,
-                -- fields
-                PRIMARY KEY (id),
+                discord_id INTEGER NOT NULL,
                 FOREIGN KEY (discord_id) REFERENCES users(discord_id)
-            );              
+            )
             "#,
         )
         .execute(pool)
@@ -68,6 +74,15 @@ impl Database {
             nightscout,
             stickers,
         })
+    }
+
+    pub async fn user_exists(&self, discord_id: u64) -> Result<bool, sqlx::Error> {
+        let result = sqlx::query("SELECT 1 FROM users WHERE discord_id = ? LIMIT 1")
+            .bind(discord_id as i64)
+            .fetch_optional(&self.pool)
+            .await?;
+
+        Ok(result.is_some())
     }
 
     pub async fn insert_user(
@@ -151,7 +166,6 @@ impl Database {
         Ok(())
     }
 
-    // priv
     async fn get_nightscout_info(&self, user_id: u64) -> Result<NightscoutInfo, sqlx::Error> {
         let row = sqlx::query(
             "SELECT nightscout_url, nightscout_token, is_private, allowed_people FROM users WHERE discord_id = ?"
@@ -186,7 +200,6 @@ impl Database {
             .map(|f| f.get::<String, _>("file_name"))
             .collect();
 
-        // default stickers
         if sticker_paths.is_empty() {
             sticker_paths = vec![
                 "images/stickers/thing.webp".to_string(),
