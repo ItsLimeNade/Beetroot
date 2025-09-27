@@ -127,40 +127,33 @@ impl Entry {
     }
 
     pub fn millis_to_timestamp(&self) -> chrono::DateTime<Local> {
-        // Priority: date field > mills field > parse dateString > fallback to now
         let timestamp = self.date.or(self.mills);
 
         if let Some(ms) = timestamp {
             Local
                 .timestamp_millis_opt(ms as i64)
                 .single()
-                .unwrap_or_else(Local::now) // fallback to now if invalid
+                .unwrap_or_else(Local::now) 
         } else if let Some(date_str) = &self.date_string {
-            // Try to parse the dateString if no timestamp is available
             match chrono::DateTime::parse_from_rfc3339(date_str) {
                 Ok(parsed) => parsed.with_timezone(&Local),
-                Err(_) => Local::now(), // fallback if parsing fails
+                Err(_) => Local::now(),
             }
         } else {
             Local::now()
         }
     }
     pub fn millis_to_user_timezone(&self, user_timezone: &str) -> chrono::DateTime<chrono_tz::Tz> {
-        // Parse the user's timezone, fallback to UTC if invalid
         let tz: Tz = user_timezone.parse().unwrap_or(chrono_tz::UTC);
-
-        // Priority: date field > mills field > parse dateString > fallback to now
         let timestamp = self.date.or(self.mills);
 
         if let Some(ms) = timestamp {
-            // Convert milliseconds to UTC datetime, then to user timezone
             if let Some(utc_dt) = chrono::DateTime::from_timestamp_millis(ms as i64) {
                 utc_dt.with_timezone(&tz)
             } else {
                 chrono::Utc::now().with_timezone(&tz)
             }
         } else if let Some(date_str) = &self.date_string {
-            // Try to parse the dateString if no timestamp is available
             match chrono::DateTime::parse_from_rfc3339(date_str) {
                 Ok(parsed) => parsed.with_timezone(&tz),
                 Err(_) => chrono::Utc::now().with_timezone(&tz),
