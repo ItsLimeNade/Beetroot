@@ -9,6 +9,8 @@ serenity = { version = "0.12", features = [
     "gateway",
     "model",
     "cache",
+    "utils",
+    "collector"
 ] }
 tokio = { version = "1", features = ["full"] }
 reqwest = { version = "0.12", features = ["json"] }
@@ -24,10 +26,14 @@ sqlx = { version = "0.8", features = [
 ] }
 thiserror = "2.0.16"
 url = "2.5.7"
-httpmock = "0.7.0"
+httpmock = "0.8.0"
 serde_json = "1.0.145"
 imageproc = "0.25.0"
 image = "0.25.8"
 ab_glyph = "0.2.31"
 rand = "0.9.2"
 chrono-tz = "0.10.4"
+log = "0.4"
+env_logger = "0.11"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
