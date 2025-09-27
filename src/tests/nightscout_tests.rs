@@ -3,6 +3,7 @@ pub mod tests {
     use crate::utils::nightscout::{
         Delta, Entry, Nightscout, NightscoutError, NightscoutRequestOptions, Trend,
     };
+    use chrono::{Duration, Utc};
     use httpmock::Method::GET;
     use httpmock::MockServer;
     use serde_json::json;
@@ -15,6 +16,26 @@ pub mod tests {
             "direction": direction,
             "dateString": date_string,
         });
+        serde_json::from_value(v).unwrap()
+    }
+
+    // Helper function to create test entries with date field
+    fn make_entry_with_date(
+        id: &str,
+        sgv: f32,
+        direction: Option<&str>,
+        date_string: Option<&str>,
+        date: Option<u64>,
+    ) -> Entry {
+        let mut v = serde_json::json!({
+            "_id": id,
+            "sgv": sgv,
+            "direction": direction,
+            "dateString": date_string,
+        });
+        if let Some(date_val) = date {
+            v["date"] = json!(date_val);
+        }
         serde_json::from_value(v).unwrap()
     }
 
@@ -88,6 +109,97 @@ pub mod tests {
         }
 
         #[tokio::test]
+        async fn test_get_entries_hours_back_option() {
+            let server = MockServer::start();
+            let response = json!([
+                { "_id": "id1", "sgv": 100.0, "dateString": "2025-09-23T08:38:01.546Z" },
+                { "_id": "id2", "sgv": 110.0, "dateString": "2025-09-23T08:38:01.546Z" }
+            ]);
+
+            let _mock = server.mock(|when, then| {
+                when.method(GET)
+                    .path("/api/v1/entries/sgv")
+                    .query_param_exists("find[date][$gte]")
+                    .query_param_exists("find[date][$lte]");
+                then.status(200).json_body(response.clone());
+            });
+
+            let ns = Nightscout::new();
+            let opts = NightscoutRequestOptions::default().hours_back(6);
+            let entries = ns.get_entries(&server.url("/"), opts).await.unwrap();
+            assert_eq!(entries.len(), 2);
+            assert_eq!(entries[0].sgv, 100.0);
+            assert_eq!(entries[1].sgv, 110.0);
+        }
+
+        #[tokio::test]
+        async fn test_get_entries_hours_back_with_count() {
+            let server = MockServer::start();
+            let response = json!([
+                { "_id": "id1", "sgv": 100.0, "dateString": "2025-09-23T08:38:01.546Z" },
+                { "_id": "id2", "sgv": 110.0, "dateString": "2025-09-23T08:38:01.546Z" }
+            ]);
+
+            let _mock = server.mock(|when, then| {
+                when.method(GET)
+                    .path("/api/v1/entries/sgv")
+                    .query_param_exists("find[date][$gte]")
+                    .query_param_exists("find[date][$lte]")
+                    .query_param("count", "5");
+                then.status(200).json_body(response.clone());
+            });
+
+            let ns = Nightscout::new();
+            let opts = NightscoutRequestOptions::default().hours_back(6).count(5);
+            let entries = ns.get_entries(&server.url("/"), opts).await.unwrap();
+            assert_eq!(entries.len(), 2);
+        }
+
+        #[tokio::test]
+        async fn test_get_entries_for_hours() {
+            let server = MockServer::start();
+            let response = json!([
+                { "_id": "id1", "sgv": 100.0, "dateString": "2025-09-23T08:38:01.546Z" },
+                { "_id": "id2", "sgv": 110.0, "dateString": "2025-09-23T08:38:01.546Z" },
+                { "_id": "id3", "sgv": 120.0, "dateString": "2025-09-23T08:38:01.546Z" }
+            ]);
+
+            let _mock = server.mock(|when, then| {
+                when.method(GET)
+                    .path("/api/v1/entries/sgv")
+                    .query_param_exists("find[date][$gte]")
+                    .query_param_exists("find[date][$lte]");
+                then.status(200).json_body(response.clone());
+            });
+
+            let ns = Nightscout::new();
+            let entries = ns
+                .get_entries_for_hours(&server.url("/"), 12)
+                .await
+                .unwrap();
+            assert_eq!(entries.len(), 3);
+            assert_eq!(entries[0].sgv, 100.0);
+            assert_eq!(entries[1].sgv, 110.0);
+            assert_eq!(entries[2].sgv, 120.0);
+        }
+
+        #[tokio::test]
+        async fn test_get_entries_for_hours_no_entries() {
+            let server = MockServer::start();
+            let _mock = server.mock(|when, then| {
+                when.method(GET)
+                    .path("/api/v1/entries/sgv")
+                    .query_param_exists("find[date][$gte]")
+                    .query_param_exists("find[date][$lte]");
+                then.status(200).json_body(json!([]));
+            });
+
+            let ns = Nightscout::new();
+            let result = ns.get_entries_for_hours(&server.url("/"), 6).await;
+            assert!(matches!(result, Err(NightscoutError::NoEntries)));
+        }
+
+        #[tokio::test]
         async fn test_invalid_url() {
             let ns = Nightscout::new();
             let result = ns.get_entry("not a url").await;
@@ -126,7 +238,6 @@ pub mod tests {
     // Group 2: Entry processing tests
     mod entry_processing_tests {
         use super::*;
-
         #[test]
         fn test_get_date_id_valid() {
             let entry = make_entry("id", 100.0, None, Some("2025-09-23T08:38:01.546Z"));
@@ -242,18 +353,186 @@ pub mod tests {
         use super::*;
 
         #[test]
-        fn test_nightscout_request_options() {
+        fn test_nightscout_request_options_default() {
             // Default options
             let default_options = NightscoutRequestOptions::default();
             assert_eq!(default_options.count, None);
+            assert_eq!(default_options.hours_back, None);
+        }
 
+        #[test]
+        fn test_nightscout_request_options_count() {
             // Setting count
             let options = NightscoutRequestOptions::default().count(5);
             assert_eq!(options.count, Some(5));
+            assert_eq!(options.hours_back, None);
+        }
 
-            // Fluent interface
-            let options = NightscoutRequestOptions::default().count(10);
+        #[test]
+        fn test_nightscout_request_options_hours_back() {
+            // Setting hours_back
+            let options = NightscoutRequestOptions::default().hours_back(6);
+            assert_eq!(options.hours_back, Some(6));
+            assert_eq!(options.count, None);
+        }
+
+        #[test]
+        fn test_nightscout_request_options_fluent_interface() {
+            // Fluent interface with both options
+            let options = NightscoutRequestOptions::default().count(10).hours_back(12);
             assert_eq!(options.count, Some(10));
+            assert_eq!(options.hours_back, Some(12));
+        }
+
+        #[test]
+        fn test_nightscout_request_options_chaining_order() {
+            // Test that chaining order doesn't matter
+            let options1 = NightscoutRequestOptions::default().count(5).hours_back(3);
+            let options2 = NightscoutRequestOptions::default().hours_back(3).count(5);
+
+            assert_eq!(options1.count, options2.count);
+            assert_eq!(options1.hours_back, options2.hours_back);
+        }
+    }
+
+    // Group 5: Time-based query URL construction tests
+    mod time_query_tests {
+        use super::*;
+        use chrono::{Duration, Utc};
+
+        #[tokio::test]
+        async fn test_hours_back_query_parameters() {
+            let server = MockServer::start();
+            let response = json!([
+                { "_id": "id1", "sgv": 100.0, "dateString": "2025-09-23T08:38:01.546Z" }
+            ]);
+
+            // Calculate expected timestamps for verification
+            let now = Utc::now();
+            let hours_ago = now - Duration::hours(6);
+            let start_timestamp = hours_ago.timestamp_millis() as u64;
+            let end_timestamp = now.timestamp_millis() as u64;
+
+            let _mock = server.mock(|when, then| {
+                when.method(GET)
+                    .path("/api/v1/entries/sgv")
+                    // We can't predict exact timestamps, so we just verify the parameters exist
+                    .query_param_exists("find[date][$gte]")
+                    .query_param_exists("find[date][$lte]");
+                then.status(200).json_body(response.clone());
+            });
+
+            let ns = Nightscout::new();
+            let opts = NightscoutRequestOptions::default().hours_back(6);
+            let entries = ns.get_entries(&server.url("/"), opts).await.unwrap();
+            assert_eq!(entries.len(), 1);
+        }
+
+        #[tokio::test]
+        async fn test_hours_back_precedence_over_count_in_url() {
+            let server = MockServer::start();
+            let response = json!([
+                { "_id": "id1", "sgv": 100.0, "dateString": "2025-09-23T08:38:01.546Z" }
+            ]);
+
+            // When both hours_back and count are set, it should use the time-based query
+            // but still include the count parameter
+            let _mock = server.mock(|when, then| {
+                when.method(GET)
+                    .path("/api/v1/entries/sgv")
+                    .query_param_exists("find[date][$gte]")
+                    .query_param_exists("find[date][$lte]")
+                    .query_param("count", "10");
+                then.status(200).json_body(response.clone());
+            });
+
+            let ns = Nightscout::new();
+            let opts = NightscoutRequestOptions::default().hours_back(6).count(10);
+            let entries = ns.get_entries(&server.url("/"), opts).await.unwrap();
+            assert_eq!(entries.len(), 1);
+        }
+
+        #[tokio::test]
+        async fn test_count_only_query_still_works() {
+            let server = MockServer::start();
+            let response = json!([
+                { "_id": "id1", "sgv": 100.0, "dateString": "2025-09-23T08:38:01.546Z" },
+                { "_id": "id2", "sgv": 110.0, "dateString": "2025-09-23T08:38:01.546Z" }
+            ]);
+
+            // When only count is set (no hours_back), should use the original count-based query
+            let _mock = server.mock(|when, then| {
+                when.method(GET)
+                    .path("/api/v1/entries/sgv")
+                    .query_param("count", "2");
+                then.status(200).json_body(response.clone());
+            });
+
+            let ns = Nightscout::new();
+            let opts = NightscoutRequestOptions::default().count(2);
+            let entries = ns.get_entries(&server.url("/"), opts).await.unwrap();
+            assert_eq!(entries.len(), 2);
+        }
+    }
+
+    // Group 6: Edge cases and error handling for time-based queries
+    mod time_query_edge_cases {
+        use super::*;
+
+        #[tokio::test]
+        async fn test_zero_hours_back() {
+            let server = MockServer::start();
+            let response = json!([
+                { "_id": "id1", "sgv": 100.0, "dateString": "2025-09-23T08:38:01.546Z" }
+            ]);
+
+            let _mock = server.mock(|when, then| {
+                when.method(GET)
+                    .path("/api/v1/entries/sgv")
+                    .query_param_exists("find[date][$gte]")
+                    .query_param_exists("find[date][$lte]");
+                then.status(200).json_body(response.clone());
+            });
+
+            let ns = Nightscout::new();
+            let opts = NightscoutRequestOptions::default().hours_back(0);
+            let entries = ns.get_entries(&server.url("/"), opts).await.unwrap();
+            assert_eq!(entries.len(), 1);
+        }
+
+        #[tokio::test]
+        async fn test_large_hours_back_value() {
+            let server = MockServer::start();
+            let response = json!([
+                { "_id": "id1", "sgv": 100.0, "dateString": "2025-09-23T08:38:01.546Z" }
+            ]);
+
+            let _mock = server.mock(|when, then| {
+                when.method(GET)
+                    .path("/api/v1/entries/sgv")
+                    .query_param_exists("find[date][$gte]")
+                    .query_param_exists("find[date][$lte]");
+                then.status(200).json_body(response.clone());
+            });
+
+            let ns = Nightscout::new();
+            let opts = NightscoutRequestOptions::default().hours_back(255); // Max u8 value
+            let entries = ns.get_entries(&server.url("/"), opts).await.unwrap();
+            assert_eq!(entries.len(), 1);
+        }
+
+        #[tokio::test]
+        async fn test_get_entries_for_hours_invalid_url() {
+            let ns = Nightscout::new();
+            let result = ns.get_entries_for_hours("not a valid url", 6).await;
+            assert!(matches!(result, Err(NightscoutError::Url(_))));
+        }
+
+        #[tokio::test]
+        async fn test_get_entries_for_hours_network_error() {
+            let ns = Nightscout::new();
+            let result = ns.get_entries_for_hours("http://127.0.0.1:0/", 6).await;
+            assert!(matches!(result, Err(NightscoutError::Network(_))));
         }
     }
 }
