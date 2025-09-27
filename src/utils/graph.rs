@@ -1,7 +1,8 @@
-use super::nightscout::Entry;
+use super::nightscout::{Entry, Profile};
 use ab_glyph::{FontArc, PxScale};
 use anyhow::{Result, anyhow};
-use chrono::Local;
+use chrono::Utc;
+use chrono_tz::Tz;
 use image::{DynamicImage, Rgba, RgbaImage};
 use imageproc::drawing::{draw_filled_circle_mut, draw_line_segment_mut, draw_text_mut};
 use std::io::Cursor;
@@ -9,7 +10,7 @@ use std::io::Cursor;
 /// Which unit the user prefers to see first on the Y axis
 #[derive(Clone, Copy, Debug)]
 #[allow(dead_code)]
-pub enum PrefUnit {
+enum PrefUnit {
     MgDl,
     Mmol,
 }
@@ -18,7 +19,11 @@ pub enum PrefUnit {
 ///
 /// Returns: Vec<u8> (PNG bytes)
 #[allow(dead_code)]
-pub fn draw_graph(entries: &[Entry], pref: PrefUnit, save_path: Option<&str>) -> Result<Vec<u8>> {
+pub fn draw_graph(
+    entries: &[Entry],
+    profile: &Profile,
+    save_path: Option<&str>,
+) -> Result<Vec<u8>> {
     // I'm gonna try my best to make this file readable. Often times when I look at image generations code I never undderstand
     // a single line so I am going to comment and label every part that might confuse people!
     // Have fun reading :)
@@ -26,6 +31,20 @@ pub fn draw_graph(entries: &[Entry], pref: PrefUnit, save_path: Option<&str>) ->
     if entries.is_empty() {
         return Err(anyhow!("No entries provided"));
     }
+
+    let default_profile_name = &profile.default_profile;
+    let profile_store = profile
+        .store
+        .get(default_profile_name)
+        .ok_or_else(|| anyhow!("Default profile not found"))?;
+
+    let user_timezone = &profile_store.timezone;
+    println!("{:#?}", profile_store.units.to_lowercase());
+    let pref = if profile_store.units.to_lowercase() == "mmol/l" {
+        PrefUnit::Mmol
+    } else {
+        PrefUnit::MgDl
+    };
 
     // ---------- Configuration ----------
     let num_y_labels = 8; // Numbers of lines inside the graph to use as reference, also dictates how many X axis labels are drawn.
@@ -78,7 +97,7 @@ pub fn draw_graph(entries: &[Entry], pref: PrefUnit, save_path: Option<&str>) ->
     let secondary_legend_font_size: f32 = 18.0_f32;
 
     // When more than 100 readings shown, this makes the svg point radius a bit smaller for readablility!
-    let svg_radius: i32 = if entries.len() < 100 { 5 } else { 3 };
+    let svg_radius: i32 = if entries.len() < 100 { 4 } else { 3 };
 
     // ---------- Compute Y scaling ----------
     // We're making the graph start at 40 mg/dl (2.2 mmol) and go up to y_max
@@ -228,22 +247,43 @@ pub fn draw_graph(entries: &[Entry], pref: PrefUnit, save_path: Option<&str>) ->
     }
 
     // ---------- X axis labels ----------
-    // Show max 8 labels
+    // Show max 8 labels, entries[0] is newest (rightmost), entries[n-1] is oldest (leftmost)
     let n = entries.len();
-    let max_x_labels = 8.min(n); // Don't show more labels than entries
+    let max_x_labels = 8.min(n);
     let spacing_x = inner_plot_w / n as f32;
-    let now = Local::now();
+    let user_tz: Tz = user_timezone.parse().unwrap_or(chrono_tz::UTC);
+    let now = Utc::now().with_timezone(&user_tz);
 
-    let step = if max_x_labels == 0 {
-        1
-    } else {
-        (n as f32 / max_x_labels as f32).ceil() as usize
-    };
+    // Always include the first entry (most recent, should be rightmost)
+    let mut label_indices = vec![0];
 
-    for (i, e) in entries.iter().enumerate().step_by(step).take(max_x_labels) {
-        let reversed_i = n - 1 - i;
-        let x_center = inner_plot_left + spacing_x * (reversed_i as f32 + 0.5);
-        let time_label = e.millis_to_timestamp().format("%H:%M").to_string();
+    // Add additional evenly spaced indices if we have room for more labels
+    if max_x_labels > 1 {
+        let step = if max_x_labels == 1 {
+            1
+        } else {
+            (n as f32 / (max_x_labels - 1) as f32).ceil() as usize
+        };
+
+        // Add other indices, avoiding duplicates
+        for i in (step..n).step_by(step).take(max_x_labels - 1) {
+            if !label_indices.contains(&i) {
+                label_indices.push(i);
+            }
+        }
+    }
+
+    label_indices.sort();
+
+    for &i in &label_indices {
+        let e = &entries[i];
+        // entries[0] is newest (rightmost), entries[n-1] is oldest (leftmost)
+        // So x position: i=0 gets rightmost position, i=n-1 gets leftmost position
+        let x_center = inner_plot_left + spacing_x * ((n - 1 - i) as f32 + 0.5);
+        let time_label = e
+            .millis_to_user_timezone(user_timezone)
+            .format("%H:%M")
+            .to_string();
 
         let approx_char_width = x_label_size_primary * 0.6;
         let text_w = (time_label.chars().count() as f32) * approx_char_width;
@@ -259,7 +299,7 @@ pub fn draw_graph(entries: &[Entry], pref: PrefUnit, save_path: Option<&str>) ->
             &time_label,
         );
 
-        let diff = now.signed_duration_since(e.millis_to_timestamp());
+        let diff = now.signed_duration_since(e.millis_to_user_timezone(user_timezone));
         let hours = diff.num_hours().max(0);
         let rel = format!("-{}h", hours);
         let approx_w2 = (rel.chars().count() as f32) * (x_label_size_secondary * 0.6);
@@ -274,22 +314,15 @@ pub fn draw_graph(entries: &[Entry], pref: PrefUnit, save_path: Option<&str>) ->
             &rel,
         );
     }
-
     // ---------- Data line + points ----------
-    // first compute pixel coordinates (now using inner plot area)
+    // Compute pixel coordinates with correct positioning
     let mut points_px: Vec<(f32, f32)> = Vec::with_capacity(entries.len());
     for (i, e) in entries.iter().enumerate() {
-        let x = inner_plot_left + spacing_x * (i as f32 + 0.5);
-        let y = project_y(e.sgv.clamp(y_min, y_max)); // Clamp to our y-range
+        // entries[0] is newest (rightmost), entries[n-1] is oldest (leftmost)
+        let x = inner_plot_left + spacing_x * ((n - 1 - i) as f32 + 0.5);
+        let y = project_y(e.sgv.clamp(y_min, y_max));
         points_px.push((x, y));
     }
-
-    // Ploting lines, don't want them for now...
-    // for i in 0..(points_px.len().saturating_sub(1)) {
-    //     let (x0, y0) = points_px[i];
-    //     let (x1, y1) = points_px[i + 1];
-    //     draw_line_segment_mut(&mut img, (x0, y0), (x1, y1), axis_col);
-    // }
 
     // draw points
     for (i, e) in entries.iter().enumerate() {
