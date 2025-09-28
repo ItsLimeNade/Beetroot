@@ -651,9 +651,9 @@ pub fn draw_graph(
             );
         }
 
-        if treatment.is_glucose_reading() {
-            if let Some(glucose_str) = &treatment.glucose {
-                if let Ok(glucose_value) = glucose_str.parse::<f32>() {
+        if treatment.is_glucose_reading()
+            && let Some(glucose_str) = &treatment.glucose
+                && let Ok(glucose_value) = glucose_str.parse::<f32>() {
                     let glucose_y = project_y(glucose_value);
 
                     tracing::trace!(
@@ -670,8 +670,6 @@ pub fn draw_graph(
                         glucose_reading_col,
                     );
                 }
-            }
-        }
     }
 
     for (i, e) in entries.iter().enumerate() {

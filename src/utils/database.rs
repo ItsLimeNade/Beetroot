@@ -67,7 +67,7 @@ impl TokenCrypto {
 static CRYPTO_INSTANCE: std::sync::OnceLock<TokenCrypto> = std::sync::OnceLock::new();
 
 fn get_crypto() -> &'static TokenCrypto {
-    CRYPTO_INSTANCE.get_or_init(|| TokenCrypto::new())
+    CRYPTO_INSTANCE.get_or_init(TokenCrypto::new)
 }
 
 #[derive(Clone, Debug)]
