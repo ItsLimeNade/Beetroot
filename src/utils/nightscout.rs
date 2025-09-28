@@ -105,6 +105,67 @@ pub struct Entry {
     pub mills: Option<u64>,
 }
 
+// Custom deserializer for glucose field that can handle both numbers and strings
+fn deserialize_glucose<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::Visitor;
+
+    struct GlucoseVisitor;
+
+    impl<'de> Visitor<'de> for GlucoseVisitor {
+        type Value = Option<String>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("a string, number, or null")
+        }
+
+        fn visit_none<E>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+
+        fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            deserializer.deserialize_any(GlucoseValueVisitor)
+        }
+    }
+
+    struct GlucoseValueVisitor;
+
+    impl<'de> Visitor<'de> for GlucoseValueVisitor {
+        type Value = Option<String>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("a string or number")
+        }
+
+        fn visit_str<E>(self, value: &str) -> Result<Self::Value, E> {
+            Ok(Some(value.to_string()))
+        }
+
+        fn visit_i64<E>(self, value: i64) -> Result<Self::Value, E> {
+            Ok(Some(value.to_string()))
+        }
+
+        fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E> {
+            Ok(Some(value.to_string()))
+        }
+
+        fn visit_f64<E>(self, value: f64) -> Result<Self::Value, E> {
+            Ok(Some(value.to_string()))
+        }
+
+        fn visit_unit<E>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+    }
+
+    deserializer.deserialize_option(GlucoseVisitor)
+}
+
 #[allow(dead_code)]
 #[derive(Deserialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -115,7 +176,7 @@ pub struct Treatment {
     pub event_type: Option<String>,
     #[serde(rename = "created_at", default)]
     pub created_at: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_glucose")]
     pub glucose: Option<String>,
     #[serde(default)]
     pub glucose_type: Option<String>,
@@ -390,10 +451,20 @@ impl NightscoutRequestOptions {
 
 #[allow(dead_code)]
 impl Nightscout {
-    /// Creates a new instance of `Nightscout` with a default HTTP client.
+    /// Creates a new instance of `Nightscout` with a robust HTTP client.
     pub fn new() -> Self {
+        let client = Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .danger_accept_invalid_certs(false) // Keep SSL verification enabled
+            .build()
+            .unwrap_or_else(|e| {
+                tracing::warn!("[HTTP] Failed to build custom client, using default: {}", e);
+                Client::new()
+            });
+
         Nightscout {
-            http_client: Client::new(),
+            http_client: client,
         }
     }
 
@@ -520,6 +591,33 @@ impl Nightscout {
                     url,
                     e
                 );
+
+                // Provide specific guidance for common SSL/connection issues
+                if e.is_timeout() {
+                    tracing::error!(
+                        "[SSL] Connection timeout - check if Nightscout site is accessible"
+                    );
+                } else if e.is_connect() {
+                    tracing::error!(
+                        "[SSL] Connection failed - possible SSL certificate or network issue"
+                    );
+                    tracing::error!(
+                        "[SSL] Try accessing {} in a browser to verify SSL certificate",
+                        url
+                    );
+                } else if e.to_string().contains("certificate")
+                    || e.to_string().contains("tls")
+                    || e.to_string().contains("ssl")
+                {
+                    tracing::error!("[SSL] SSL/TLS certificate error detected");
+                    tracing::error!(
+                        "[SSL] Your Nightscout site may have an invalid or expired SSL certificate"
+                    );
+                    tracing::error!(
+                        "[SSL] Contact your Nightscout hosting provider to fix the SSL certificate"
+                    );
+                }
+
                 return Err(NightscoutError::Network(e));
             }
         };
@@ -639,6 +737,33 @@ impl Nightscout {
                     url,
                     e
                 );
+
+                // Provide specific guidance for common SSL/connection issues
+                if e.is_timeout() {
+                    tracing::error!(
+                        "[SSL] Connection timeout - check if Nightscout site is accessible"
+                    );
+                } else if e.is_connect() {
+                    tracing::error!(
+                        "[SSL] Connection failed - possible SSL certificate or network issue"
+                    );
+                    tracing::error!(
+                        "[SSL] Try accessing {} in a browser to verify SSL certificate",
+                        url
+                    );
+                } else if e.to_string().contains("certificate")
+                    || e.to_string().contains("tls")
+                    || e.to_string().contains("ssl")
+                {
+                    tracing::error!("[SSL] SSL/TLS certificate error detected");
+                    tracing::error!(
+                        "[SSL] Your Nightscout site may have an invalid or expired SSL certificate"
+                    );
+                    tracing::error!(
+                        "[SSL] Contact your Nightscout hosting provider to fix the SSL certificate"
+                    );
+                }
+
                 return Err(NightscoutError::Network(e));
             }
         };

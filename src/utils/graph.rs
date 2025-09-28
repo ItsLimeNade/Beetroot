@@ -11,6 +11,38 @@ use imageproc::drawing::{
 use imageproc::point::Point;
 use std::io::Cursor;
 
+fn draw_dashed_vertical_line(
+    img: &mut RgbaImage,
+    x: f32,
+    y_start: f32,
+    y_end: f32,
+    color: image::Rgba<u8>,
+    dash_length: i32,
+    gap_length: i32,
+) {
+    let x = x.round() as i32;
+    let y_start = y_start.round() as i32;
+    let y_end = y_end.round() as i32;
+
+    let mut y = y_start;
+    let mut drawing_dash = true;
+
+    while y < y_end {
+        if drawing_dash {
+            let dash_end = (y + dash_length).min(y_end);
+            for py in y..dash_end {
+                if x >= 0 && x < img.width() as i32 && py >= 0 && py < img.height() as i32 {
+                    img.put_pixel(x as u32, py as u32, color);
+                }
+            }
+            y += dash_length;
+        } else {
+            y += gap_length;
+        }
+        drawing_dash = !drawing_dash;
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 #[allow(dead_code)]
 enum PrefUnit {
@@ -149,16 +181,17 @@ pub fn draw_graph(
     let width = 850u32;
     let height = 550u32;
 
-    let bg = Rgba([245, 245, 245, 255]);
-    let grid_col = Rgba([210, 220, 225, 255]);
-    let axis_col = Rgba([160, 170, 175, 255]);
-    let bright = Rgba([60, 60, 60, 255]);
-    let dim = Rgba([120, 120, 120, 255]);
-    let high_col = Rgba([255, 182, 193, 255]);
-    let low_col = Rgba([173, 216, 230, 255]);
-    let insulin_col = Rgba([152, 206, 235, 255]);
-    let carbs_col = Rgba([255, 204, 153, 255]);
-    let glucose_reading_col = Rgba([180, 180, 180, 255]);
+    let bg = Rgba([17u8, 24u8, 28u8, 255u8]);
+    let grid_col = Rgba([30u8, 41u8, 47u8, 255u8]);
+    let axis_col = Rgba([148u8, 163u8, 184u8, 255u8]);
+    let bright = Rgba([248u8, 250u8, 252u8, 255u8]);
+    let dim = Rgba([148u8, 163u8, 184u8, 255u8]);
+    let darker_dim = Rgba([98u8, 113u8, 134u8, 255u8]);
+    let high_col = Rgba([255u8, 159u8, 10u8, 255u8]);
+    let low_col = Rgba([255u8, 69u8, 58u8, 255u8]);
+    let insulin_col = Rgba([96u8, 165u8, 250u8, 255u8]);
+    let carbs_col = Rgba([251u8, 191u8, 36u8, 255u8]);
+    let glucose_reading_col = Rgba([52u8, 211u8, 153u8, 255u8]);
 
     let left_margin = 80.0_f32;
     let right_margin = 40.0_f32;
@@ -389,9 +422,9 @@ pub fn draw_graph(
         label_indices = filtered;
     }
 
-    for &i in &label_indices {
-        let e = &entries[i];
-        let x_center = inner_plot_left + spacing_x * ((n - 1 - i) as f32 + 0.5);
+    for (label_pos, &entry_idx) in label_indices.iter().enumerate() {
+        let e = &entries[entry_idx];
+        let x_center = inner_plot_left + spacing_x * ((n - 1 - entry_idx) as f32 + 0.5);
         let entry_time = e.millis_to_user_timezone(user_timezone);
         let time_label = entry_time.format("%H:%M").to_string();
 
@@ -413,21 +446,16 @@ pub fn draw_graph(
         let hours_ago = diff.num_hours();
         let minutes_ago = diff.num_minutes();
 
-        let rel = if hours_ago == 0 {
-            format!("{}m", minutes_ago)
-        } else if minutes_ago % 60 == 0 {
-            let rounded_hours = (hours_ago as f32 / 0.5).round() * 0.5;
-            if rounded_hours.fract() == 0.0 {
-                format!("{}h", rounded_hours as i32)
-            } else {
-                format!("{:.1}h", rounded_hours)
-            }
+        let rel = if hours_ago == 0 && minutes_ago < 30 {
+            "-0h".to_string()
         } else {
-            let rounded_hours = (hours_ago as f32 / 0.5).round() * 0.5;
+            let total_minutes = diff.num_minutes() as f32;
+            let rounded_hours = (total_minutes / 30.0).round() * 0.5;
+
             if rounded_hours.fract() == 0.0 {
-                format!("{}h{}m", rounded_hours as i32, minutes_ago % 60)
+                format!("-{}h", rounded_hours as i32)
             } else {
-                format!("{:.1}h{}m", rounded_hours, minutes_ago % 60)
+                format!("-{:.1}h", rounded_hours)
             }
         };
 
@@ -442,6 +470,34 @@ pub fn draw_graph(
             &handler.font,
             &rel,
         );
+
+        if label_pos > 0 {
+            let prev_entry_idx = label_indices[label_pos - 1];
+            let prev_entry = &entries[prev_entry_idx];
+            let prev_time = prev_entry.millis_to_user_timezone(user_timezone);
+
+            if entry_time.date_naive() != prev_time.date_naive() {
+                draw_dashed_vertical_line(
+                    &mut img,
+                    x_center,
+                    inner_plot_top,
+                    inner_plot_bottom,
+                    darker_dim,
+                    3,
+                    6,
+                );
+
+                draw_text_mut(
+                    &mut img,
+                    dim,
+                    x_text + 15,
+                    (plot_top - 15.) as i32,
+                    PxScale::from(14.0),
+                    &handler.font,
+                    &entry_time.format("%m/%d").to_string(),
+                );
+            }
+        }
     }
 
     let mut points_px: Vec<(f32, f32)> = Vec::with_capacity(entries.len());
@@ -506,14 +562,35 @@ pub fn draw_graph(
 
         if treatment.is_insulin() {
             let insulin_amount = treatment.insulin.unwrap_or(0.0);
-            let triangle_size = if insulin_amount > 5.0 { 15 } else { 12 };
-            let triangle_y = closest_y + 35.0;
+
+            let triangle_size = if insulin_amount < 1.0 {
+                8
+            } else if insulin_amount > 5.0 {
+                15
+            } else {
+                12
+            };
+
+            let has_nearby_glucose = entries.iter().enumerate().any(|(i, _)| {
+                let (entry_x, entry_y) = points_px[i];
+                let distance =
+                    ((closest_x - entry_x).powi(2) + (closest_y - entry_y).powi(2)).sqrt();
+                distance < 25.0
+            });
+
+            let triangle_y = if has_nearby_glucose {
+                closest_y + 35.0
+            } else {
+                closest_y
+            };
 
             tracing::trace!(
-                "[GRAPH] Drawing insulin: {:.1}u at ({:.1}, {:.1})",
+                "[GRAPH] Drawing insulin: {:.1}u at ({:.1}, {:.1}) - size: {}, overlap: {}",
                 insulin_amount,
                 closest_x,
-                triangle_y
+                triangle_y,
+                triangle_size,
+                has_nearby_glucose
             );
 
             let triangle_points = vec![

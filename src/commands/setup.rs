@@ -58,7 +58,7 @@ pub async fn run(
         );
         match handler
             .nightscout_client
-            .get_entry(&validated_url, token_input.as_deref())
+            .get_entry(&validated_url, token_input)
             .await
         {
             Ok(_) => {
@@ -269,10 +269,11 @@ fn validate_and_fix_url(input: &str) -> Result<String, String> {
             }
 
             // Additional validation: ensure domain has at least one dot (basic domain check)
-            if let Some(host) = parsed.host_str() {
-                if !host.contains('.') && host != "localhost" {
-                    return Err("Invalid domain name format".to_string());
-                }
+            if let Some(host) = parsed.host_str()
+                && !host.contains('.')
+                && host != "localhost"
+            {
+                return Err("Invalid domain name format".to_string());
             }
 
             Ok(url)

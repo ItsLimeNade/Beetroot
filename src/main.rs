@@ -41,13 +41,13 @@ impl EventHandler for Handler {
                 match self.database.user_exists(command.user.id.get()).await {
                     Ok(exists) => {
                         if !exists && command.data.name.as_str() != "setup" {
-                            commands::error::run(&context, &command, "You need to register your Nightscout URL first. Use `/setup` to get started.").await
+                            commands::error::run(&context, command, "You need to register your Nightscout URL first. Use `/setup` to get started.").await
                         } else {
                             match command.data.name.as_str() {
-                                "bg" => commands::bg::run(self, &context, &command).await,
-                                "graph" => commands::graph::run(self, &context, &command).await,
-                                "setup" => commands::setup::run(self, &context, &command).await,
-                                "token" => commands::token::run(self, &context, &command).await,
+                                "bg" => commands::bg::run(self, &context, command).await,
+                                "graph" => commands::graph::run(self, &context, command).await,
+                                "setup" => commands::setup::run(self, &context, command).await,
+                                "token" => commands::token::run(self, &context, command).await,
                                 unknown_command => {
                                     eprintln!(
                                         "Unknown slash command received: '{}'",
@@ -74,7 +74,7 @@ impl EventHandler for Handler {
             }
             Interaction::Component(ref component) => match component.data.custom_id.as_str() {
                 "setup_private" | "setup_public" => {
-                    commands::setup::handle_button(self, &context, &component).await
+                    commands::setup::handle_button(self, &context, component).await
                 }
                 _ => Ok(()),
             },

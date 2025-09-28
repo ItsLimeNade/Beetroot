@@ -47,7 +47,7 @@ pub async fn run(
         ..
     }) = interaction.data.options().first()
     {
-        hours.clone()
+        *hours
     } else {
         3_i64
     };
@@ -100,14 +100,7 @@ pub async fn run(
         }
     };
 
-    let buffer = draw_graph(
-        &entries,
-        &treatments,
-        &profile,
-        &handler,
-        hours as u16,
-        None,
-    )?;
+    let buffer = draw_graph(&entries, &treatments, &profile, handler, hours as u16, None)?;
 
     let graph_attachment = CreateAttachment::bytes(buffer, "graph.png");
     let graph_edit_attachment = EditAttachments::new().add(graph_attachment);
@@ -124,14 +117,10 @@ pub fn register() -> CreateCommand {
     CreateCommand::new("graph")
         .description("Sends a graph of your latest blood glucose.")
         .add_option(
-            CreateCommandOption::new(
-                CommandOptionType::Integer,
-                "hours",
-                "3h to 720h (30 days) of data.",
-            )
-            .min_int_value(3)
-            .max_int_value(720)
-            .required(false),
+            CreateCommandOption::new(CommandOptionType::Integer, "hours", "3h to 24h of data.")
+                .min_int_value(3)
+                .max_int_value(24)
+                .required(false),
         )
         .contexts(vec![
             InteractionContext::Guild,
