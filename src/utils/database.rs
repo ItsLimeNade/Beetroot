@@ -15,6 +15,7 @@ pub struct NightscoutInfo {
 #[derive(Clone, Debug)]
 pub struct UserInfo {
     pub nightscout: NightscoutInfo,
+    #[allow(dead_code)]
     pub stickers: Vec<String>,
 }
 
@@ -128,7 +129,7 @@ impl Database {
 
         Ok(())
     }
-
+    #[allow(dead_code)]
     pub async fn delete_user(&self, discord_id: u64) -> Result<(), sqlx::Error> {
         sqlx::query("DELETE FROM stickers WHERE discord_id = ?")
             .bind(discord_id as i64)
@@ -142,7 +143,7 @@ impl Database {
 
         Ok(())
     }
-
+    #[allow(dead_code)]
     pub async fn insert_sticker(
         &self,
         discord_id: u64,
@@ -157,6 +158,7 @@ impl Database {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub async fn delete_sticker(&self, sticker_id: i32) -> Result<(), sqlx::Error> {
         sqlx::query("DELETE FROM stickers WHERE id = ?")
             .bind(sticker_id)

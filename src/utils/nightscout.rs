@@ -21,6 +21,7 @@ impl AuthMethod {
     }
 
     /// Convert an access token to JWT using the Nightscout API
+    #[allow(dead_code)]
     pub async fn to_jwt(
         nightscout: &Nightscout,
         base_url: &str,
