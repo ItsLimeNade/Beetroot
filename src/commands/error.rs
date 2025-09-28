@@ -7,7 +7,8 @@ pub async fn run(
     interaction: &CommandInteraction,
     error_message: &str,
 ) -> anyhow::Result<()> {
-    let message = CreateInteractionResponseMessage::new().content(format!("[ERROR] {}", error_message));
+    let message =
+        CreateInteractionResponseMessage::new().content(format!("[ERROR] {}", error_message));
 
     let builder = CreateInteractionResponse::Message(message);
     interaction

@@ -102,7 +102,11 @@ pub async fn run(
         }
     };
 
-    let delta = match handler.nightscout_client.get_current_delta(base_url, token).await {
+    let delta = match handler
+        .nightscout_client
+        .get_current_delta(base_url, token)
+        .await
+    {
         Ok(delta) => delta,
         Err(e) => {
             eprintln!("Failed to get delta for user {}: {}", target_user_id, e);

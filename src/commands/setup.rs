@@ -1,6 +1,8 @@
 use crate::{Handler, utils::database::NightscoutInfo};
 use serenity::all::{
-    ButtonStyle, Colour, CommandInteraction, ComponentInteraction, Context, CreateActionRow, CreateButton, CreateCommand, CreateEmbed, CreateInputText, CreateInteractionResponse, CreateInteractionResponseMessage, CreateQuickModal, InteractionContext
+    ButtonStyle, Colour, CommandInteraction, ComponentInteraction, Context, CreateActionRow,
+    CreateButton, CreateCommand, CreateEmbed, CreateInputText, CreateInteractionResponse,
+    CreateInteractionResponseMessage, CreateQuickModal, InteractionContext,
 };
 use url::Url;
 
@@ -13,20 +15,24 @@ pub async fn run(
         .timeout(std::time::Duration::from_secs(300))
         .short_field("Nightscout URL")
         .field(
-        CreateInputText::new(
-            serenity::all::InputTextStyle::Short,
-            "Nightscout Token (optional)",
-            ""
-        )
-        .required(false)
-        .placeholder("leave empty if you don't want to answer")
-    );
+            CreateInputText::new(
+                serenity::all::InputTextStyle::Short,
+                "Nightscout Token (optional)",
+                "",
+            )
+            .required(false)
+            .placeholder("leave empty if you don't want to answer"),
+        );
 
     let response = interaction.quick_modal(context, modal).await?;
 
     if let Some(modal_response) = response {
         let url_input = &modal_response.inputs[0];
-        let token_input = modal_response.inputs.get(1).map(|s| s.trim()).filter(|s| !s.is_empty());
+        let token_input = modal_response
+            .inputs
+            .get(1)
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty());
 
         let validated_url = match validate_and_fix_url(url_input) {
             Ok(url) => url,
@@ -46,13 +52,25 @@ pub async fn run(
             }
         };
 
-        tracing::info!("[TEST] Testing Nightscout connection for URL: {}", validated_url);
-        match handler.nightscout_client.get_entry(&validated_url, token_input.as_deref()).await {
+        tracing::info!(
+            "[TEST] Testing Nightscout connection for URL: {}",
+            validated_url
+        );
+        match handler
+            .nightscout_client
+            .get_entry(&validated_url, token_input.as_deref())
+            .await
+        {
             Ok(_) => {
                 tracing::info!("[OK] Nightscout connection test successful");
                 // URL works, show privacy selection
-                show_privacy_selection(context, &modal_response.interaction, &validated_url, token_input.map(|s| s.to_string()))
-                    .await?;
+                show_privacy_selection(
+                    context,
+                    &modal_response.interaction,
+                    &validated_url,
+                    token_input.map(|s| s.to_string()),
+                )
+                .await?;
             }
             Err(e) => {
                 tracing::error!("[ERROR] Nightscout connection test failed: {}", e);
@@ -121,7 +139,12 @@ pub async fn handle_button(
         .await
     {
         Ok(v) => Ok(v),
-        Err(_) => handler.database.update_user(user_id, nightscout_info.clone()).await,
+        Err(_) => {
+            handler
+                .database
+                .update_user(user_id, nightscout_info.clone())
+                .await
+        }
     };
 
     match db_result {
@@ -134,7 +157,10 @@ pub async fn handle_button(
             };
             let success_embed = CreateEmbed::new()
                 .title("Setup Complete")
-                .description(format!("**URL:** {}\n**Privacy:** {}{}", url, privacy_text, token_text))
+                .description(format!(
+                    "**URL:** {}\n**Privacy:** {}{}",
+                    url, privacy_text, token_text
+                ))
                 .color(Colour::DARK_GREEN);
 
             let success_response = CreateInteractionResponseMessage::new()

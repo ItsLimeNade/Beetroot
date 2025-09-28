@@ -1,5 +1,5 @@
-use crate::Handler;
 use super::nightscout::{Entry, Profile, Treatment};
+use crate::Handler;
 use ab_glyph::PxScale;
 use anyhow::{Result, anyhow};
 use chrono::Utc;
@@ -9,7 +9,6 @@ use imageproc::drawing::{
     draw_filled_circle_mut, draw_line_segment_mut, draw_polygon_mut, draw_text_mut,
 };
 use imageproc::point::Point;
-use std::collections::HashSet;
 use std::io::Cursor;
 
 #[derive(Clone, Copy, Debug)]
@@ -28,8 +27,15 @@ pub fn draw_graph(
     hours: u16,
     save_path: Option<&str>,
 ) -> Result<Vec<u8>> {
-    tracing::info!("[GRAPH] Starting graph generation for {} hours of data", hours);
-    tracing::debug!("[GRAPH] Received {} entries and {} treatments", entries.len(), treatments.len());
+    tracing::info!(
+        "[GRAPH] Starting graph generation for {} hours of data",
+        hours
+    );
+    tracing::debug!(
+        "[GRAPH] Received {} entries and {} treatments",
+        entries.len(),
+        treatments.len()
+    );
 
     if entries.is_empty() {
         tracing::error!("[GRAPH] No entries provided");
@@ -37,11 +43,12 @@ pub fn draw_graph(
     }
 
     let default_profile_name = &profile.default_profile;
-    let profile_store: &crate::utils::nightscout::ProfileStore = profile
-        .store
-        .get(default_profile_name)
-        .ok_or_else(|| {
-            tracing::error!("[GRAPH] Default profile '{}' not found", default_profile_name);
+    let profile_store: &crate::utils::nightscout::ProfileStore =
+        profile.store.get(default_profile_name).ok_or_else(|| {
+            tracing::error!(
+                "[GRAPH] Default profile '{}' not found",
+                default_profile_name
+            );
             anyhow!("Default profile not found")
         })?;
 
@@ -60,15 +67,22 @@ pub fn draw_graph(
         })
         .collect();
 
-    tracing::info!("[GRAPH] Filtered {} entries to {} within the last {} hours",
-                   entries.len(), filtered_entries.len(), hours);
+    tracing::info!(
+        "[GRAPH] Filtered {} entries to {} within the last {} hours",
+        entries.len(),
+        filtered_entries.len(),
+        hours
+    );
 
     if filtered_entries.is_empty() {
         tracing::error!("[GRAPH] No entries found within the requested time range");
-        return Err(anyhow!("No entries found within the requested {} hour time range", hours));
+        return Err(anyhow!(
+            "No entries found within the requested {} hour time range",
+            hours
+        ));
     }
 
-    let mut entries: Vec<Entry> = filtered_entries.into_iter().cloned().collect();
+    let entries: Vec<Entry> = filtered_entries.into_iter().cloned().collect();
 
     let mut seen_ids = std::collections::HashSet::new();
     let mut processed_entries = Vec::new();
@@ -93,8 +107,11 @@ pub fn draw_graph(
             let same_sgv = entry_sgv == existing_sgv;
 
             if time_diff <= 30000 && same_sgv {
-                tracing::debug!("[GRAPH] Removing duplicate entry: SGV={:.1}, time_diff={}ms",
-                               entry.sgv, time_diff);
+                tracing::debug!(
+                    "[GRAPH] Removing duplicate entry: SGV={:.1}, time_diff={}ms",
+                    entry.sgv,
+                    time_diff
+                );
                 true
             } else {
                 false
@@ -108,7 +125,10 @@ pub fn draw_graph(
 
     let entries = processed_entries;
 
-    tracing::info!("[GRAPH] After deduplication: {} entries remain", entries.len());
+    tracing::info!(
+        "[GRAPH] After deduplication: {} entries remain",
+        entries.len()
+    );
 
     let units_str = profile_store
         .units
@@ -135,9 +155,9 @@ pub fn draw_graph(
     let bright = Rgba([60, 60, 60, 255]);
     let dim = Rgba([120, 120, 120, 255]);
     let high_col = Rgba([255, 182, 193, 255]);
-    let low_col = Rgba([173, 216, 230, 255]);  
-    let insulin_col = Rgba([152, 206, 235, 255]); 
-    let carbs_col = Rgba([255, 204, 153, 255]);  
+    let low_col = Rgba([173, 216, 230, 255]);
+    let insulin_col = Rgba([152, 206, 235, 255]);
+    let carbs_col = Rgba([255, 204, 153, 255]);
     let glucose_reading_col = Rgba([180, 180, 180, 255]);
 
     let left_margin = 80.0_f32;
@@ -184,8 +204,16 @@ pub fn draw_graph(
         }
     };
 
-    tracing::info!("[GRAPH] Y-axis range: {:.1} to {:.1} ({})", y_min, y_max,
-                  if matches!(pref, PrefUnit::MgDl) { "mg/dL" } else { "mmol/L" });
+    tracing::info!(
+        "[GRAPH] Y-axis range: {:.1} to {:.1} ({})",
+        y_min,
+        y_max,
+        if matches!(pref, PrefUnit::MgDl) {
+            "mg/dL"
+        } else {
+            "mmol/L"
+        }
+    );
 
     let y_range = y_max - y_min;
     let _step_size = match pref {
@@ -209,7 +237,6 @@ pub fn draw_graph(
 
     let mut img = RgbaImage::from_pixel(width, height, bg);
 
-
     draw_line_segment_mut(
         &mut img,
         (plot_left, plot_top),
@@ -231,7 +258,9 @@ pub fn draw_graph(
     for y_val in y_values.iter() {
         let y_px = match pref {
             PrefUnit::MgDl => project_y(*y_val),
-            PrefUnit::Mmol => inner_plot_bottom - ((*y_val - y_min) / (y_max - y_min)) * inner_plot_h,
+            PrefUnit::Mmol => {
+                inner_plot_bottom - ((*y_val - y_min) / (y_max - y_min)) * inner_plot_h
+            }
         };
 
         if y_px > inner_plot_top && y_px < inner_plot_bottom {
@@ -334,7 +363,8 @@ pub fn draw_graph(
 
     for (i, entry) in entries.iter().enumerate().rev() {
         let entry_time = entry.millis_to_user_timezone(user_timezone);
-        let hours_since_last = (entry_time.timestamp() - last_labeled_time.timestamp()) as f32 / 3600.0;
+        let hours_since_last =
+            (entry_time.timestamp() - last_labeled_time.timestamp()) as f32 / 3600.0;
 
         if i == 0 || hours_since_last >= time_interval || label_indices.is_empty() {
             label_indices.push(n - 1 - i);
@@ -425,15 +455,22 @@ pub fn draw_graph(
             match pref {
                 PrefUnit::MgDl => y_max,
                 PrefUnit::Mmol => y_max * 18.0,
-            }
+            },
         ));
         points_px.push((x, y));
     }
 
     tracing::debug!("[GRAPH] Drawing {} treatments", treatments.len());
     for treatment in treatments {
-        tracing::debug!("[GRAPH] Processing treatment: event_type={:?}, created_at={:?}, date={:?}, mills={:?}, insulin={:?}, carbs={:?}",
-                        treatment.event_type, treatment.created_at, treatment.date, treatment.mills, treatment.insulin, treatment.carbs);
+        tracing::debug!(
+            "[GRAPH] Processing treatment: event_type={:?}, created_at={:?}, date={:?}, mills={:?}, insulin={:?}, carbs={:?}",
+            treatment.event_type,
+            treatment.created_at,
+            treatment.date,
+            treatment.mills,
+            treatment.insulin,
+            treatment.carbs
+        );
 
         let treatment_time = if let Some(created_at) = &treatment.created_at {
             match chrono::DateTime::parse_from_rfc3339(created_at) {
@@ -472,8 +509,12 @@ pub fn draw_graph(
             let triangle_size = if insulin_amount > 5.0 { 15 } else { 12 };
             let triangle_y = closest_y + 35.0;
 
-            tracing::trace!("[GRAPH] Drawing insulin: {:.1}u at ({:.1}, {:.1})",
-                           insulin_amount, closest_x, triangle_y);
+            tracing::trace!(
+                "[GRAPH] Drawing insulin: {:.1}u at ({:.1}, {:.1})",
+                insulin_amount,
+                closest_x,
+                triangle_y
+            );
 
             let triangle_points = vec![
                 Point::new(
@@ -484,10 +525,7 @@ pub fn draw_graph(
                     (closest_x + triangle_size as f32) as i32,
                     (triangle_y - triangle_size as f32) as i32,
                 ),
-                Point::new(
-                    closest_x as i32,
-                    (triangle_y + triangle_size as f32) as i32,
-                ),
+                Point::new(closest_x as i32, (triangle_y + triangle_size as f32) as i32),
             ];
 
             draw_polygon_mut(&mut img, &triangle_points, insulin_col);
@@ -509,8 +547,12 @@ pub fn draw_graph(
             let carbs_amount = treatment.carbs.unwrap_or(0.0);
             let circle_radius = if carbs_amount > 30.0 { 12 } else { 9 };
 
-            tracing::trace!("[GRAPH] Drawing carbs: {:.0}g at ({:.1}, {:.1})",
-                           carbs_amount, closest_x, closest_y);
+            tracing::trace!(
+                "[GRAPH] Drawing carbs: {:.0}g at ({:.1}, {:.1})",
+                carbs_amount,
+                closest_x,
+                closest_y
+            );
 
             draw_filled_circle_mut(
                 &mut img,
@@ -520,12 +562,12 @@ pub fn draw_graph(
             );
 
             let carbs_text = format!("{}g", carbs_amount as i32);
-            let text_width = carbs_text.len() as f32 * 9.0; 
+            let text_width = carbs_text.len() as f32 * 9.0;
             draw_text_mut(
                 &mut img,
                 carbs_col,
                 (closest_x - text_width / 2.0) as i32,
-                (closest_y - circle_radius as f32 - 25.0) as i32, 
+                (closest_y - circle_radius as f32 - 25.0) as i32,
                 PxScale::from(18.0),
                 &handler.font,
                 &carbs_text,
@@ -537,8 +579,12 @@ pub fn draw_graph(
                 if let Ok(glucose_value) = glucose_str.parse::<f32>() {
                     let glucose_y = project_y(glucose_value);
 
-                    tracing::trace!("[GRAPH] Drawing glucose reading: {:.1} at ({:.1}, {:.1})",
-                                   glucose_value, closest_x, glucose_y);
+                    tracing::trace!(
+                        "[GRAPH] Drawing glucose reading: {:.1} at ({:.1}, {:.1})",
+                        glucose_value,
+                        closest_x,
+                        glucose_y
+                    );
 
                     draw_filled_circle_mut(
                         &mut img,
@@ -632,13 +678,15 @@ pub fn draw_graph(
         })?;
 
     if let Some(path) = save_path {
-        std::fs::write(path, &out_buf)
-            .map_err(|e| {
-                tracing::error!("[GRAPH] Failed to save PNG to {}: {}", path, e);
-                anyhow!("Failed to save PNG to {}: {}", path, e)
-            })?;
+        std::fs::write(path, &out_buf).map_err(|e| {
+            tracing::error!("[GRAPH] Failed to save PNG to {}: {}", path, e);
+            anyhow!("Failed to save PNG to {}: {}", path, e)
+        })?;
     }
 
-    tracing::info!("[GRAPH] Successfully generated graph ({} bytes)", out_buf.len());
+    tracing::info!(
+        "[GRAPH] Successfully generated graph ({} bytes)",
+        out_buf.len()
+    );
     Ok(out_buf)
 }

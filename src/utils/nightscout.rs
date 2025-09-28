@@ -21,7 +21,11 @@ impl AuthMethod {
     }
 
     /// Convert an access token to JWT using the Nightscout API
-    pub async fn to_jwt(nightscout: &Nightscout, base_url: &str, access_token: &str) -> Result<Self, NightscoutError> {
+    pub async fn to_jwt(
+        nightscout: &Nightscout,
+        base_url: &str,
+        access_token: &str,
+    ) -> Result<Self, NightscoutError> {
         let jwt_response = nightscout.request_jwt_token(base_url, access_token).await?;
         Ok(Self::Bearer(jwt_response.token))
     }
@@ -394,7 +398,11 @@ impl Nightscout {
     }
 
     /// Request a JWT token from Nightscout using an access token
-    pub async fn request_jwt_token(&self, base_url: &str, access_token: &str) -> Result<JwtResponse, NightscoutError> {
+    pub async fn request_jwt_token(
+        &self,
+        base_url: &str,
+        access_token: &str,
+    ) -> Result<JwtResponse, NightscoutError> {
         tracing::debug!("[JWT] Requesting JWT token from Nightscout");
 
         let base = Url::parse(base_url.trim())?;
@@ -408,7 +416,7 @@ impl Nightscout {
             Ok(response) => {
                 tracing::info!("[HTTP] JWT response status: {}", response.status());
                 response
-            },
+            }
             Err(e) => {
                 tracing::error!("[ERROR] JWT request failed: {}", e);
                 return Err(NightscoutError::Network(e));
@@ -416,12 +424,19 @@ impl Nightscout {
         };
 
         let jwt_response: JwtResponse = res.json().await?;
-        tracing::info!("[OK] Successfully obtained JWT token (expires: {})", jwt_response.exp);
+        tracing::info!(
+            "[OK] Successfully obtained JWT token (expires: {})",
+            jwt_response.exp
+        );
 
         Ok(jwt_response)
     }
 
-    pub async fn get_profile(&self, base_url: &str, token: Option<&str>) -> Result<Profile, NightscoutError> {
+    pub async fn get_profile(
+        &self,
+        base_url: &str,
+        token: Option<&str>,
+    ) -> Result<Profile, NightscoutError> {
         if base_url.trim().is_empty() {
             return Err(NightscoutError::Url(url::ParseError::EmptyHost));
         }
@@ -431,10 +446,16 @@ impl Nightscout {
         if let Some(ref auth) = auth_method {
             match auth {
                 AuthMethod::ApiSecret(secret) => {
-                    tracing::debug!("[AUTH] Using API-SECRET authentication: {}***", &secret[..secret.len().min(8)]);
+                    tracing::debug!(
+                        "[AUTH] Using API-SECRET authentication: {}***",
+                        &secret[..secret.len().min(8)]
+                    );
                 }
                 AuthMethod::Bearer(jwt) => {
-                    tracing::debug!("[AUTH] Using Bearer JWT authentication: {}***", &jwt[..jwt.len().min(8)]);
+                    tracing::debug!(
+                        "[AUTH] Using Bearer JWT authentication: {}***",
+                        &jwt[..jwt.len().min(8)]
+                    );
                 }
             }
         } else {
@@ -448,7 +469,11 @@ impl Nightscout {
                     return Err(NightscoutError::Url(url::ParseError::EmptyHost));
                 }
                 if !matches!(url.scheme(), "http" | "https") {
-                    tracing::error!("[ERROR] Invalid scheme '{}' in URL: '{}'", url.scheme(), base_url);
+                    tracing::error!(
+                        "[ERROR] Invalid scheme '{}' in URL: '{}'",
+                        url.scheme(),
+                        base_url
+                    );
                     return Err(NightscoutError::Url(url::ParseError::InvalidIpv4Address));
                 }
                 tracing::debug!("[OK] Successfully parsed base URL: {}", url);
@@ -466,7 +491,11 @@ impl Nightscout {
                 url
             }
             Err(e) => {
-                tracing::error!("[ERROR] Failed to join profile URL with base '{}': {}", base, e);
+                tracing::error!(
+                    "[ERROR] Failed to join profile URL with base '{}': {}",
+                    base,
+                    e
+                );
                 return Err(NightscoutError::Url(e));
             }
         };
@@ -483,10 +512,14 @@ impl Nightscout {
             Ok(response) => {
                 tracing::debug!("[HTTP] Received HTTP response from Nightscout");
                 response
-            },
+            }
             Err(e) => {
                 tracing::error!("[ERROR] Profile HTTP request failed: {}", e);
-                tracing::error!("[DEBUG] Request details - URL: {}, Error type: {:?}", url, e);
+                tracing::error!(
+                    "[DEBUG] Request details - URL: {}, Error type: {:?}",
+                    url,
+                    e
+                );
                 return Err(NightscoutError::Network(e));
             }
         };
@@ -495,7 +528,7 @@ impl Nightscout {
             Ok(response) => {
                 tracing::info!("[HTTP] Profile response status: {}", response.status());
                 response
-            },
+            }
             Err(e) => {
                 tracing::error!("[ERROR] Profile request returned error status: {}", e);
                 return Err(NightscoutError::Network(e));
@@ -519,7 +552,11 @@ impl Nightscout {
     }
 
     /// Returns an `Entry` if available, or a `NightscoutError::NoEntries` if no entries are found.
-    pub async fn get_entry(&self, base_url: &str, token: Option<&str>) -> Result<Entry, NightscoutError> {
+    pub async fn get_entry(
+        &self,
+        base_url: &str,
+        token: Option<&str>,
+    ) -> Result<Entry, NightscoutError> {
         let entries = self
             .get_entries(base_url, NightscoutRequestOptions::default(), token)
             .await?;
@@ -583,7 +620,10 @@ impl Nightscout {
         let auth_method = token.map(AuthMethod::from_token);
         if let Some(auth) = auth_method {
             req = auth.apply_to_request(req);
-            tracing::debug!("[OK] Applied {} authentication for entries request", auth.description());
+            tracing::debug!(
+                "[OK] Applied {} authentication for entries request",
+                auth.description()
+            );
         }
 
         tracing::debug!("[HTTP] Sending entries request to Nightscout...");
@@ -591,10 +631,14 @@ impl Nightscout {
             Ok(response) => {
                 tracing::debug!("[HTTP] Received entries response from Nightscout");
                 response
-            },
+            }
             Err(e) => {
                 tracing::error!("[ERROR] Entries HTTP request failed: {}", e);
-                tracing::error!("[DEBUG] Request details - URL: {}, Error type: {:?}", url, e);
+                tracing::error!(
+                    "[DEBUG] Request details - URL: {}, Error type: {:?}",
+                    url,
+                    e
+                );
                 return Err(NightscoutError::Network(e));
             }
         };
@@ -603,7 +647,7 @@ impl Nightscout {
             Ok(response) => {
                 tracing::info!("[HTTP] Entries response status: {}", response.status());
                 response
-            },
+            }
             Err(e) => {
                 tracing::error!("[ERROR] Entries request returned error status: {}", e);
                 return Err(NightscoutError::Network(e));
@@ -612,7 +656,10 @@ impl Nightscout {
         let entries: Vec<Entry> = res.json().await?;
 
         // TEMPORARY: Skip entry cleaning to avoid sanitization issues
-        tracing::debug!("[ENTRIES] Retrieved {} entries (cleaning disabled)", entries.len());
+        tracing::debug!(
+            "[ENTRIES] Retrieved {} entries (cleaning disabled)",
+            entries.len()
+        );
         if entries.is_empty() {
             Err(NightscoutError::NoEntries)
         } else {
@@ -717,13 +764,20 @@ impl Nightscout {
         }
     }
 
-    pub async fn get_current_delta(&self, base_url: &str, token: Option<&str>) -> Result<Delta, NightscoutError> {
+    pub async fn get_current_delta(
+        &self,
+        base_url: &str,
+        token: Option<&str>,
+    ) -> Result<Delta, NightscoutError> {
         //? Since clean entries could delete some entries due to the duplication glitch, it is
         //? safer to pull more than two. A check to verify that enough entries are available
         //? is also mandatory to avoid stupid errors.
         let options = NightscoutRequestOptions::default().count(4);
         let entries = self.get_entries(base_url, options, token).await?;
-        tracing::debug!("[DATA] Retrieved {} entries for delta calculation", entries.len());
+        tracing::debug!(
+            "[DATA] Retrieved {} entries for delta calculation",
+            entries.len()
+        );
         if entries.len() < 2 {
             return Err(NightscoutError::NoEntries);
         }
@@ -741,7 +795,11 @@ impl Nightscout {
         end_time: &str,
         token: Option<&str>,
     ) -> Result<Vec<Treatment>, NightscoutError> {
-        tracing::info!("[TREATMENTS] Fetching treatments between {} and {}", start_time, end_time);
+        tracing::info!(
+            "[TREATMENTS] Fetching treatments between {} and {}",
+            start_time,
+            end_time
+        );
 
         if base_url.trim().is_empty() {
             return Err(NightscoutError::Url(url::ParseError::EmptyHost));

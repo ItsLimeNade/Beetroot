@@ -1,6 +1,8 @@
 use crate::Handler;
 use serenity::all::{
-    Colour, CommandInteraction, Context, CreateCommand, CreateEmbed, CreateInputText, CreateInteractionResponse, CreateInteractionResponseMessage, CreateQuickModal, InteractionContext
+    Colour, CommandInteraction, Context, CreateCommand, CreateEmbed, CreateInputText,
+    CreateInteractionResponse, CreateInteractionResponseMessage, CreateQuickModal,
+    InteractionContext,
 };
 
 pub async fn run(
@@ -8,7 +10,11 @@ pub async fn run(
     context: &Context,
     interaction: &CommandInteraction,
 ) -> anyhow::Result<()> {
-    if !handler.database.user_exists(interaction.user.id.get()).await? {
+    if !handler
+        .database
+        .user_exists(interaction.user.id.get())
+        .await?
+    {
         let error_embed = CreateEmbed::new()
             .color(Colour::RED)
             .title("Not Set Up")
@@ -22,7 +28,7 @@ pub async fn run(
 
     let modal = CreateQuickModal::new("Nightscout API Token")
         .timeout(std::time::Duration::from_secs(600))
-                .field(
+        .field(
             CreateInputText::new(
                 serenity::all::InputTextStyle::Short,
                 "Nightscout Token (optional)",
@@ -86,7 +92,10 @@ pub async fn run(
 
             modal_response
                 .interaction
-                .create_response(context, CreateInteractionResponse::Message(success_response))
+                .create_response(
+                    context,
+                    CreateInteractionResponse::Message(success_response),
+                )
                 .await?;
         }
         Err(e) => {
