@@ -1,13 +1,13 @@
+use aes_gcm::{
+    Aes256Gcm, Key, Nonce,
+    aead::{Aead, AeadCore, KeyInit, OsRng},
+};
+use base64::{Engine as _, engine::general_purpose};
 use serde_json;
 use sqlx::{
     Row, SqlitePool as Pool,
     sqlite::{SqliteConnectOptions, SqlitePool},
 };
-use aes_gcm::{
-    aead::{Aead, AeadCore, KeyInit, OsRng},
-    Aes256Gcm, Nonce, Key
-};
-use base64::{Engine as _, engine::general_purpose};
 
 /// Secure token encryption/decryption module
 struct TokenCrypto {
@@ -36,7 +36,9 @@ impl TokenCrypto {
     /// Encrypt a token string
     fn encrypt(&self, plaintext: &str) -> Result<String, Box<dyn std::error::Error>> {
         let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
-        let ciphertext = self.cipher.encrypt(&nonce, plaintext.as_bytes())
+        let ciphertext = self
+            .cipher
+            .encrypt(&nonce, plaintext.as_bytes())
             .map_err(|e| format!("Encryption failed: {}", e))?;
 
         let mut combined = nonce.to_vec();
@@ -56,7 +58,9 @@ impl TokenCrypto {
         let (nonce_bytes, ciphertext) = combined.split_at(12);
         let nonce = Nonce::from_slice(nonce_bytes);
 
-        let plaintext = self.cipher.decrypt(nonce, ciphertext)
+        let plaintext = self
+            .cipher
+            .decrypt(nonce, ciphertext)
             .map_err(|e| format!("Decryption failed: {}", e))?;
 
         Ok(String::from_utf8(plaintext)?)
@@ -167,7 +171,11 @@ impl Database {
                     Some(encrypted)
                 }
                 Err(e) => {
-                    tracing::error!("[ENCRYPTION] Failed to encrypt token for user {}: {}", discord_id, e);
+                    tracing::error!(
+                        "[ENCRYPTION] Failed to encrypt token for user {}: {}",
+                        discord_id,
+                        e
+                    );
                     return Err(sqlx::Error::Protocol("Token encryption failed".to_string()));
                 }
             }
@@ -186,7 +194,10 @@ impl Database {
         .execute(&self.pool)
         .await?;
 
-        tracing::info!("[SECURITY] User {} token stored with encryption", discord_id);
+        tracing::info!(
+            "[SECURITY] User {} token stored with encryption",
+            discord_id
+        );
         Ok(())
     }
 
@@ -205,7 +216,11 @@ impl Database {
                     Some(encrypted)
                 }
                 Err(e) => {
-                    tracing::error!("[ENCRYPTION] Failed to encrypt token for user {}: {}", discord_id, e);
+                    tracing::error!(
+                        "[ENCRYPTION] Failed to encrypt token for user {}: {}",
+                        discord_id,
+                        e
+                    );
                     return Err(sqlx::Error::Protocol("Token encryption failed".to_string()));
                 }
             }
@@ -224,7 +239,10 @@ impl Database {
         .execute(&self.pool)
         .await?;
 
-        tracing::info!("[SECURITY] User {} token updated with encryption", discord_id);
+        tracing::info!(
+            "[SECURITY] User {} token updated with encryption",
+            discord_id
+        );
         Ok(())
     }
     #[allow(dead_code)]
@@ -286,9 +304,16 @@ impl Database {
                     Some(decrypted)
                 }
                 Err(e) => {
-                    tracing::error!("[ENCRYPTION] Failed to decrypt token for user {}: {}", user_id, e);
-                    tracing::warn!("[ENCRYPTION] User {} may need to re-enter their token", user_id);
-                    None 
+                    tracing::error!(
+                        "[ENCRYPTION] Failed to decrypt token for user {}: {}",
+                        user_id,
+                        e
+                    );
+                    tracing::warn!(
+                        "[ENCRYPTION] User {} may need to re-enter their token",
+                        user_id
+                    );
+                    None
                 }
             }
         } else {
@@ -311,9 +336,11 @@ impl Database {
     pub async fn migrate_tokens_to_encrypted(&self) -> Result<u32, sqlx::Error> {
         tracing::info!("[MIGRATION] Starting token encryption migration");
 
-        let rows = sqlx::query("SELECT discord_id, nightscout_token FROM users WHERE nightscout_token IS NOT NULL")
-            .fetch_all(&self.pool)
-            .await?;
+        let rows = sqlx::query(
+            "SELECT discord_id, nightscout_token FROM users WHERE nightscout_token IS NOT NULL",
+        )
+        .fetch_all(&self.pool)
+        .await?;
 
         let mut migrated_count = 0;
 
@@ -321,8 +348,12 @@ impl Database {
             let discord_id: i64 = row.get("discord_id");
             let current_token: String = row.get("nightscout_token");
 
-            if current_token.len() > 100 && general_purpose::STANDARD.decode(&current_token).is_ok() {
-                tracing::debug!("[MIGRATION] Token for user {} appears already encrypted, skipping", discord_id);
+            if current_token.len() > 100 && general_purpose::STANDARD.decode(&current_token).is_ok()
+            {
+                tracing::debug!(
+                    "[MIGRATION] Token for user {} appears already encrypted, skipping",
+                    discord_id
+                );
                 continue;
             }
 
@@ -338,12 +369,19 @@ impl Database {
                     tracing::info!("[MIGRATION] Encrypted token for user {}", discord_id);
                 }
                 Err(e) => {
-                    tracing::error!("[MIGRATION] Failed to encrypt token for user {}: {}", discord_id, e);
+                    tracing::error!(
+                        "[MIGRATION] Failed to encrypt token for user {}: {}",
+                        discord_id,
+                        e
+                    );
                 }
             }
         }
 
-        tracing::info!("[MIGRATION] Completed token encryption migration: {} tokens encrypted", migrated_count);
+        tracing::info!(
+            "[MIGRATION] Completed token encryption migration: {} tokens encrypted",
+            migrated_count
+        );
         Ok(migrated_count)
     }
 
