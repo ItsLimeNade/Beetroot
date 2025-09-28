@@ -1,7 +1,6 @@
 # will have compiled files and executables
 debug/
 target/
-main2.rs # tf is this
 
 # database
 nightscout_db.db
@@ -15,3 +14,5 @@ data.db
 
 # MSVC Windows builds of rustc generate these, which store debugging information
 *.pdb
+Cargo.lock
+db.sqlite

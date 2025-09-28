@@ -5,6 +5,59 @@ use serde::Deserialize;
 use std::convert::From;
 use thiserror::Error;
 
+#[derive(Debug, Clone)]
+pub enum AuthMethod {
+    ApiSecret(String),
+    Bearer(String),
+}
+
+impl AuthMethod {
+    pub fn from_token(token: &str) -> Self {
+        if token.starts_with("eyJ") {
+            Self::Bearer(token.to_string())
+        } else {
+            Self::ApiSecret(token.to_string())
+        }
+    }
+
+    /// Convert an access token to JWT using the Nightscout API
+    pub async fn to_jwt(
+        nightscout: &Nightscout,
+        base_url: &str,
+        access_token: &str,
+    ) -> Result<Self, NightscoutError> {
+        let jwt_response = nightscout.request_jwt_token(base_url, access_token).await?;
+        Ok(Self::Bearer(jwt_response.token))
+    }
+
+    /// Apply the authentication method to an HTTP request
+    pub fn apply_to_request(&self, req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+        match self {
+            Self::ApiSecret(secret) => {
+                tracing::debug!("[AUTH] Using API-SECRET header authentication");
+                req.header("API-SECRET", secret)
+            }
+            Self::Bearer(token) => {
+                tracing::debug!("[AUTH] Using Bearer token authentication");
+                req.header("Authorization", format!("Bearer {}", token))
+            }
+        }
+    }
+
+    pub fn description(&self) -> &'static str {
+        match self {
+            Self::ApiSecret(_) => "API-SECRET header",
+            Self::Bearer(_) => "Bearer token",
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct JwtResponse {
+    pub token: String,
+    pub exp: i64,
+}
+
 #[derive(Debug)]
 /// Represents a Nightscout client for interacting with the Nightscout API.
 ///
@@ -30,19 +83,121 @@ pub enum NightscoutError {
     /// This variant is generated when a URL string cannot be successfully parsed.
     /// See [`url::ParseError`](https://docs.rs/url/latest/url/enum.ParseError.html) for more details.
     Url(#[from] url::ParseError),
+    #[error("JSON parsing error: {0}")]
+    Json(#[from] serde_json::Error),
 }
 
 #[allow(dead_code)]
 #[derive(Deserialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Entry {
-    #[serde(rename = "_id")]
-    id: String,
+    #[serde(rename = "_id", default)]
+    pub id: Option<String>,
     pub sgv: f32,
     #[serde(default)]
     pub direction: Option<String>,
-    #[serde(default)]
+    // Handle both possible field names for date string
+    #[serde(default, alias = "dateString")]
     pub date_string: Option<String>,
+    #[serde(default)]
+    pub date: Option<u64>,
+    #[serde(default)]
+    pub mills: Option<u64>,
+}
+
+// Custom deserializer for glucose field that can handle both numbers and strings
+fn deserialize_glucose<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::Visitor;
+
+    struct GlucoseVisitor;
+
+    impl<'de> Visitor<'de> for GlucoseVisitor {
+        type Value = Option<String>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("a string, number, or null")
+        }
+
+        fn visit_none<E>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+
+        fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            deserializer.deserialize_any(GlucoseValueVisitor)
+        }
+    }
+
+    struct GlucoseValueVisitor;
+
+    impl<'de> Visitor<'de> for GlucoseValueVisitor {
+        type Value = Option<String>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("a string or number")
+        }
+
+        fn visit_str<E>(self, value: &str) -> Result<Self::Value, E> {
+            Ok(Some(value.to_string()))
+        }
+
+        fn visit_i64<E>(self, value: i64) -> Result<Self::Value, E> {
+            Ok(Some(value.to_string()))
+        }
+
+        fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E> {
+            Ok(Some(value.to_string()))
+        }
+
+        fn visit_f64<E>(self, value: f64) -> Result<Self::Value, E> {
+            Ok(Some(value.to_string()))
+        }
+
+        fn visit_unit<E>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+    }
+
+    deserializer.deserialize_option(GlucoseVisitor)
+}
+
+#[allow(dead_code)]
+#[derive(Deserialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Treatment {
+    #[serde(rename = "_id", default)]
+    pub id: Option<String>,
+    #[serde(rename = "eventType", default)]
+    pub event_type: Option<String>,
+    #[serde(rename = "created_at", default)]
+    pub created_at: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_glucose")]
+    pub glucose: Option<String>,
+    #[serde(default)]
+    pub glucose_type: Option<String>,
+    #[serde(default)]
+    pub carbs: Option<f32>,
+    #[serde(default)]
+    pub protein: Option<f32>,
+    #[serde(default)]
+    pub fat: Option<f32>,
+    #[serde(default)]
+    pub insulin: Option<f32>,
+    #[serde(default)]
+    pub units: Option<String>,
+    #[serde(default)]
+    pub transmitter_id: Option<String>,
+    #[serde(default)]
+    pub sensor_code: Option<String>,
+    #[serde(default)]
+    pub notes: Option<String>,
+    #[serde(default)]
+    pub entered_by: Option<String>,
     #[serde(default)]
     pub date: Option<u64>,
     #[serde(default)]
@@ -115,15 +270,16 @@ impl Delta {
     }
 
     pub fn as_mmol(&self) -> Self {
-        Delta { value: ((self.value/18.) * 10.0).round() / 10.0}
+        Delta {
+            value: ((self.value / 18.) * 10.0).round() / 10.0,
+        }
     }
 }
 
 #[allow(dead_code)]
 impl Entry {
-
     pub fn svg_as_mmol(&self) -> f32 {
-        ((self.sgv/18.) * 10.0).round() / 10.0
+        ((self.sgv / 18.) * 10.0).round() / 10.0
     }
 
     pub fn millis_to_timestamp(&self) -> chrono::DateTime<Local> {
@@ -133,7 +289,7 @@ impl Entry {
             Local
                 .timestamp_millis_opt(ms as i64)
                 .single()
-                .unwrap_or_else(Local::now) 
+                .unwrap_or_else(Local::now)
         } else if let Some(date_str) = &self.date_string {
             match chrono::DateTime::parse_from_rfc3339(date_str) {
                 Ok(parsed) => parsed.with_timezone(&Local),
@@ -143,6 +299,7 @@ impl Entry {
             Local::now()
         }
     }
+
     pub fn millis_to_user_timezone(&self, user_timezone: &str) -> chrono::DateTime<chrono_tz::Tz> {
         let tz: Tz = user_timezone.parse().unwrap_or(chrono_tz::UTC);
         let timestamp = self.date.or(self.mills);
@@ -162,6 +319,7 @@ impl Entry {
             chrono::Utc::now().with_timezone(&tz)
         }
     }
+
     /// Converts the Nightscout trend text into a Trend enum.
     ///
     /// # Examples
@@ -190,10 +348,65 @@ impl Entry {
     }
 }
 
+#[allow(dead_code)]
+impl Treatment {
+    /// Get timestamp as local DateTime
+    pub fn millis_to_timestamp(&self) -> chrono::DateTime<Local> {
+        let timestamp = self.date.or(self.mills);
+
+        if let Some(ms) = timestamp {
+            Local
+                .timestamp_millis_opt(ms as i64)
+                .single()
+                .unwrap_or_else(Local::now)
+        } else if let Some(date_str) = &self.created_at {
+            match chrono::DateTime::parse_from_rfc3339(date_str) {
+                Ok(parsed) => parsed.with_timezone(&Local),
+                Err(_) => Local::now(),
+            }
+        } else {
+            Local::now()
+        }
+    }
+
+    pub fn millis_to_user_timezone(&self, user_timezone: &str) -> chrono::DateTime<chrono_tz::Tz> {
+        let tz: Tz = user_timezone.parse().unwrap_or(chrono_tz::UTC);
+        let timestamp = self.date.or(self.mills);
+
+        if let Some(ms) = timestamp {
+            if let Some(utc_dt) = chrono::DateTime::from_timestamp_millis(ms as i64) {
+                utc_dt.with_timezone(&tz)
+            } else {
+                chrono::Utc::now().with_timezone(&tz)
+            }
+        } else if let Some(date_str) = &self.created_at {
+            match chrono::DateTime::parse_from_rfc3339(date_str) {
+                Ok(parsed) => parsed.with_timezone(&tz),
+                Err(_) => chrono::Utc::now().with_timezone(&tz),
+            }
+        } else {
+            chrono::Utc::now().with_timezone(&tz)
+        }
+    }
+
+    pub fn is_insulin(&self) -> bool {
+        self.insulin.is_some() && self.insulin.unwrap_or(0.0) > 0.0
+    }
+
+    pub fn is_carbs(&self) -> bool {
+        self.carbs.is_some() && self.carbs.unwrap_or(0.0) > 0.0
+    }
+
+    pub fn is_glucose_reading(&self) -> bool {
+        self.glucose.is_some() && self.glucose_type.as_deref() == Some("Finger")
+    }
+}
+
 #[derive(Deserialize, Debug, Clone)]
 pub struct ProfileStore {
     pub timezone: String,
-    pub units: String,
+    #[serde(default)]
+    pub units: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -206,8 +419,8 @@ pub struct Profile {
 #[allow(dead_code)]
 #[derive(Debug, Default, Clone, Copy)]
 pub struct NightscoutRequestOptions {
-    pub count: Option<u8>,
-    pub hours_back: Option<u8>,
+    pub count: Option<u16>,
+    pub hours_back: Option<u16>,
 }
 
 #[allow(dead_code)]
@@ -218,7 +431,7 @@ impl NightscoutRequestOptions {
     /// let options = NightscoutRequestOptions::default()
     /// .count(5);
     /// ```
-    pub fn count(mut self, count: u8) -> Self {
+    pub fn count(mut self, count: u16) -> Self {
         self.count = Some(count);
         self
     }
@@ -230,7 +443,7 @@ impl NightscoutRequestOptions {
     /// let options = NightscoutRequestOptions::default()
     /// .hours_back(6); // Fetch entries from the past 6 hours
     /// ```
-    pub fn hours_back(mut self, hours: u8) -> Self {
+    pub fn hours_back(mut self, hours: u16) -> Self {
         self.hours_back = Some(hours);
         self
     }
@@ -238,28 +451,212 @@ impl NightscoutRequestOptions {
 
 #[allow(dead_code)]
 impl Nightscout {
-    /// Creates a new instance of `Nightscout` with a default HTTP client.
+    /// Creates a new instance of `Nightscout` with a robust HTTP client.
     pub fn new() -> Self {
+        let client = Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .danger_accept_invalid_certs(false) // Keep SSL verification enabled
+            .build()
+            .unwrap_or_else(|e| {
+                tracing::warn!("[HTTP] Failed to build custom client, using default: {}", e);
+                Client::new()
+            });
+
         Nightscout {
-            http_client: Client::new(),
+            http_client: client,
         }
     }
 
-    pub async fn get_profile(&self, base_url: &str) -> Result<Profile, NightscoutError> {
-        let base = Url::parse(base_url)?;
-        let url = base.join("api/v1/profile.json")?;
+    /// Request a JWT token from Nightscout using an access token
+    pub async fn request_jwt_token(
+        &self,
+        base_url: &str,
+        access_token: &str,
+    ) -> Result<JwtResponse, NightscoutError> {
+        tracing::debug!("[JWT] Requesting JWT token from Nightscout");
 
-        let req = self.http_client.get(url);
-        let res = req.send().await?.error_for_status()?;
-        let profiles: Vec<Profile> = res.json().await?;
+        let base = Url::parse(base_url.trim())?;
+        let url = base.join(&format!("api/v2/authorization/request/{}", access_token))?;
 
-        profiles.first().cloned().ok_or(NightscoutError::NoEntries)
+        tracing::debug!("[JWT] Request URL: {}", url);
+
+        let res = self.http_client.get(url.clone()).send().await?;
+
+        let res = match res.error_for_status() {
+            Ok(response) => {
+                tracing::info!("[HTTP] JWT response status: {}", response.status());
+                response
+            }
+            Err(e) => {
+                tracing::error!("[ERROR] JWT request failed: {}", e);
+                return Err(NightscoutError::Network(e));
+            }
+        };
+
+        let jwt_response: JwtResponse = res.json().await?;
+        tracing::info!(
+            "[OK] Successfully obtained JWT token (expires: {})",
+            jwt_response.exp
+        );
+
+        Ok(jwt_response)
+    }
+
+    pub async fn get_profile(
+        &self,
+        base_url: &str,
+        token: Option<&str>,
+    ) -> Result<Profile, NightscoutError> {
+        if base_url.trim().is_empty() {
+            return Err(NightscoutError::Url(url::ParseError::EmptyHost));
+        }
+
+        tracing::debug!("[API] Fetching profile from URL: '{}'", base_url);
+        let auth_method = token.map(AuthMethod::from_token);
+        if let Some(ref auth) = auth_method {
+            match auth {
+                AuthMethod::ApiSecret(secret) => {
+                    tracing::debug!(
+                        "[AUTH] Using API-SECRET authentication: {}***",
+                        &secret[..secret.len().min(8)]
+                    );
+                }
+                AuthMethod::Bearer(jwt) => {
+                    tracing::debug!(
+                        "[AUTH] Using Bearer JWT authentication: {}***",
+                        &jwt[..jwt.len().min(8)]
+                    );
+                }
+            }
+        } else {
+            tracing::debug!("[AUTH] No authentication token provided");
+        }
+
+        let base = match Url::parse(base_url.trim()) {
+            Ok(url) => {
+                if url.host().is_none() {
+                    tracing::error!("[ERROR] URL has no host: '{}'", base_url);
+                    return Err(NightscoutError::Url(url::ParseError::EmptyHost));
+                }
+                if !matches!(url.scheme(), "http" | "https") {
+                    tracing::error!(
+                        "[ERROR] Invalid scheme '{}' in URL: '{}'",
+                        url.scheme(),
+                        base_url
+                    );
+                    return Err(NightscoutError::Url(url::ParseError::InvalidIpv4Address));
+                }
+                tracing::debug!("[OK] Successfully parsed base URL: {}", url);
+                url
+            }
+            Err(e) => {
+                tracing::error!("[ERROR] Failed to parse base URL '{}': {}", base_url, e);
+                return Err(NightscoutError::Url(e));
+            }
+        };
+
+        let url = match base.join("api/v1/profile.json") {
+            Ok(url) => {
+                tracing::debug!("[API] Profile API URL: {}", url);
+                url
+            }
+            Err(e) => {
+                tracing::error!(
+                    "[ERROR] Failed to join profile URL with base '{}': {}",
+                    base,
+                    e
+                );
+                return Err(NightscoutError::Url(e));
+            }
+        };
+
+        let mut req = self.http_client.get(url.clone());
+
+        if let Some(auth) = auth_method {
+            req = auth.apply_to_request(req);
+            tracing::debug!("[OK] Applied {} authentication", auth.description());
+        }
+
+        tracing::debug!("[HTTP] Sending HTTP request to Nightscout API...");
+        let res = match req.send().await {
+            Ok(response) => {
+                tracing::debug!("[HTTP] Received HTTP response from Nightscout");
+                response
+            }
+            Err(e) => {
+                tracing::error!("[ERROR] Profile HTTP request failed: {}", e);
+                tracing::error!(
+                    "[DEBUG] Request details - URL: {}, Error type: {:?}",
+                    url,
+                    e
+                );
+
+                // Provide specific guidance for common SSL/connection issues
+                if e.is_timeout() {
+                    tracing::error!(
+                        "[SSL] Connection timeout - check if Nightscout site is accessible"
+                    );
+                } else if e.is_connect() {
+                    tracing::error!(
+                        "[SSL] Connection failed - possible SSL certificate or network issue"
+                    );
+                    tracing::error!(
+                        "[SSL] Try accessing {} in a browser to verify SSL certificate",
+                        url
+                    );
+                } else if e.to_string().contains("certificate")
+                    || e.to_string().contains("tls")
+                    || e.to_string().contains("ssl")
+                {
+                    tracing::error!("[SSL] SSL/TLS certificate error detected");
+                    tracing::error!(
+                        "[SSL] Your Nightscout site may have an invalid or expired SSL certificate"
+                    );
+                    tracing::error!(
+                        "[SSL] Contact your Nightscout hosting provider to fix the SSL certificate"
+                    );
+                }
+
+                return Err(NightscoutError::Network(e));
+            }
+        };
+
+        let res = match res.error_for_status() {
+            Ok(response) => {
+                tracing::info!("[HTTP] Profile response status: {}", response.status());
+                response
+            }
+            Err(e) => {
+                tracing::error!("[ERROR] Profile request returned error status: {}", e);
+                return Err(NightscoutError::Network(e));
+            }
+        };
+
+        let json: serde_json::Value = res.json().await?;
+        tracing::debug!("[JSON] Profile JSON structure: {:#?}", json);
+
+        let profile = if json.is_array() {
+            let profiles: Vec<Profile> = serde_json::from_value(json)?;
+            profiles
+                .into_iter()
+                .next()
+                .ok_or(NightscoutError::NoEntries)?
+        } else {
+            serde_json::from_value(json)?
+        };
+
+        Ok(profile)
     }
 
     /// Returns an `Entry` if available, or a `NightscoutError::NoEntries` if no entries are found.
-    pub async fn get_entry(&self, base_url: &str) -> Result<Entry, NightscoutError> {
+    pub async fn get_entry(
+        &self,
+        base_url: &str,
+        token: Option<&str>,
+    ) -> Result<Entry, NightscoutError> {
         let entries = self
-            .get_entries(base_url, NightscoutRequestOptions::default())
+            .get_entries(base_url, NightscoutRequestOptions::default(), token)
             .await?;
         entries.first().cloned().ok_or(NightscoutError::NoEntries)
     }
@@ -277,11 +674,27 @@ impl Nightscout {
         &self,
         base_url: &str,
         options: NightscoutRequestOptions,
+        token: Option<&str>,
     ) -> Result<Vec<Entry>, NightscoutError> {
-        let base = Url::parse(base_url)?;
+        if base_url.trim().is_empty() {
+            return Err(NightscoutError::Url(url::ParseError::EmptyHost));
+        }
+
+        let base = match Url::parse(base_url.trim()) {
+            Ok(url) => {
+                if url.host().is_none() {
+                    return Err(NightscoutError::Url(url::ParseError::EmptyHost));
+                }
+                if !matches!(url.scheme(), "http" | "https") {
+                    return Err(NightscoutError::Url(url::ParseError::InvalidIpv4Address));
+                }
+                url
+            }
+            Err(e) => return Err(NightscoutError::Url(e)),
+        };
 
         let url = if let Some(hours) = options.hours_back {
-            let count = options.count.unwrap_or(u8::MAX);
+            let count = options.count.unwrap_or(2000); // Fetch up to 2000 entries for large time ranges
             let now = Utc::now();
             let hours_ago = now - Duration::hours(hours as i64);
             let start_timestamp = hours_ago.timestamp_millis() as u64;
@@ -296,16 +709,87 @@ impl Nightscout {
 
             base.join(&query_params)?
         } else {
-            let count = options.count.unwrap_or(u8::MAX);
+            let count = options.count.unwrap_or(2000); // Increase default count from u8::MAX (255) to 2000
             base.join(&format!("api/v1/entries/sgv.json?count={count}"))?
         };
-        println!("{}", url);
-        let req = self.http_client.get(url);
-        let res = req.send().await?.error_for_status()?;
-        println!("{:#?}", res);
+        tracing::debug!("[API] Entries API URL: {}", url);
+        let mut req = self.http_client.get(url.clone());
+
+        let auth_method = token.map(AuthMethod::from_token);
+        if let Some(auth) = auth_method {
+            req = auth.apply_to_request(req);
+            tracing::debug!(
+                "[OK] Applied {} authentication for entries request",
+                auth.description()
+            );
+        }
+
+        tracing::debug!("[HTTP] Sending entries request to Nightscout...");
+        let res = match req.send().await {
+            Ok(response) => {
+                tracing::debug!("[HTTP] Received entries response from Nightscout");
+                response
+            }
+            Err(e) => {
+                tracing::error!("[ERROR] Entries HTTP request failed: {}", e);
+                tracing::error!(
+                    "[DEBUG] Request details - URL: {}, Error type: {:?}",
+                    url,
+                    e
+                );
+
+                // Provide specific guidance for common SSL/connection issues
+                if e.is_timeout() {
+                    tracing::error!(
+                        "[SSL] Connection timeout - check if Nightscout site is accessible"
+                    );
+                } else if e.is_connect() {
+                    tracing::error!(
+                        "[SSL] Connection failed - possible SSL certificate or network issue"
+                    );
+                    tracing::error!(
+                        "[SSL] Try accessing {} in a browser to verify SSL certificate",
+                        url
+                    );
+                } else if e.to_string().contains("certificate")
+                    || e.to_string().contains("tls")
+                    || e.to_string().contains("ssl")
+                {
+                    tracing::error!("[SSL] SSL/TLS certificate error detected");
+                    tracing::error!(
+                        "[SSL] Your Nightscout site may have an invalid or expired SSL certificate"
+                    );
+                    tracing::error!(
+                        "[SSL] Contact your Nightscout hosting provider to fix the SSL certificate"
+                    );
+                }
+
+                return Err(NightscoutError::Network(e));
+            }
+        };
+
+        let res = match res.error_for_status() {
+            Ok(response) => {
+                tracing::info!("[HTTP] Entries response status: {}", response.status());
+                response
+            }
+            Err(e) => {
+                tracing::error!("[ERROR] Entries request returned error status: {}", e);
+                return Err(NightscoutError::Network(e));
+            }
+        };
         let entries: Vec<Entry> = res.json().await?;
 
-        self.clean_entries(&entries)
+        // TEMPORARY: Skip entry cleaning to avoid sanitization issues
+        tracing::debug!(
+            "[ENTRIES] Retrieved {} entries (cleaning disabled)",
+            entries.len()
+        );
+        if entries.is_empty() {
+            Err(NightscoutError::NoEntries)
+        } else {
+            Ok(entries)
+        }
     }
 
     /// Convenience method to fetch entries from the past X hours.
@@ -328,10 +812,11 @@ impl Nightscout {
     pub async fn get_entries_for_hours(
         &self,
         base_url: &str,
-        hours: u8,
+        hours: u16,
+        token: Option<&str>,
     ) -> Result<Vec<Entry>, NightscoutError> {
         let options = NightscoutRequestOptions::default().hours_back(hours);
-        self.get_entries(base_url, options).await
+        self.get_entries(base_url, options, token).await
     }
 
     /// Gets the ID of the entry's date string
@@ -376,27 +861,27 @@ impl Nightscout {
         }
 
         let mut cleaned: Vec<Entry> = Vec::new();
-        
+
         for entry in entries {
             let is_duplicate = cleaned.iter().any(|existing| {
                 let entry_timestamp = entry.date.or(entry.mills).unwrap_or(0);
                 let existing_timestamp = existing.date.or(existing.mills).unwrap_or(0);
-                
+
                 // We consider the entries are duplicate only if:
                 // 1) Same SGV value
                 // 2) Timestamps within 5 seconds of each other
                 let timestamp_diff = (entry_timestamp as i64 - existing_timestamp as i64).abs();
                 let same_sgv = (entry.sgv - existing.sgv).abs() < 0.1;
                 let close_timestamps = timestamp_diff <= 5000;
-                
+
                 same_sgv && close_timestamps
             });
-            
+
             if !is_duplicate {
                 cleaned.push(entry.clone());
             }
         }
-        
+
         if cleaned.is_empty() {
             Err(NightscoutError::NoEntries)
         } else {
@@ -404,13 +889,20 @@ impl Nightscout {
         }
     }
 
-    pub async fn get_current_delta(&self, base_url: &str) -> Result<Delta, NightscoutError> {
+    pub async fn get_current_delta(
+        &self,
+        base_url: &str,
+        token: Option<&str>,
+    ) -> Result<Delta, NightscoutError> {
         //? Since clean entries could delete some entries due to the duplication glitch, it is
         //? safer to pull more than two. A check to verify that enough entries are available
         //? is also mandatory to avoid stupid errors.
         let options = NightscoutRequestOptions::default().count(4);
-        let entries = self.get_entries(base_url, options).await?;
-        println!("{}", entries.len());
+        let entries = self.get_entries(base_url, options, token).await?;
+        tracing::debug!(
+            "[DATA] Retrieved {} entries for delta calculation",
+            entries.len()
+        );
         if entries.len() < 2 {
             return Err(NightscoutError::NoEntries);
         }
@@ -418,5 +910,81 @@ impl Nightscout {
         let newer = &entries[0];
         let older = &entries[1];
         Ok(newer.get_delta(older))
+    }
+
+    /// Fetch treatments between specific timestamps
+    pub async fn fetch_treatments_between(
+        &self,
+        base_url: &str,
+        start_time: &str,
+        end_time: &str,
+        token: Option<&str>,
+    ) -> Result<Vec<Treatment>, NightscoutError> {
+        tracing::info!(
+            "[TREATMENTS] Fetching treatments between {} and {}",
+            start_time,
+            end_time
+        );
+
+        if base_url.trim().is_empty() {
+            return Err(NightscoutError::Url(url::ParseError::EmptyHost));
+        }
+
+        let base = match Url::parse(base_url.trim()) {
+            Ok(url) => {
+                if url.host().is_none() {
+                    return Err(NightscoutError::Url(url::ParseError::EmptyHost));
+                }
+                if !matches!(url.scheme(), "http" | "https") {
+                    return Err(NightscoutError::Url(url::ParseError::InvalidIpv4Address));
+                }
+                url
+            }
+            Err(e) => return Err(NightscoutError::Url(e)),
+        };
+
+        let query_params = format!(
+            "api/v1/treatments.json?find[created_at][$gte]={}&find[created_at][$lte]={}",
+            start_time, end_time
+        );
+
+        let url = base.join(&query_params)?;
+        tracing::debug!("[TREATMENTS] Request URL: {}", url);
+
+        let mut req = self.http_client.get(url.clone());
+
+        let auth_method = token.map(AuthMethod::from_token);
+        if let Some(auth) = auth_method {
+            req = auth.apply_to_request(req);
+            tracing::debug!("[TREATMENTS] Applied {} authentication", auth.description());
+        }
+
+        tracing::debug!("[TREATMENTS] Sending HTTP request...");
+        let res = match req.send().await {
+            Ok(response) => {
+                tracing::debug!("[TREATMENTS] Received response from Nightscout");
+                response
+            }
+            Err(e) => {
+                tracing::error!("[TREATMENTS] HTTP request failed: {}", e);
+                return Err(NightscoutError::Network(e));
+            }
+        };
+
+        let res = match res.error_for_status() {
+            Ok(response) => {
+                tracing::info!("[TREATMENTS] Response status: {}", response.status());
+                response
+            }
+            Err(e) => {
+                tracing::error!("[TREATMENTS] Request returned error status: {}", e);
+                return Err(NightscoutError::Network(e));
+            }
+        };
+
+        let treatments: Vec<Treatment> = res.json().await?;
+        tracing::info!("[TREATMENTS] Retrieved {} treatments", treatments.len());
+
+        Ok(treatments)
     }
 }
