@@ -651,26 +651,25 @@ pub fn draw_graph(
             );
         }
 
-        if treatment.is_glucose_reading() {
-            if let Some(glucose_str) = &treatment.glucose {
-                if let Ok(glucose_value) = glucose_str.parse::<f32>() {
-                    let glucose_y = project_y(glucose_value);
+        if treatment.is_glucose_reading()
+            && let Some(glucose_str) = &treatment.glucose
+            && let Ok(glucose_value) = glucose_str.parse::<f32>()
+        {
+            let glucose_y = project_y(glucose_value);
 
-                    tracing::trace!(
-                        "[GRAPH] Drawing glucose reading: {:.1} at ({:.1}, {:.1})",
-                        glucose_value,
-                        closest_x,
-                        glucose_y
-                    );
+            tracing::trace!(
+                "[GRAPH] Drawing glucose reading: {:.1} at ({:.1}, {:.1})",
+                glucose_value,
+                closest_x,
+                glucose_y
+            );
 
-                    draw_filled_circle_mut(
-                        &mut img,
-                        (closest_x as i32, glucose_y as i32),
-                        4,
-                        glucose_reading_col,
-                    );
-                }
-            }
+            draw_filled_circle_mut(
+                &mut img,
+                (closest_x as i32, glucose_y as i32),
+                4,
+                glucose_reading_col,
+            );
         }
     }
 

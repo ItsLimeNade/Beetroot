@@ -1,8 +1,78 @@
+use aes_gcm::{
+    Aes256Gcm, Key, Nonce,
+    aead::{Aead, AeadCore, KeyInit, OsRng},
+};
+use base64::{Engine as _, engine::general_purpose};
 use serde_json;
 use sqlx::{
     Row, SqlitePool as Pool,
     sqlite::{SqliteConnectOptions, SqlitePool},
 };
+
+/// Secure token encryption/decryption module
+struct TokenCrypto {
+    cipher: Aes256Gcm,
+}
+
+impl TokenCrypto {
+    /// Create a new TokenCrypto instance with a derived key
+    fn new() -> Self {
+        let key = Self::derive_key();
+        let cipher = Aes256Gcm::new(&key);
+        Self { cipher }
+    }
+
+    /// Derive a deterministic encryption key from environment
+    fn derive_key() -> Key<Aes256Gcm> {
+        let salt = dotenvy::var("ENCRYPTION_SALT")
+            .unwrap_or_else(|_| "beetroot_default_salt_change_in_production".to_string());
+
+        let key_material = format!("beetroot_token_encryption_v1_{}", salt);
+        let hash = blake3::hash(key_material.as_bytes());
+
+        *Key::<Aes256Gcm>::from_slice(hash.as_bytes())
+    }
+
+    /// Encrypt a token string
+    fn encrypt(&self, plaintext: &str) -> Result<String, Box<dyn std::error::Error>> {
+        let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+        let ciphertext = self
+            .cipher
+            .encrypt(&nonce, plaintext.as_bytes())
+            .map_err(|e| format!("Encryption failed: {}", e))?;
+
+        let mut combined = nonce.to_vec();
+        combined.extend_from_slice(&ciphertext);
+
+        Ok(general_purpose::STANDARD.encode(combined))
+    }
+
+    /// Decrypt a token string
+    fn decrypt(&self, encrypted: &str) -> Result<String, Box<dyn std::error::Error>> {
+        let combined = general_purpose::STANDARD.decode(encrypted)?;
+
+        if combined.len() < 12 {
+            return Err("Invalid encrypted data".into());
+        }
+
+        let (nonce_bytes, ciphertext) = combined.split_at(12);
+        let nonce = Nonce::from_slice(nonce_bytes);
+
+        let plaintext = self
+            .cipher
+            .decrypt(nonce, ciphertext)
+            .map_err(|e| format!("Decryption failed: {}", e))?;
+
+        Ok(String::from_utf8(plaintext)?)
+    }
+}
+
+/// Global encryption instance - safely managed with OnceLock
+static CRYPTO_INSTANCE: std::sync::OnceLock<TokenCrypto> = std::sync::OnceLock::new();
+
+fn get_crypto() -> &'static TokenCrypto {
+    CRYPTO_INSTANCE.get_or_init(TokenCrypto::new)
+}
 
 #[derive(Clone, Debug)]
 pub struct NightscoutInfo {
@@ -15,6 +85,7 @@ pub struct NightscoutInfo {
 #[derive(Clone, Debug)]
 pub struct UserInfo {
     pub nightscout: NightscoutInfo,
+    #[allow(dead_code)]
     pub stickers: Vec<String>,
 }
 
@@ -93,17 +164,40 @@ impl Database {
         let allowed_people_json =
             serde_json::to_string(&nightscout_info.allowed_people).unwrap_or("[]".to_string());
 
+        let encrypted_token = if let Some(ref token) = nightscout_info.nightscout_token {
+            match get_crypto().encrypt(token) {
+                Ok(encrypted) => {
+                    tracing::debug!("[ENCRYPTION] Token encrypted for user {}", discord_id);
+                    Some(encrypted)
+                }
+                Err(e) => {
+                    tracing::error!(
+                        "[ENCRYPTION] Failed to encrypt token for user {}: {}",
+                        discord_id,
+                        e
+                    );
+                    return Err(sqlx::Error::Protocol("Token encryption failed".to_string()));
+                }
+            }
+        } else {
+            None
+        };
+
         sqlx::query(
             "INSERT INTO users (discord_id, nightscout_url, nightscout_token, is_private, allowed_people) VALUES (?, ?, ?, ?, ?)"
         )
         .bind(discord_id as i64)
         .bind(&nightscout_info.nightscout_url)
-        .bind(&nightscout_info.nightscout_token)
+        .bind(&encrypted_token)
         .bind(nightscout_info.is_private as i32)
         .bind(allowed_people_json)
         .execute(&self.pool)
         .await?;
 
+        tracing::info!(
+            "[SECURITY] User {} token stored with encryption",
+            discord_id
+        );
         Ok(())
     }
 
@@ -115,20 +209,43 @@ impl Database {
         let allowed_people_json =
             serde_json::to_string(&nightscout_info.allowed_people).unwrap_or("[]".to_string());
 
+        let encrypted_token = if let Some(ref token) = nightscout_info.nightscout_token {
+            match get_crypto().encrypt(token) {
+                Ok(encrypted) => {
+                    tracing::debug!("[ENCRYPTION] Token encrypted for user {}", discord_id);
+                    Some(encrypted)
+                }
+                Err(e) => {
+                    tracing::error!(
+                        "[ENCRYPTION] Failed to encrypt token for user {}: {}",
+                        discord_id,
+                        e
+                    );
+                    return Err(sqlx::Error::Protocol("Token encryption failed".to_string()));
+                }
+            }
+        } else {
+            None
+        };
+
         sqlx::query(
             "UPDATE users SET nightscout_url = ?, nightscout_token = ?, is_private = ?, allowed_people = ? WHERE discord_id = ?"
         )
         .bind(&nightscout_info.nightscout_url)
-        .bind(&nightscout_info.nightscout_token)
+        .bind(&encrypted_token)
         .bind(nightscout_info.is_private as i32)
         .bind(allowed_people_json)
         .bind(discord_id as i64)
         .execute(&self.pool)
         .await?;
 
+        tracing::info!(
+            "[SECURITY] User {} token updated with encryption",
+            discord_id
+        );
         Ok(())
     }
-
+    #[allow(dead_code)]
     pub async fn delete_user(&self, discord_id: u64) -> Result<(), sqlx::Error> {
         sqlx::query("DELETE FROM stickers WHERE discord_id = ?")
             .bind(discord_id as i64)
@@ -142,7 +259,7 @@ impl Database {
 
         Ok(())
     }
-
+    #[allow(dead_code)]
     pub async fn insert_sticker(
         &self,
         discord_id: u64,
@@ -157,6 +274,7 @@ impl Database {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub async fn delete_sticker(&self, sticker_id: i32) -> Result<(), sqlx::Error> {
         sqlx::query("DELETE FROM stickers WHERE id = ?")
             .bind(sticker_id)
@@ -174,10 +292,33 @@ impl Database {
         .fetch_one(&self.pool).await?;
 
         let nightscout_url: Option<String> = row.get("nightscout_url");
-        let nightscout_token: Option<String> = row.get("nightscout_token");
+        let encrypted_token: Option<String> = row.get("nightscout_token");
         let is_private: bool = row.get::<i32, _>("is_private") != 0;
         let allowed_people: Vec<u64> =
             serde_json::from_str(&row.get::<String, _>("allowed_people")).unwrap_or_default();
+
+        let nightscout_token = if let Some(encrypted) = encrypted_token {
+            match get_crypto().decrypt(&encrypted) {
+                Ok(decrypted) => {
+                    tracing::debug!("[ENCRYPTION] Token decrypted for user {}", user_id);
+                    Some(decrypted)
+                }
+                Err(e) => {
+                    tracing::error!(
+                        "[ENCRYPTION] Failed to decrypt token for user {}: {}",
+                        user_id,
+                        e
+                    );
+                    tracing::warn!(
+                        "[ENCRYPTION] User {} may need to re-enter their token",
+                        user_id
+                    );
+                    None
+                }
+            }
+        } else {
+            None
+        };
 
         let info = NightscoutInfo {
             nightscout_url,
@@ -187,6 +328,61 @@ impl Database {
         };
 
         Ok(info)
+    }
+
+    /// Migrate existing unencrypted tokens to encrypted format
+    /// This should be run once after deploying the encryption feature
+    #[allow(dead_code)]
+    pub async fn migrate_tokens_to_encrypted(&self) -> Result<u32, sqlx::Error> {
+        tracing::info!("[MIGRATION] Starting token encryption migration");
+
+        let rows = sqlx::query(
+            "SELECT discord_id, nightscout_token FROM users WHERE nightscout_token IS NOT NULL",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut migrated_count = 0;
+
+        for row in rows {
+            let discord_id: i64 = row.get("discord_id");
+            let current_token: String = row.get("nightscout_token");
+
+            if current_token.len() > 100 && general_purpose::STANDARD.decode(&current_token).is_ok()
+            {
+                tracing::debug!(
+                    "[MIGRATION] Token for user {} appears already encrypted, skipping",
+                    discord_id
+                );
+                continue;
+            }
+
+            match get_crypto().encrypt(&current_token) {
+                Ok(encrypted_token) => {
+                    sqlx::query("UPDATE users SET nightscout_token = ? WHERE discord_id = ?")
+                        .bind(&encrypted_token)
+                        .bind(discord_id)
+                        .execute(&self.pool)
+                        .await?;
+
+                    migrated_count += 1;
+                    tracing::info!("[MIGRATION] Encrypted token for user {}", discord_id);
+                }
+                Err(e) => {
+                    tracing::error!(
+                        "[MIGRATION] Failed to encrypt token for user {}: {}",
+                        discord_id,
+                        e
+                    );
+                }
+            }
+        }
+
+        tracing::info!(
+            "[MIGRATION] Completed token encryption migration: {} tokens encrypted",
+            migrated_count
+        );
+        Ok(migrated_count)
     }
 
     async fn get_user_stickers(&self, user_id: u64) -> Result<Vec<String>, sqlx::Error> {

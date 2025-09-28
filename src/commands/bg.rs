@@ -45,6 +45,7 @@ pub async fn run(
 
     let target_user_data = handler.database.get_user_info(target_user_id).await?;
 
+    #[allow(clippy::if_same_then_else)]
     let can_access = if target_user_id == command_user_id {
         true
     } else if !target_user_data.nightscout.is_private {
