@@ -88,13 +88,51 @@ pub enum NightscoutError {
 #[serde(rename_all = "camelCase")]
 pub struct Entry {
     #[serde(rename = "_id", default)]
-    id: Option<String>,
+    pub id: Option<String>,
     pub sgv: f32,
     #[serde(default)]
     pub direction: Option<String>,
     // Handle both possible field names for date string
     #[serde(default, alias = "dateString")]
     pub date_string: Option<String>,
+    #[serde(default)]
+    pub date: Option<u64>,
+    #[serde(default)]
+    pub mills: Option<u64>,
+}
+
+#[allow(dead_code)]
+#[derive(Deserialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Treatment {
+    #[serde(rename = "_id", default)]
+    pub id: Option<String>,
+    #[serde(rename = "eventType", default)]
+    pub event_type: Option<String>,
+    #[serde(rename = "created_at", default)]
+    pub created_at: Option<String>,
+    #[serde(default)]
+    pub glucose: Option<String>,
+    #[serde(default)]
+    pub glucose_type: Option<String>,
+    #[serde(default)]
+    pub carbs: Option<f32>,
+    #[serde(default)]
+    pub protein: Option<f32>,
+    #[serde(default)]
+    pub fat: Option<f32>,
+    #[serde(default)]
+    pub insulin: Option<f32>,
+    #[serde(default)]
+    pub units: Option<String>,
+    #[serde(default)]
+    pub transmitter_id: Option<String>,
+    #[serde(default)]
+    pub sensor_code: Option<String>,
+    #[serde(default)]
+    pub notes: Option<String>,
+    #[serde(default)]
+    pub entered_by: Option<String>,
     #[serde(default)]
     pub date: Option<u64>,
     #[serde(default)]
@@ -245,6 +283,60 @@ impl Entry {
     }
 }
 
+#[allow(dead_code)]
+impl Treatment {
+    /// Get timestamp as local DateTime
+    pub fn millis_to_timestamp(&self) -> chrono::DateTime<Local> {
+        let timestamp = self.date.or(self.mills);
+
+        if let Some(ms) = timestamp {
+            Local
+                .timestamp_millis_opt(ms as i64)
+                .single()
+                .unwrap_or_else(Local::now)
+        } else if let Some(date_str) = &self.created_at {
+            match chrono::DateTime::parse_from_rfc3339(date_str) {
+                Ok(parsed) => parsed.with_timezone(&Local),
+                Err(_) => Local::now(),
+            }
+        } else {
+            Local::now()
+        }
+    }
+
+    pub fn millis_to_user_timezone(&self, user_timezone: &str) -> chrono::DateTime<chrono_tz::Tz> {
+        let tz: Tz = user_timezone.parse().unwrap_or(chrono_tz::UTC);
+        let timestamp = self.date.or(self.mills);
+
+        if let Some(ms) = timestamp {
+            if let Some(utc_dt) = chrono::DateTime::from_timestamp_millis(ms as i64) {
+                utc_dt.with_timezone(&tz)
+            } else {
+                chrono::Utc::now().with_timezone(&tz)
+            }
+        } else if let Some(date_str) = &self.created_at {
+            match chrono::DateTime::parse_from_rfc3339(date_str) {
+                Ok(parsed) => parsed.with_timezone(&tz),
+                Err(_) => chrono::Utc::now().with_timezone(&tz),
+            }
+        } else {
+            chrono::Utc::now().with_timezone(&tz)
+        }
+    }
+
+    pub fn is_insulin(&self) -> bool {
+        self.insulin.is_some() && self.insulin.unwrap_or(0.0) > 0.0
+    }
+
+    pub fn is_carbs(&self) -> bool {
+        self.carbs.is_some() && self.carbs.unwrap_or(0.0) > 0.0
+    }
+
+    pub fn is_glucose_reading(&self) -> bool {
+        self.glucose.is_some() && self.glucose_type.as_deref() == Some("Finger")
+    }
+}
+
 #[derive(Deserialize, Debug, Clone)]
 pub struct ProfileStore {
     pub timezone: String,
@@ -262,8 +354,8 @@ pub struct Profile {
 #[allow(dead_code)]
 #[derive(Debug, Default, Clone, Copy)]
 pub struct NightscoutRequestOptions {
-    pub count: Option<u8>,
-    pub hours_back: Option<u8>,
+    pub count: Option<u16>,
+    pub hours_back: Option<u16>,
 }
 
 #[allow(dead_code)]
@@ -274,7 +366,7 @@ impl NightscoutRequestOptions {
     /// let options = NightscoutRequestOptions::default()
     /// .count(5);
     /// ```
-    pub fn count(mut self, count: u8) -> Self {
+    pub fn count(mut self, count: u16) -> Self {
         self.count = Some(count);
         self
     }
@@ -286,7 +378,7 @@ impl NightscoutRequestOptions {
     /// let options = NightscoutRequestOptions::default()
     /// .hours_back(6); // Fetch entries from the past 6 hours
     /// ```
-    pub fn hours_back(mut self, hours: u8) -> Self {
+    pub fn hours_back(mut self, hours: u16) -> Self {
         self.hours_back = Some(hours);
         self
     }
@@ -467,7 +559,7 @@ impl Nightscout {
         };
 
         let url = if let Some(hours) = options.hours_back {
-            let count = options.count.unwrap_or(u8::MAX);
+            let count = options.count.unwrap_or(2000); // Fetch up to 2000 entries for large time ranges
             let now = Utc::now();
             let hours_ago = now - Duration::hours(hours as i64);
             let start_timestamp = hours_ago.timestamp_millis() as u64;
@@ -482,7 +574,7 @@ impl Nightscout {
 
             base.join(&query_params)?
         } else {
-            let count = options.count.unwrap_or(u8::MAX);
+            let count = options.count.unwrap_or(2000); // Increase default count from u8::MAX (255) to 2000
             base.join(&format!("api/v1/entries/sgv.json?count={count}"))?
         };
         tracing::debug!("[API] Entries API URL: {}", url);
@@ -519,7 +611,13 @@ impl Nightscout {
         };
         let entries: Vec<Entry> = res.json().await?;
 
-        self.clean_entries(&entries)
+        // TEMPORARY: Skip entry cleaning to avoid sanitization issues
+        tracing::debug!("[ENTRIES] Retrieved {} entries (cleaning disabled)", entries.len());
+        if entries.is_empty() {
+            Err(NightscoutError::NoEntries)
+        } else {
+            Ok(entries)
+        }
     }
 
     /// Convenience method to fetch entries from the past X hours.
@@ -542,7 +640,7 @@ impl Nightscout {
     pub async fn get_entries_for_hours(
         &self,
         base_url: &str,
-        hours: u8,
+        hours: u16,
         token: Option<&str>,
     ) -> Result<Vec<Entry>, NightscoutError> {
         let options = NightscoutRequestOptions::default().hours_back(hours);
@@ -633,5 +731,77 @@ impl Nightscout {
         let newer = &entries[0];
         let older = &entries[1];
         Ok(newer.get_delta(older))
+    }
+
+    /// Fetch treatments between specific timestamps
+    pub async fn fetch_treatments_between(
+        &self,
+        base_url: &str,
+        start_time: &str,
+        end_time: &str,
+        token: Option<&str>,
+    ) -> Result<Vec<Treatment>, NightscoutError> {
+        tracing::info!("[TREATMENTS] Fetching treatments between {} and {}", start_time, end_time);
+
+        if base_url.trim().is_empty() {
+            return Err(NightscoutError::Url(url::ParseError::EmptyHost));
+        }
+
+        let base = match Url::parse(base_url.trim()) {
+            Ok(url) => {
+                if url.host().is_none() {
+                    return Err(NightscoutError::Url(url::ParseError::EmptyHost));
+                }
+                if !matches!(url.scheme(), "http" | "https") {
+                    return Err(NightscoutError::Url(url::ParseError::InvalidIpv4Address));
+                }
+                url
+            }
+            Err(e) => return Err(NightscoutError::Url(e)),
+        };
+
+        let query_params = format!(
+            "api/v1/treatments.json?find[created_at][$gte]={}&find[created_at][$lte]={}",
+            start_time, end_time
+        );
+
+        let url = base.join(&query_params)?;
+        tracing::debug!("[TREATMENTS] Request URL: {}", url);
+
+        let mut req = self.http_client.get(url.clone());
+
+        let auth_method = token.map(AuthMethod::from_token);
+        if let Some(auth) = auth_method {
+            req = auth.apply_to_request(req);
+            tracing::debug!("[TREATMENTS] Applied {} authentication", auth.description());
+        }
+
+        tracing::debug!("[TREATMENTS] Sending HTTP request...");
+        let res = match req.send().await {
+            Ok(response) => {
+                tracing::debug!("[TREATMENTS] Received response from Nightscout");
+                response
+            }
+            Err(e) => {
+                tracing::error!("[TREATMENTS] HTTP request failed: {}", e);
+                return Err(NightscoutError::Network(e));
+            }
+        };
+
+        let res = match res.error_for_status() {
+            Ok(response) => {
+                tracing::info!("[TREATMENTS] Response status: {}", response.status());
+                response
+            }
+            Err(e) => {
+                tracing::error!("[TREATMENTS] Request returned error status: {}", e);
+                return Err(NightscoutError::Network(e));
+            }
+        };
+
+        let treatments: Vec<Treatment> = res.json().await?;
+        tracing::info!("[TREATMENTS] Retrieved {} treatments", treatments.len());
+
+        Ok(treatments)
     }
 }

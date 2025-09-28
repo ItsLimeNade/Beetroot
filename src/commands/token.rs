@@ -1,8 +1,6 @@
 use crate::Handler;
 use serenity::all::{
-    Colour, CommandInteraction, Context, CreateCommand,
-    CreateEmbed, CreateInteractionResponse, CreateInteractionResponseMessage, CreateQuickModal,
-    InteractionContext,
+    Colour, CommandInteraction, Context, CreateCommand, CreateEmbed, CreateInputText, CreateInteractionResponse, CreateInteractionResponseMessage, CreateQuickModal, InteractionContext
 };
 
 pub async fn run(
@@ -24,7 +22,15 @@ pub async fn run(
 
     let modal = CreateQuickModal::new("Nightscout API Token")
         .timeout(std::time::Duration::from_secs(600))
-        .paragraph_field("Enter your Nightscout Access Token\n\nSupported formats:\n• Subject token: mysite-a1b2c3d4e5f6\n• JWT token: eyJ0eXAiOiJKV1QiLCJhbGc...\n\nAccess tokens use API-SECRET header\nJWT tokens use Bearer authorization\n\nLeave empty to remove token");
+                .field(
+            CreateInputText::new(
+                serenity::all::InputTextStyle::Short,
+                "Nightscout Token (optional)",
+                "",
+            )
+            .required(false)
+            .placeholder("leave empty if you don't want to answer"),
+        );
 
     let response = interaction.quick_modal(context, modal).await?;
     let modal_response = response.unwrap();

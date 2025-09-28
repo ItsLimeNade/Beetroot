@@ -55,7 +55,7 @@ pub async fn run(
     let token = user_data.nightscout.nightscout_token.as_deref();
     let entries = match handler
         .nightscout_client
-        .get_entries_for_hours(base_url, hours as u8, token)
+        .get_entries_for_hours(base_url, hours as u16, token)
         .await
     {
         Ok(entries) => entries,
@@ -82,12 +82,30 @@ pub async fn run(
         }
     };
 
-    let buffer = draw_graph(&entries, &profile, &handler, None)?;
+    // Fetch treatments for the same time period as the graph
+    let now = chrono::Utc::now();
+    let hours_ago = now - chrono::Duration::hours(hours);
+    let start_time = hours_ago.to_rfc3339();
+    let end_time = now.to_rfc3339();
+
+    let treatments = match handler
+        .nightscout_client
+        .fetch_treatments_between(base_url, &start_time, &end_time, token)
+        .await
+    {
+        Ok(treatments) => treatments,
+        Err(e) => {
+            eprintln!("Failed to get treatments for graph: {}", e);
+            vec![] // Use empty treatments if we can't fetch them
+        }
+    };
+
+    let buffer = draw_graph(&entries, &treatments, &profile, &handler, hours as u16, None)?;
 
     let graph_attachment = CreateAttachment::bytes(buffer, "graph.png");
     let graph_edit_attachment = EditAttachments::new().add(graph_attachment);
 
-    // Use followup instead of create_response
+    // Send only the graph with no message
     let message = EditInteractionResponse::new().attachments(graph_edit_attachment);
 
     interaction.edit_response(&context.http, message).await?;
@@ -99,9 +117,9 @@ pub fn register() -> CreateCommand {
     CreateCommand::new("graph")
         .description("Sends a graph of your latest blood glucose.")
         .add_option(
-            CreateCommandOption::new(CommandOptionType::Integer, "hours", "3h to 24h of data.")
+            CreateCommandOption::new(CommandOptionType::Integer, "hours", "3h to 720h (30 days) of data.")
                 .min_int_value(3)
-                .max_int_value(24)
+                .max_int_value(720)
                 .required(false),
         )
         .contexts(vec![
