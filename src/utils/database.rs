@@ -439,4 +439,52 @@ impl Database {
 
         Ok(())
     }
+
+    pub async fn add_allowed_user(
+        &self,
+        owner_id: u64,
+        allowed_user_id: u64,
+    ) -> Result<bool, sqlx::Error> {
+        let user_data = self.get_user_info(owner_id).await?;
+        let mut allowed_people = user_data.nightscout.allowed_people;
+
+        if allowed_people.contains(&allowed_user_id) {
+            return Ok(false);
+        }
+
+        allowed_people.push(allowed_user_id);
+        let allowed_people_json = serde_json::to_string(&allowed_people).unwrap_or("[]".to_string());
+
+        sqlx::query("UPDATE users SET allowed_people = ? WHERE discord_id = ?")
+            .bind(allowed_people_json)
+            .bind(owner_id as i64)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(true)
+    }
+
+    pub async fn remove_allowed_user(
+        &self,
+        owner_id: u64,
+        user_to_remove_id: u64,
+    ) -> Result<bool, sqlx::Error> {
+        let user_data = self.get_user_info(owner_id).await?;
+        let mut allowed_people = user_data.nightscout.allowed_people;
+
+        if !allowed_people.contains(&user_to_remove_id) {
+            return Ok(false);
+        }
+
+        allowed_people.retain(|&id| id != user_to_remove_id);
+        let allowed_people_json = serde_json::to_string(&allowed_people).unwrap_or("[]".to_string());
+
+        sqlx::query("UPDATE users SET allowed_people = ? WHERE discord_id = ?")
+            .bind(allowed_people_json)
+            .bind(owner_id as i64)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(true)
+    }
 }

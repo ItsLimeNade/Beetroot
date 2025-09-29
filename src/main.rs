@@ -44,6 +44,7 @@ impl EventHandler for Handler {
                             commands::error::run(&context, command, "You need to register your Nightscout URL first. Use `/setup` to get started.").await
                         } else {
                             match command.data.name.as_str() {
+                                "allow" => commands::allow::run(self, &context, command).await,
                                 "bg" => commands::bg::run(self, &context, command).await,
                                 "graph" => commands::graph::run(self, &context, command).await,
                                 "setup" => commands::setup::run(self, &context, command).await,
@@ -57,7 +58,7 @@ impl EventHandler for Handler {
                                     commands::error::run(
                                         &context,
                                         command,
-                                        &format!("Unknown command: `{}`. Available commands are: `/bg`, `/graph`, `/setup`, `/set-threshold`, `/token`", unknown_command)
+                                        &format!("Unknown command: `{}`. Available commands are: `/allow`, `/bg`, `/graph`, `/setup`, `/set-threshold`, `/token`", unknown_command)
                                     ).await
                                 }
                             }
@@ -118,8 +119,9 @@ impl EventHandler for Handler {
     async fn ready(&self, context: Context, ready: Ready) {
         tracing::info!("[BOT] {} is ready and connected!", ready.user.name);
         let commands_vec = vec![
-            commands::graph::register(),
+            commands::allow::register(),
             commands::bg::register(),
+            commands::graph::register(),
             commands::setup::register(),
             commands::set_threshold::register(),
             commands::token::register(),

@@ -2,7 +2,7 @@ use crate::Handler;
 use crate::utils::graph::draw_graph;
 use serenity::all::{
     CommandInteraction, CommandOptionType, Context, CreateInteractionResponse,
-    CreateInteractionResponseMessage, EditAttachments, EditInteractionResponse, InteractionContext,
+    CreateInteractionResponseMessage, InteractionContext,
     ResolvedOption, ResolvedValue, User,
 };
 use serenity::builder::{CreateAttachment, CreateCommand, CreateCommandOption};
@@ -12,13 +12,6 @@ pub async fn run(
     context: &Context,
     interaction: &CommandInteraction,
 ) -> anyhow::Result<()> {
-    // IMMEDIATELY defer the response (within 3 seconds)
-    interaction
-        .create_response(
-            &context.http,
-            CreateInteractionResponse::Defer(CreateInteractionResponseMessage::new()),
-        )
-        .await?;
 
     let mut hours = 3_i64;
     let mut target_user: Option<&User> = None;
@@ -55,7 +48,7 @@ pub async fn run(
         } else if target_data.nightscout.allowed_people.contains(&interaction.user.id.get()) {
             (target_data, interaction.user.id.get(), true)
         } else {
-            crate::commands::error::edit_response(
+            crate::commands::error::run(
                 context,
                 interaction,
                 "You don't have permission to view this user's graph. The user has a private profile and hasn't authorized you.",
@@ -85,7 +78,7 @@ pub async fn run(
             "Your Nightscout URL is empty. Please run `/setup` to configure it properly."
         };
 
-        crate::commands::error::edit_response(context, interaction, error_msg).await?;
+        crate::commands::error::run(context, interaction, error_msg).await?;
         return Ok(());
     }
 
@@ -104,7 +97,7 @@ pub async fn run(
                 "Could not fetch glucose data from your Nightscout site. Please check your URL configuration with `/setup`."
             };
 
-            crate::commands::error::edit_response(context, interaction, error_msg).await?;
+            crate::commands::error::run(context, interaction, error_msg).await?;
             return Ok(());
         }
     };
@@ -140,12 +133,13 @@ pub async fn run(
     let buffer = draw_graph(&entries, &treatments, &profile, &user_data.nightscout, handler, hours as u16, None)?;
 
     let graph_attachment = CreateAttachment::bytes(buffer, "graph.png");
-    let graph_edit_attachment = EditAttachments::new().add(graph_attachment);
 
     // Send only the graph with no message
-    let message = EditInteractionResponse::new().attachments(graph_edit_attachment);
+    let message = CreateInteractionResponseMessage::new().add_file(graph_attachment);
 
-    interaction.edit_response(&context.http, message).await?;
+    interaction
+        .create_response(&context.http, CreateInteractionResponse::Message(message))
+        .await?;
 
     Ok(())
 }
