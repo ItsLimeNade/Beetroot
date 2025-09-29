@@ -47,6 +47,8 @@ impl EventHandler for Handler {
                                 "allow" => commands::allow::run(self, &context, command).await,
                                 "bg" => commands::bg::run(self, &context, command).await,
                                 "graph" => commands::graph::run(self, &context, command).await,
+                                "help" => commands::help::run(self, &context, command).await,
+                                "info" => commands::info::run(self, &context, command).await,
                                 "setup" => commands::setup::run(self, &context, command).await,
                                 "set-threshold" => commands::set_threshold::run(self, &context, command).await,
                                 "token" => commands::token::run(self, &context, command).await,
@@ -58,7 +60,7 @@ impl EventHandler for Handler {
                                     commands::error::run(
                                         &context,
                                         command,
-                                        &format!("Unknown command: `{}`. Available commands are: `/allow`, `/bg`, `/graph`, `/setup`, `/set-threshold`, `/token`", unknown_command)
+                                        &format!("Unknown command: `{}`. Available commands are: `/allow`, `/bg`, `/graph`, `/help`, `/info`, `/setup`, `/set-threshold`, `/token`", unknown_command)
                                     ).await
                                 }
                             }
@@ -70,6 +72,9 @@ impl EventHandler for Handler {
             Interaction::Component(ref component) => match component.data.custom_id.as_str() {
                 "setup_private" | "setup_public" => {
                     commands::setup::handle_button(self, &context, component).await
+                }
+                id if id.starts_with("help_page_") => {
+                    commands::help::handle_button(self, &context, component).await
                 }
                 _ => Ok(()),
             },
@@ -122,6 +127,8 @@ impl EventHandler for Handler {
             commands::allow::register(),
             commands::bg::register(),
             commands::graph::register(),
+            commands::help::register(),
+            commands::info::register(),
             commands::setup::register(),
             commands::set_threshold::register(),
             commands::token::register(),

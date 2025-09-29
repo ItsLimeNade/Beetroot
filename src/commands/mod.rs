@@ -2,6 +2,8 @@ pub mod allow;
 pub mod bg;
 pub mod error;
 pub mod graph;
+pub mod help;
+pub mod info;
 pub mod set_threshold;
 pub mod set_visibility;
 pub mod setup;
