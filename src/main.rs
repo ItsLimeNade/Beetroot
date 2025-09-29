@@ -54,18 +54,11 @@ impl EventHandler for Handler {
                                         "Unknown slash command received: '{}'",
                                         unknown_command
                                     );
-                                    let data = CreateInteractionResponseMessage::new()
-                                        .content(format!("[ERROR] Unknown command: `{}`. Available commands are: `/bg`, `/graph`, `/setup`, `/set-threshold`, `/token`", unknown_command));
-                                    let builder = CreateInteractionResponse::Message(data);
-                                    command
-                                        .create_response(&context.http, builder)
-                                        .await
-                                        .map_err(|e| {
-                                            anyhow::anyhow!(
-                                                "Failed to send unknown command response: {}",
-                                                e
-                                            )
-                                        })
+                                    commands::error::run(
+                                        &context,
+                                        command,
+                                        &format!("Unknown command: `{}`. Available commands are: `/bg`, `/graph`, `/setup`, `/set-threshold`, `/token`", unknown_command)
+                                    ).await
                                 }
                             }
                         }

@@ -1,7 +1,7 @@
 use crate::Handler;
 use crate::utils::graph::draw_graph;
 use serenity::all::{
-    Colour, CommandInteraction, CommandOptionType, Context, CreateEmbed, CreateInteractionResponse,
+    CommandInteraction, CommandOptionType, Context, CreateInteractionResponse,
     CreateInteractionResponseMessage, EditAttachments, EditInteractionResponse, InteractionContext,
     ResolvedOption, ResolvedValue, User,
 };
@@ -55,15 +55,12 @@ pub async fn run(
         } else if target_data.nightscout.allowed_people.contains(&interaction.user.id.get()) {
             (target_data, interaction.user.id.get(), true)
         } else {
-            let embed = CreateEmbed::new()
-                .title("Access Denied")
-                .description("You don't have permission to view this user's graph. The user has a private profile and hasn't authorized you.")
-                .color(Colour::RED);
-
-            let error_message = EditInteractionResponse::new().embed(embed);
-            interaction
-                .edit_response(&context.http, error_message)
-                .await?;
+            crate::commands::error::edit_response(
+                context,
+                interaction,
+                "You don't have permission to view this user's graph. The user has a private profile and hasn't authorized you.",
+            )
+            .await?;
             return Ok(());
         }
     } else {
@@ -82,19 +79,13 @@ pub async fn run(
 
     // Validate URL before making requests
     if base_url.trim().is_empty() {
-        let embed = CreateEmbed::new()
-            .title("Configuration Error")
-            .description(if is_viewing_other_user {
-                "The target user hasn't configured their Nightscout URL."
-            } else {
-                "Your Nightscout URL is empty. Please run `/setup` to configure it properly."
-            })
-            .color(Colour::RED);
+        let error_msg = if is_viewing_other_user {
+            "The target user hasn't configured their Nightscout URL."
+        } else {
+            "Your Nightscout URL is empty. Please run `/setup` to configure it properly."
+        };
 
-        let error_message = EditInteractionResponse::new().embed(embed);
-        interaction
-            .edit_response(&context.http, error_message)
-            .await?;
+        crate::commands::error::edit_response(context, interaction, error_msg).await?;
         return Ok(());
     }
 
@@ -107,19 +98,13 @@ pub async fn run(
         Ok(entries) => entries,
         Err(e) => {
             eprintln!("Failed to get entries for graph: {}", e);
-            let embed = CreateEmbed::new()
-                .title("Data Fetch Error")
-                .description(if is_viewing_other_user {
-                    "Could not fetch glucose data from the target user's Nightscout site."
-                } else {
-                    "Could not fetch glucose data from your Nightscout site. Please check your URL configuration with `/setup`."
-                })
-                .color(Colour::RED);
+            let error_msg = if is_viewing_other_user {
+                "Could not fetch glucose data from the target user's Nightscout site."
+            } else {
+                "Could not fetch glucose data from your Nightscout site. Please check your URL configuration with `/setup`."
+            };
 
-            let error_message = EditInteractionResponse::new().embed(embed);
-            interaction
-                .edit_response(&context.http, error_message)
-                .await?;
+            crate::commands::error::edit_response(context, interaction, error_msg).await?;
             return Ok(());
         }
     };

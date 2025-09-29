@@ -13,14 +13,6 @@ pub async fn run(
     context: &Context,
     interaction: &CommandInteraction,
 ) -> anyhow::Result<()> {
-    let send_error = |title: &str, desc: &str| {
-        let embed = CreateEmbed::new()
-            .title(title)
-            .description(desc)
-            .color(Colour::RED);
-        let msg = CreateInteractionResponseMessage::new().embed(embed);
-        CreateInteractionResponse::Message(msg)
-    };
 
     let target_user_id = if let Some(ResolvedOption {
         value: ResolvedValue::User(user, _),
@@ -35,11 +27,12 @@ pub async fn run(
     let command_user_id = interaction.user.id.get();
 
     if !handler.database.user_exists(target_user_id).await? {
-        let builder = send_error(
-            "User Not Found",
+        crate::commands::error::run(
+            context,
+            interaction,
             "The specified user hasn't set up their Nightscout data yet.",
-        );
-        interaction.create_response(&context.http, builder).await?;
+        )
+        .await?;
         return Ok(());
     }
 
@@ -58,11 +51,12 @@ pub async fn run(
     };
 
     if !can_access {
-        let builder = send_error(
-            "Private Data",
+        crate::commands::error::run(
+            context,
+            interaction,
             "This user's blood glucose data is set to private.",
-        );
-        interaction.create_response(&context.http, builder).await?;
+        )
+        .await?;
         return Ok(());
     }
 
@@ -73,16 +67,12 @@ pub async fn run(
         .context("Nightscout URL missing")?;
 
     if base_url.trim().is_empty() {
-        let error_embed = CreateEmbed::new()
-            .color(Colour::RED)
-            .title("Configuration Error")
-            .description(
-                "Your Nightscout URL is empty. Please run `/setup` to configure it properly.",
-            );
-
-        let msg = CreateInteractionResponseMessage::new().embed(error_embed);
-        let builder = CreateInteractionResponse::Message(msg);
-        interaction.create_response(&context.http, builder).await?;
+        crate::commands::error::run(
+            context,
+            interaction,
+            "Your Nightscout URL is empty. Please run `/setup` to configure it properly.",
+        )
+        .await?;
         return Ok(());
     }
 
@@ -91,14 +81,12 @@ pub async fn run(
         Ok(entry) => entry,
         Err(e) => {
             eprintln!("Failed to get entry for user {}: {}", target_user_id, e);
-            let error_embed = CreateEmbed::new()
-                .color(Colour::RED)
-                .title("Connection Error")
-                .description("Could not connect to your Nightscout site. Please check your URL configuration with `/setup`.");
-
-            let msg = CreateInteractionResponseMessage::new().embed(error_embed);
-            let builder = CreateInteractionResponse::Message(msg);
-            interaction.create_response(&context.http, builder).await?;
+            crate::commands::error::run(
+                context,
+                interaction,
+                "Could not connect to your Nightscout site. Please check your URL configuration with `/setup`.",
+            )
+            .await?;
             return Ok(());
         }
     };
