@@ -191,7 +191,7 @@ pub fn draw_graph(
     let low_col = Rgba([255u8, 69u8, 58u8, 255u8]);
     let insulin_col = Rgba([96u8, 165u8, 250u8, 255u8]);
     let carbs_col = Rgba([251u8, 191u8, 36u8, 255u8]);
-    let glucose_reading_col = Rgba([52u8, 211u8, 153u8, 255u8]);
+    let _glucose_reading_col = Rgba([52u8, 211u8, 153u8, 255u8]);
 
     let left_margin = 80.0_f32;
     let right_margin = 40.0_f32;
@@ -226,7 +226,7 @@ pub fn draw_graph(
     let (y_min, y_max) = match pref {
         PrefUnit::MgDl => {
             let max_mg = entries.iter().map(|e| e.sgv).fold(0.0_f32, |a, b| a.max(b));
-            let calculated_max = ((max_mg / 50.0).ceil() * 50.0).clamp(200.0, 400.0);
+            let calculated_max = ((max_mg / 10.0).ceil() * 10.0).clamp(200.0, 400.0);
             (40.0_f32, calculated_max)
         }
         PrefUnit::Mmol => {
@@ -283,10 +283,22 @@ pub fn draw_graph(
         axis_col,
     );
 
-    let step_mg = y_range / (num_y_labels - 1) as f32;
-    let y_values: Vec<f32> = (0..num_y_labels)
-        .map(|i| y_min + step_mg * i as f32)
-        .collect();
+    let y_values: Vec<f32> = match pref {
+        PrefUnit::MgDl => {
+            let step = ((y_max - y_min) / (num_y_labels - 1) as f32 / 10.0).ceil() * 10.0;
+            (0..num_y_labels)
+                .map(|i| (y_min + step * i as f32).round())
+                .filter(|&val| val <= y_max)
+                .collect()
+        }
+        PrefUnit::Mmol => {
+            let step = ((y_max - y_min) / (num_y_labels - 1) as f32).ceil();
+            (0..num_y_labels)
+                .map(|i| (y_min + step * i as f32).floor())
+                .filter(|&val| val <= y_max)
+                .collect()
+        }
+    };
 
     for y_val in y_values.iter() {
         let y_px = match pref {
@@ -362,6 +374,25 @@ pub fn draw_graph(
                     &mg_display,
                 );
             }
+        }
+    }
+
+    if let Some(&last_y_val) = y_values.last() {
+        let y_px = match pref {
+            PrefUnit::MgDl => project_y(last_y_val),
+            PrefUnit::Mmol => {
+                inner_plot_bottom - ((last_y_val - y_min) / (y_max - y_min)) * inner_plot_h
+            }
+        };
+
+        if y_px >= inner_plot_top && y_px <= inner_plot_bottom {
+            let faint_grid_col = Rgba([25u8, 35u8, 41u8, 255u8]); 
+            draw_line_segment_mut(
+                &mut img,
+                (inner_plot_left, y_px),
+                (inner_plot_right, y_px),
+                faint_grid_col,
+            );
         }
     }
 
@@ -563,34 +594,22 @@ pub fn draw_graph(
         if treatment.is_insulin() {
             let insulin_amount = treatment.insulin.unwrap_or(0.0);
 
-            let triangle_size = if insulin_amount < 1.0 {
-                8
-            } else if insulin_amount > 5.0 {
+            let triangle_size = if insulin_amount < 0.5 {
+                6 
+            } else if insulin_amount <= 2.0 {
+                9 
+            } else {
                 15
-            } else {
-                12
             };
 
-            let has_nearby_glucose = entries.iter().enumerate().any(|(i, _)| {
-                let (entry_x, entry_y) = points_px[i];
-                let distance =
-                    ((closest_x - entry_x).powi(2) + (closest_y - entry_y).powi(2)).sqrt();
-                distance < 25.0
-            });
-
-            let triangle_y = if has_nearby_glucose {
-                closest_y + 35.0
-            } else {
-                closest_y
-            };
+            let triangle_y = closest_y + 35.0;
 
             tracing::trace!(
-                "[GRAPH] Drawing insulin: {:.1}u at ({:.1}, {:.1}) - size: {}, overlap: {}",
+                "[GRAPH] Drawing insulin: {:.1}u at ({:.1}, {:.1}) - size: {}",
                 insulin_amount,
                 closest_x,
                 triangle_y,
-                triangle_size,
-                has_nearby_glucose
+                triangle_size
             );
 
             let triangle_points = vec![
@@ -622,7 +641,13 @@ pub fn draw_graph(
 
         if treatment.is_carbs() {
             let carbs_amount = treatment.carbs.unwrap_or(0.0);
-            let circle_radius = if carbs_amount > 30.0 { 12 } else { 9 };
+            let circle_radius = if carbs_amount < 0.5 {
+                4 
+            } else if carbs_amount <= 2.0 {
+                7 
+            } else {
+                12 
+            };
 
             tracing::trace!(
                 "[GRAPH] Drawing carbs: {:.0}g at ({:.1}, {:.1})",
@@ -631,9 +656,11 @@ pub fn draw_graph(
                 closest_y
             );
 
+            let carbs_y = closest_y - 35.0;
+
             draw_filled_circle_mut(
                 &mut img,
-                (closest_x as i32, closest_y as i32),
+                (closest_x as i32, carbs_y as i32),
                 circle_radius,
                 carbs_col,
             );
@@ -644,7 +671,7 @@ pub fn draw_graph(
                 &mut img,
                 carbs_col,
                 (closest_x - text_width / 2.0) as i32,
-                (closest_y - circle_radius as f32 - 25.0) as i32,
+                (carbs_y - circle_radius as f32 - 25.0) as i32,
                 PxScale::from(18.0),
                 &handler.font,
                 &carbs_text,
@@ -664,11 +691,24 @@ pub fn draw_graph(
                 glucose_y
             );
 
+            let bg_check_radius = 6; 
+            let grey_outline = Rgba([128u8, 128u8, 128u8, 255u8]);
+            let red_inside = Rgba([220u8, 38u8, 27u8, 255u8]);     
+
+            let bg_y = glucose_y - 25.0;
+
             draw_filled_circle_mut(
                 &mut img,
-                (closest_x as i32, glucose_y as i32),
-                4,
-                glucose_reading_col,
+                (closest_x as i32, bg_y as i32),
+                bg_check_radius,
+                grey_outline,
+            );
+
+            draw_filled_circle_mut(
+                &mut img,
+                (closest_x as i32, bg_y as i32),
+                bg_check_radius - 2,
+                red_inside,
             );
         }
     }
