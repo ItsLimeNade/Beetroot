@@ -42,7 +42,7 @@ pub async fn run(
                     .description(format!("Please check your URL: {}", e))
                     .color(Colour::RED);
 
-                let error_response = CreateInteractionResponseMessage::new().embed(error_embed);
+                let error_response = CreateInteractionResponseMessage::new().embed(error_embed).ephemeral(true);
 
                 modal_response
                     .interaction
@@ -79,7 +79,7 @@ pub async fn run(
                     .description("Could not connect to your Nightscout site. Please verify:\n• The URL is correct\n• Your site is publicly accessible\n• Your site is online")
                     .color(Colour::RED);
 
-                let error_response = CreateInteractionResponseMessage::new().embed(error_embed);
+                let error_response = CreateInteractionResponseMessage::new().embed(error_embed).ephemeral(true);
 
                 modal_response
                     .interaction
@@ -181,7 +181,7 @@ pub async fn handle_button(
                     .title("Database Error")
                     .description(format!("Failed to save: {}", e))
                     .color(Colour::RED),
-            );
+            ).ephemeral(true);
             interaction
                 .create_response(
                     context,

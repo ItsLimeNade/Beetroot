@@ -1,6 +1,6 @@
 use crate::Handler;
 use serenity::all::{
-    CommandInteraction, CommandOptionType, Context, CreateInteractionResponse,
+    Colour, CommandInteraction, CommandOptionType, Context, CreateEmbed, CreateInteractionResponse,
     CreateInteractionResponseMessage, InteractionContext, ResolvedOption, ResolvedValue,
 };
 use serenity::builder::{CreateCommand, CreateCommandOption};
@@ -37,8 +37,13 @@ pub async fn run(
     let display = display.unwrap_or(true);
 
     if threshold < 0.0 || threshold > 100.0 {
+        let embed = CreateEmbed::new()
+            .title("Invalid Threshold")
+            .description("Threshold must be between 0 and 100 units.")
+            .color(Colour::RED);
+
         let response = CreateInteractionResponseMessage::new()
-            .content("[ERROR] Threshold must be between 0 and 100 units.")
+            .embed(embed)
             .ephemeral(true);
         interaction
             .create_response(context, CreateInteractionResponse::Message(response))
@@ -51,16 +56,19 @@ pub async fn run(
         .update_microbolus_settings(interaction.user.id.get(), threshold, display)
         .await?;
 
-    let response_content = format!(
-        "✅ **Microbolus threshold updated!**\n\n🎯 **Threshold:** {:.1} units\n📊 **Display on graph:** {}\n\n💡 Insulin doses {} {:.1}u will be considered microbolus injections.",
-        threshold,
-        if display { "Yes" } else { "No" },
-        if threshold > 0.0 { "≤" } else { "<" },
-        threshold
-    );
+    let embed = CreateEmbed::new()
+        .title("Microbolus Threshold Updated")
+        .description(format!(
+            "**Threshold:** {:.1} units\n**Display on graph:** {}\n\nInsulin doses {} {:.1}u will be considered microbolus injections.",
+            threshold,
+            if display { "Yes" } else { "No" },
+            if threshold > 0.0 { "≤" } else { "<" },
+            threshold
+        ))
+        .color(Colour::from_rgb(34, 197, 94));
 
     let response = CreateInteractionResponseMessage::new()
-        .content(response_content)
+        .embed(embed)
         .ephemeral(true);
 
     interaction

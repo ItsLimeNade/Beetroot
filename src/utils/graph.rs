@@ -455,6 +455,34 @@ pub fn draw_graph(
         label_indices = filtered;
     }
 
+    let min_label_distance = 80.0; 
+    let mut final_indices = Vec::new();
+
+    for (i, &entry_idx) in label_indices.iter().enumerate() {
+        let x_center = inner_plot_left + spacing_x * ((n - 1 - entry_idx) as f32 + 0.5);
+
+        let should_include = if final_indices.is_empty() {
+            true
+        } else {
+            let last_included_idx = final_indices.last().unwrap();
+            let last_x_center = inner_plot_left + spacing_x * ((n - 1 - last_included_idx) as f32 + 0.5);
+            (x_center - last_x_center).abs() >= min_label_distance
+        };
+
+        if should_include || (i == label_indices.len() - 1 && final_indices.len() >= 2) {
+            if i == label_indices.len() - 1 && !final_indices.is_empty() {
+                let last_included_idx = final_indices.last().unwrap();
+                let last_x_center = inner_plot_left + spacing_x * ((n - 1 - last_included_idx) as f32 + 0.5);
+                if (x_center - last_x_center).abs() < min_label_distance {
+                    final_indices.pop();
+                }
+            }
+            final_indices.push(entry_idx);
+        }
+    }
+
+    label_indices = final_indices;
+
     for (label_pos, &entry_idx) in label_indices.iter().enumerate() {
         let e = &entries[entry_idx];
         let x_center = inner_plot_left + spacing_x * ((n - 1 - entry_idx) as f32 + 0.5);
@@ -720,6 +748,21 @@ pub fn draw_graph(
                 (closest_x as i32, bg_y as i32),
                 bg_check_radius - 2,
                 red_inside,
+            );
+
+            let glucose_text = match pref {
+                PrefUnit::MgDl => format!("{:.0}", glucose_value),
+                PrefUnit::Mmol => format!("{:.1}", glucose_value / 18.0),
+            };
+            let text_width = glucose_text.len() as f32 * 8.0;
+            draw_text_mut(
+                &mut img,
+                bright,
+                (closest_x - text_width / 2.0) as i32,
+                (bg_y - bg_check_radius as f32 - 20.0) as i32,
+                PxScale::from(16.0),
+                &handler.font,
+                &glucose_text,
             );
         }
     }

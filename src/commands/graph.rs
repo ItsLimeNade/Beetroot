@@ -1,9 +1,9 @@
 use crate::Handler;
 use crate::utils::graph::draw_graph;
 use serenity::all::{
-    CommandInteraction, CommandOptionType, Context, CreateInteractionResponse,
+    Colour, CommandInteraction, CommandOptionType, Context, CreateEmbed, CreateInteractionResponse,
     CreateInteractionResponseMessage, EditAttachments, EditInteractionResponse, InteractionContext,
-    ResolvedOption, ResolvedValue,
+    ResolvedOption, ResolvedValue, User,
 };
 use serenity::builder::{CreateAttachment, CreateCommand, CreateCommandOption};
 
@@ -20,10 +20,59 @@ pub async fn run(
         )
         .await?;
 
-    let user_data = handler
-        .database
-        .get_user_info(interaction.user.id.get())
-        .await?;
+    let mut hours = 3_i64;
+    let mut target_user: Option<&User> = None;
+
+    for option in &interaction.data.options() {
+        match option {
+            ResolvedOption {
+                name: "hours",
+                value: ResolvedValue::Integer(h),
+                ..
+            } => {
+                hours = *h;
+            }
+            ResolvedOption {
+                name: "user",
+                value: ResolvedValue::User(user, _),
+                ..
+            } => {
+                target_user = Some(user);
+            }
+            _ => {}
+        }
+    }
+
+    let (user_data, _requesting_user_id, is_viewing_other_user) = if let Some(target) = target_user {
+        let target_data = handler
+            .database
+            .get_user_info(target.id.get())
+            .await
+            .map_err(|_| anyhow::anyhow!("Target user not found in database"))?;
+
+        if !target_data.nightscout.is_private {
+            (target_data, interaction.user.id.get(), true)
+        } else if target_data.nightscout.allowed_people.contains(&interaction.user.id.get()) {
+            (target_data, interaction.user.id.get(), true)
+        } else {
+            let embed = CreateEmbed::new()
+                .title("Access Denied")
+                .description("You don't have permission to view this user's graph. The user has a private profile and hasn't authorized you.")
+                .color(Colour::RED);
+
+            let error_message = EditInteractionResponse::new().embed(embed);
+            interaction
+                .edit_response(&context.http, error_message)
+                .await?;
+            return Ok(());
+        }
+    } else {
+        let data = handler
+            .database
+            .get_user_info(interaction.user.id.get())
+            .await?;
+        (data, interaction.user.id.get(), false)
+    };
 
     let base_url = user_data
         .nightscout
@@ -33,24 +82,21 @@ pub async fn run(
 
     // Validate URL before making requests
     if base_url.trim().is_empty() {
-        let error_message = EditInteractionResponse::new().content(
-            "[ERROR] Your Nightscout URL is empty. Please run `/setup` to configure it properly.",
-        );
+        let embed = CreateEmbed::new()
+            .title("Configuration Error")
+            .description(if is_viewing_other_user {
+                "The target user hasn't configured their Nightscout URL."
+            } else {
+                "Your Nightscout URL is empty. Please run `/setup` to configure it properly."
+            })
+            .color(Colour::RED);
+
+        let error_message = EditInteractionResponse::new().embed(embed);
         interaction
             .edit_response(&context.http, error_message)
             .await?;
         return Ok(());
     }
-
-    let hours = if let Some(ResolvedOption {
-        value: ResolvedValue::Integer(hours),
-        ..
-    }) = interaction.data.options().first()
-    {
-        *hours
-    } else {
-        3_i64
-    };
 
     let token = user_data.nightscout.nightscout_token.as_deref();
     let entries = match handler
@@ -61,8 +107,16 @@ pub async fn run(
         Ok(entries) => entries,
         Err(e) => {
             eprintln!("Failed to get entries for graph: {}", e);
-            let error_message = EditInteractionResponse::new()
-                .content("[ERROR] Could not fetch glucose data from your Nightscout site. Please check your URL configuration with `/setup`.");
+            let embed = CreateEmbed::new()
+                .title("Data Fetch Error")
+                .description(if is_viewing_other_user {
+                    "Could not fetch glucose data from the target user's Nightscout site."
+                } else {
+                    "Could not fetch glucose data from your Nightscout site. Please check your URL configuration with `/setup`."
+                })
+                .color(Colour::RED);
+
+            let error_message = EditInteractionResponse::new().embed(embed);
             interaction
                 .edit_response(&context.http, error_message)
                 .await?;
@@ -74,7 +128,6 @@ pub async fn run(
         Ok(profile) => profile,
         Err(e) => {
             eprintln!("Failed to get profile for graph: {}", e);
-            // Use default profile if we can't fetch it
             crate::utils::nightscout::Profile {
                 default_profile: "default".to_string(),
                 store: std::collections::HashMap::new(),
@@ -82,7 +135,6 @@ pub async fn run(
         }
     };
 
-    // Fetch treatments for the same time period as the graph
     let now = chrono::Utc::now();
     let hours_ago = now - chrono::Duration::hours(hours);
     let start_time = hours_ago.to_rfc3339();
@@ -96,7 +148,7 @@ pub async fn run(
         Ok(treatments) => treatments,
         Err(e) => {
             eprintln!("Failed to get treatments for graph: {}", e);
-            vec![] // Use empty treatments if we can't fetch them
+            vec![]
         }
     };
 
@@ -115,11 +167,15 @@ pub async fn run(
 
 pub fn register() -> CreateCommand {
     CreateCommand::new("graph")
-        .description("Sends a graph of your latest blood glucose.")
+        .description("Sends a graph of blood glucose data.")
         .add_option(
             CreateCommandOption::new(CommandOptionType::Integer, "hours", "3h to 24h of data.")
                 .min_int_value(3)
                 .max_int_value(24)
+                .required(false),
+        )
+        .add_option(
+            CreateCommandOption::new(CommandOptionType::User, "user", "View another user's graph (requires permission).")
                 .required(false),
         )
         .contexts(vec![
