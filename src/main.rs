@@ -47,6 +47,7 @@ impl EventHandler for Handler {
                                 "bg" => commands::bg::run(self, &context, command).await,
                                 "graph" => commands::graph::run(self, &context, command).await,
                                 "setup" => commands::setup::run(self, &context, command).await,
+                                "set-threshold" => commands::set_threshold::run(self, &context, command).await,
                                 "token" => commands::token::run(self, &context, command).await,
                                 unknown_command => {
                                     eprintln!(
@@ -54,7 +55,7 @@ impl EventHandler for Handler {
                                         unknown_command
                                     );
                                     let data = CreateInteractionResponseMessage::new()
-                                        .content(format!("[ERROR] Unknown command: `{}`. Available commands are: `/bg`, `/graph`, `/setup`, `/token`", unknown_command));
+                                        .content(format!("[ERROR] Unknown command: `{}`. Available commands are: `/bg`, `/graph`, `/setup`, `/set-threshold`, `/token`", unknown_command));
                                     let builder = CreateInteractionResponse::Message(data);
                                     command
                                         .create_response(&context.http, builder)
@@ -127,6 +128,7 @@ impl EventHandler for Handler {
             commands::graph::register(),
             commands::bg::register(),
             commands::setup::register(),
+            commands::set_threshold::register(),
             commands::token::register(),
         ];
         let command_count = commands_vec.len();

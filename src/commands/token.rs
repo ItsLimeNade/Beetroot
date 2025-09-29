@@ -58,6 +58,8 @@ pub async fn run(
         nightscout_token: token.clone(),
         is_private: current_user_info.nightscout.is_private,
         allowed_people: current_user_info.nightscout.allowed_people,
+        microbolus_threshold: current_user_info.nightscout.microbolus_threshold,
+        display_microbolus: current_user_info.nightscout.display_microbolus,
     };
 
     let user_id = interaction.user.id.get();

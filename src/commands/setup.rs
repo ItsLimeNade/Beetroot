@@ -129,6 +129,8 @@ pub async fn handle_button(
         nightscout_token: token,
         allowed_people: vec![],
         is_private,
+        microbolus_threshold: 0.5,
+        display_microbolus: true,
     };
 
     let user_id = interaction.user.id.get();

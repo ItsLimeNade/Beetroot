@@ -100,7 +100,7 @@ pub async fn run(
         }
     };
 
-    let buffer = draw_graph(&entries, &treatments, &profile, handler, hours as u16, None)?;
+    let buffer = draw_graph(&entries, &treatments, &profile, &user_data.nightscout, handler, hours as u16, None)?;
 
     let graph_attachment = CreateAttachment::bytes(buffer, "graph.png");
     let graph_edit_attachment = EditAttachments::new().add(graph_attachment);

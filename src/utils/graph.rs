@@ -1,4 +1,5 @@
 use super::nightscout::{Entry, Profile, Treatment};
+use super::database::NightscoutInfo;
 use crate::Handler;
 use ab_glyph::PxScale;
 use anyhow::{Result, anyhow};
@@ -55,6 +56,7 @@ pub fn draw_graph(
     entries: &[Entry],
     treatments: &[Treatment],
     profile: &Profile,
+    user_settings: &NightscoutInfo,
     handler: &Handler,
     hours: u16,
     save_path: Option<&str>,
@@ -593,11 +595,18 @@ pub fn draw_graph(
 
         if treatment.is_insulin() {
             let insulin_amount = treatment.insulin.unwrap_or(0.0);
+            let is_microbolus = insulin_amount <= user_settings.microbolus_threshold;
 
-            let triangle_size = if insulin_amount < 0.5 {
-                6 
-            } else if insulin_amount <= 2.0 {
-                9 
+            if is_microbolus && !user_settings.display_microbolus {
+                continue;
+            }
+
+            let triangle_size = if is_microbolus {
+                4
+            } else if insulin_amount <= user_settings.microbolus_threshold + 1.0 {
+                6
+            } else if insulin_amount <= user_settings.microbolus_threshold + 5.0 {
+                9
             } else {
                 15
             };
@@ -626,17 +635,19 @@ pub fn draw_graph(
 
             draw_polygon_mut(&mut img, &triangle_points, insulin_col);
 
-            let insulin_text = format!("{:.1}u", insulin_amount);
-            let text_width = insulin_text.len() as f32 * 9.0;
-            draw_text_mut(
-                &mut img,
-                bright,
-                (closest_x - text_width / 2.0) as i32,
-                (triangle_y + triangle_size as f32 + 8.0) as i32,
-                PxScale::from(18.0),
-                &handler.font,
-                &insulin_text,
-            );
+            if !is_microbolus {
+                let insulin_text = format!("{:.1}u", insulin_amount);
+                let text_width = insulin_text.len() as f32 * 9.0;
+                draw_text_mut(
+                    &mut img,
+                    bright,
+                    (closest_x - text_width / 2.0) as i32,
+                    (triangle_y + triangle_size as f32 + 8.0) as i32,
+                    PxScale::from(18.0),
+                    &handler.font,
+                    &insulin_text,
+                );
+            }
         }
 
         if treatment.is_carbs() {
