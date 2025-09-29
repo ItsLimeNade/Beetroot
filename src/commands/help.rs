@@ -1,8 +1,8 @@
 use crate::Handler;
 use serenity::all::{
-    ButtonStyle, Colour, CommandInteraction, CommandOptionType, ComponentInteraction, Context, CreateActionRow, CreateButton,
-    CreateEmbed, CreateInteractionResponse, CreateInteractionResponseMessage, InteractionContext,
-    ResolvedOption, ResolvedValue,
+    ButtonStyle, Colour, CommandInteraction, CommandOptionType, ComponentInteraction, Context,
+    CreateActionRow, CreateButton, CreateEmbed, CreateInteractionResponse,
+    CreateInteractionResponseMessage, InteractionContext, ResolvedOption, ResolvedValue,
 };
 use serenity::builder::{CreateCommand, CreateCommandOption};
 
@@ -98,22 +98,26 @@ fn create_help_page(page: u8) -> (CreateEmbed, Option<CreateActionRow>) {
     };
 
     let embed = embed.footer(serenity::all::CreateEmbedFooter::new(
-        "Use /info for bot information and GitHub repository"
+        "Use /info for bot information and GitHub repository",
     ));
 
     let components = if total_pages > 1 {
         let mut buttons = Vec::new();
 
         if page > 1 {
-            buttons.push(CreateButton::new(format!("help_page_{}", page - 1))
-                .label("◀ Previous")
-                .style(ButtonStyle::Secondary));
+            buttons.push(
+                CreateButton::new(format!("help_page_{}", page - 1))
+                    .label("◀ Previous")
+                    .style(ButtonStyle::Secondary),
+            );
         }
 
         if page < total_pages {
-            buttons.push(CreateButton::new(format!("help_page_{}", page + 1))
-                .label("Next ▶")
-                .style(ButtonStyle::Secondary));
+            buttons.push(
+                CreateButton::new(format!("help_page_{}", page + 1))
+                    .label("Next ▶")
+                    .style(ButtonStyle::Secondary),
+            );
         }
 
         if !buttons.is_empty() {
@@ -139,8 +143,7 @@ pub async fn handle_button(
         let page: u8 = page_str.parse().unwrap_or(1);
         let (embed, components) = create_help_page(page);
 
-        let mut response = CreateInteractionResponseMessage::new()
-            .embed(embed);
+        let mut response = CreateInteractionResponseMessage::new().embed(embed);
 
         if let Some(action_row) = components {
             response = response.components(vec![action_row]);
@@ -161,7 +164,7 @@ pub fn register() -> CreateCommand {
             CreateCommandOption::new(
                 CommandOptionType::Integer,
                 "page",
-                "Page number to view (1-2)"
+                "Page number to view (1-2)",
             )
             .min_int_value(1)
             .max_int_value(2)

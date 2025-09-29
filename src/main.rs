@@ -50,7 +50,9 @@ impl EventHandler for Handler {
                                 "help" => commands::help::run(self, &context, command).await,
                                 "info" => commands::info::run(self, &context, command).await,
                                 "setup" => commands::setup::run(self, &context, command).await,
-                                "set-threshold" => commands::set_threshold::run(self, &context, command).await,
+                                "set-threshold" => {
+                                    commands::set_threshold::run(self, &context, command).await
+                                }
                                 "token" => commands::token::run(self, &context, command).await,
                                 unknown_command => {
                                     eprintln!(

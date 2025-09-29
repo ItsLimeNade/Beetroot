@@ -1,6 +1,6 @@
 use serenity::all::{
-    Colour, CommandInteraction, Context, CreateEmbed, CreateInteractionResponse, CreateInteractionResponseMessage,
-    EditInteractionResponse,
+    Colour, CommandInteraction, Context, CreateEmbed, CreateInteractionResponse,
+    CreateInteractionResponseMessage,
 };
 
 pub async fn run(
@@ -26,21 +26,3 @@ pub async fn run(
     Ok(())
 }
 
-pub async fn edit_response(
-    context: &Context,
-    interaction: &CommandInteraction,
-    error_message: &str,
-) -> anyhow::Result<()> {
-    let embed = CreateEmbed::new()
-        .title("Error")
-        .description(error_message)
-        .color(Colour::RED);
-
-    let edit_message = EditInteractionResponse::new().embed(embed);
-    interaction
-        .edit_response(&context.http, edit_message)
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to edit error response: {}", e))?;
-
-    Ok(())
-}

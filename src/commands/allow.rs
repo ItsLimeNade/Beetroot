@@ -120,8 +120,14 @@ pub async fn run(
         }
         Ok(false) => {
             let message = match action {
-                "add" => format!("{} is already in your allowed users list.", target_user.display_name()),
-                "remove" => format!("{} is not in your allowed users list.", target_user.display_name()),
+                "add" => format!(
+                    "{} is already in your allowed users list.",
+                    target_user.display_name()
+                ),
+                "remove" => format!(
+                    "{} is not in your allowed users list.",
+                    target_user.display_name()
+                ),
                 _ => unreachable!(),
             };
 
@@ -148,7 +154,7 @@ pub fn register() -> CreateCommand {
             CreateCommandOption::new(
                 CommandOptionType::User,
                 "user",
-                "User to add or remove from your allowed list"
+                "User to add or remove from your allowed list",
             )
             .required(true),
         )
@@ -156,7 +162,7 @@ pub fn register() -> CreateCommand {
             CreateCommandOption::new(
                 CommandOptionType::String,
                 "action",
-                "Whether to add or remove the user"
+                "Whether to add or remove the user",
             )
             .add_string_choice("Add user", "add")
             .add_string_choice("Remove user", "remove")

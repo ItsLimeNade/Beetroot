@@ -1,5 +1,5 @@
-use super::nightscout::{Entry, Profile, Treatment};
 use super::database::NightscoutInfo;
+use super::nightscout::{Entry, Profile, Treatment};
 use crate::Handler;
 use ab_glyph::PxScale;
 use anyhow::{Result, anyhow};
@@ -388,7 +388,7 @@ pub fn draw_graph(
         };
 
         if y_px >= inner_plot_top && y_px <= inner_plot_bottom {
-            let faint_grid_col = Rgba([25u8, 35u8, 41u8, 255u8]); 
+            let faint_grid_col = Rgba([25u8, 35u8, 41u8, 255u8]);
             draw_line_segment_mut(
                 &mut img,
                 (inner_plot_left, y_px),
@@ -455,7 +455,7 @@ pub fn draw_graph(
         label_indices = filtered;
     }
 
-    let min_label_distance = 80.0; 
+    let min_label_distance = 80.0;
     let mut final_indices = Vec::new();
 
     for (i, &entry_idx) in label_indices.iter().enumerate() {
@@ -465,14 +465,16 @@ pub fn draw_graph(
             true
         } else {
             let last_included_idx = final_indices.last().unwrap();
-            let last_x_center = inner_plot_left + spacing_x * ((n - 1 - last_included_idx) as f32 + 0.5);
+            let last_x_center =
+                inner_plot_left + spacing_x * ((n - 1 - last_included_idx) as f32 + 0.5);
             (x_center - last_x_center).abs() >= min_label_distance
         };
 
         if should_include || (i == label_indices.len() - 1 && final_indices.len() >= 2) {
             if i == label_indices.len() - 1 && !final_indices.is_empty() {
                 let last_included_idx = final_indices.last().unwrap();
-                let last_x_center = inner_plot_left + spacing_x * ((n - 1 - last_included_idx) as f32 + 0.5);
+                let last_x_center =
+                    inner_plot_left + spacing_x * ((n - 1 - last_included_idx) as f32 + 0.5);
                 if (x_center - last_x_center).abs() < min_label_distance {
                     final_indices.pop();
                 }
@@ -681,11 +683,11 @@ pub fn draw_graph(
         if treatment.is_carbs() {
             let carbs_amount = treatment.carbs.unwrap_or(0.0);
             let circle_radius = if carbs_amount < 0.5 {
-                4 
+                4
             } else if carbs_amount <= 2.0 {
-                7 
+                7
             } else {
-                12 
+                12
             };
 
             tracing::trace!(
@@ -730,9 +732,9 @@ pub fn draw_graph(
                 glucose_y
             );
 
-            let bg_check_radius = 6; 
+            let bg_check_radius = 6;
             let grey_outline = Rgba([128u8, 128u8, 128u8, 255u8]);
-            let red_inside = Rgba([220u8, 38u8, 27u8, 255u8]);     
+            let red_inside = Rgba([220u8, 38u8, 27u8, 255u8]);
 
             let bg_y = glucose_y - 25.0;
 

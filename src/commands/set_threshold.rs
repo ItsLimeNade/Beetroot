@@ -36,7 +36,7 @@ pub async fn run(
     let threshold = threshold.ok_or_else(|| anyhow::anyhow!("Threshold value is required"))?;
     let display = display.unwrap_or(true);
 
-    if threshold < 0.0 || threshold > 100.0 {
+    if !(0.0..=100.0).contains(&threshold) {
         let embed = CreateEmbed::new()
             .title("Invalid Threshold")
             .description("Threshold must be between 0 and 100 units.")
@@ -85,7 +85,7 @@ pub fn register() -> CreateCommand {
             CreateCommandOption::new(
                 CommandOptionType::Number,
                 "value",
-                "Threshold value in units (doses ≤ this value are microbolus)"
+                "Threshold value in units (doses ≤ this value are microbolus)",
             )
             .min_number_value(0.0)
             .max_number_value(100.0)
@@ -95,7 +95,7 @@ pub fn register() -> CreateCommand {
             CreateCommandOption::new(
                 CommandOptionType::Boolean,
                 "display",
-                "Whether to display microbolus on graph (default: true)"
+                "Whether to display microbolus on graph (default: true)",
             )
             .required(false),
         )

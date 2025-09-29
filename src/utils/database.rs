@@ -307,8 +307,11 @@ impl Database {
         let is_private: bool = row.get::<i32, _>("is_private") != 0;
         let allowed_people: Vec<u64> =
             serde_json::from_str(&row.get::<String, _>("allowed_people")).unwrap_or_default();
-        let microbolus_threshold: f32 = row.get::<Option<f32>, _>("microbolus_threshold").unwrap_or(0.5);
-        let display_microbolus: bool = row.get::<Option<i32>, _>("display_microbolus").unwrap_or(1) != 0;
+        let microbolus_threshold: f32 = row
+            .get::<Option<f32>, _>("microbolus_threshold")
+            .unwrap_or(0.5);
+        let display_microbolus: bool =
+            row.get::<Option<i32>, _>("display_microbolus").unwrap_or(1) != 0;
 
         let nightscout_token = if let Some(encrypted) = encrypted_token {
             match get_crypto().decrypt(&encrypted) {
@@ -453,7 +456,8 @@ impl Database {
         }
 
         allowed_people.push(allowed_user_id);
-        let allowed_people_json = serde_json::to_string(&allowed_people).unwrap_or("[]".to_string());
+        let allowed_people_json =
+            serde_json::to_string(&allowed_people).unwrap_or("[]".to_string());
 
         sqlx::query("UPDATE users SET allowed_people = ? WHERE discord_id = ?")
             .bind(allowed_people_json)
@@ -477,7 +481,8 @@ impl Database {
         }
 
         allowed_people.retain(|&id| id != user_to_remove_id);
-        let allowed_people_json = serde_json::to_string(&allowed_people).unwrap_or("[]".to_string());
+        let allowed_people_json =
+            serde_json::to_string(&allowed_people).unwrap_or("[]".to_string());
 
         sqlx::query("UPDATE users SET allowed_people = ? WHERE discord_id = ?")
             .bind(allowed_people_json)

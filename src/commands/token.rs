@@ -20,7 +20,9 @@ pub async fn run(
             .title("Not Set Up")
             .description("You need to run `/setup` first to configure your Nightscout URL before setting a token.");
 
-        let msg = CreateInteractionResponseMessage::new().embed(error_embed).ephemeral(true);
+        let msg = CreateInteractionResponseMessage::new()
+            .embed(error_embed)
+            .ephemeral(true);
         let builder = CreateInteractionResponse::Message(msg);
         interaction.create_response(&context.http, builder).await?;
         return Ok(());

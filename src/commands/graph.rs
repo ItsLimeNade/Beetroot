@@ -2,8 +2,7 @@ use crate::Handler;
 use crate::utils::graph::draw_graph;
 use serenity::all::{
     CommandInteraction, CommandOptionType, Context, CreateInteractionResponse,
-    CreateInteractionResponseMessage, InteractionContext,
-    ResolvedOption, ResolvedValue, User,
+    CreateInteractionResponseMessage, InteractionContext, ResolvedOption, ResolvedValue, User,
 };
 use serenity::builder::{CreateAttachment, CreateCommand, CreateCommandOption};
 
@@ -12,7 +11,6 @@ pub async fn run(
     context: &Context,
     interaction: &CommandInteraction,
 ) -> anyhow::Result<()> {
-
     let mut hours = 3_i64;
     let mut target_user: Option<&User> = None;
 
@@ -36,16 +34,20 @@ pub async fn run(
         }
     }
 
-    let (user_data, _requesting_user_id, is_viewing_other_user) = if let Some(target) = target_user {
+    let (user_data, _requesting_user_id, is_viewing_other_user) = if let Some(target) = target_user
+    {
         let target_data = handler
             .database
             .get_user_info(target.id.get())
             .await
             .map_err(|_| anyhow::anyhow!("Target user not found in database"))?;
 
-        if !target_data.nightscout.is_private {
-            (target_data, interaction.user.id.get(), true)
-        } else if target_data.nightscout.allowed_people.contains(&interaction.user.id.get()) {
+        if !target_data.nightscout.is_private
+            || target_data
+                .nightscout
+                .allowed_people
+                .contains(&interaction.user.id.get())
+        {
             (target_data, interaction.user.id.get(), true)
         } else {
             crate::commands::error::run(
@@ -130,7 +132,15 @@ pub async fn run(
         }
     };
 
-    let buffer = draw_graph(&entries, &treatments, &profile, &user_data.nightscout, handler, hours as u16, None)?;
+    let buffer = draw_graph(
+        &entries,
+        &treatments,
+        &profile,
+        &user_data.nightscout,
+        handler,
+        hours as u16,
+        None,
+    )?;
 
     let graph_attachment = CreateAttachment::bytes(buffer, "graph.png");
 
@@ -154,8 +164,12 @@ pub fn register() -> CreateCommand {
                 .required(false),
         )
         .add_option(
-            CreateCommandOption::new(CommandOptionType::User, "user", "View another user's graph (requires permission).")
-                .required(false),
+            CreateCommandOption::new(
+                CommandOptionType::User,
+                "user",
+                "View another user's graph (requires permission).",
+            )
+            .required(false),
         )
         .contexts(vec![
             InteractionContext::Guild,

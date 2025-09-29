@@ -13,7 +13,6 @@ pub async fn run(
     context: &Context,
     interaction: &CommandInteraction,
 ) -> anyhow::Result<()> {
-
     let target_user_id = if let Some(ResolvedOption {
         value: ResolvedValue::User(user, _),
         ..
