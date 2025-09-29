@@ -150,7 +150,7 @@ pub async fn handle_button(
         }
 
         interaction
-            .create_response(context, CreateInteractionResponse::Message(response))
+            .create_response(context, CreateInteractionResponse::UpdateMessage(response))
             .await?;
     }
 
