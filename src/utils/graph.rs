@@ -1,3 +1,4 @@
+use super::database::NightscoutInfo;
 use super::nightscout::{Entry, Profile, Treatment};
 use crate::Handler;
 use ab_glyph::PxScale;
@@ -55,6 +56,7 @@ pub fn draw_graph(
     entries: &[Entry],
     treatments: &[Treatment],
     profile: &Profile,
+    user_settings: &NightscoutInfo,
     handler: &Handler,
     hours: u16,
     save_path: Option<&str>,
@@ -191,7 +193,7 @@ pub fn draw_graph(
     let low_col = Rgba([255u8, 69u8, 58u8, 255u8]);
     let insulin_col = Rgba([96u8, 165u8, 250u8, 255u8]);
     let carbs_col = Rgba([251u8, 191u8, 36u8, 255u8]);
-    let glucose_reading_col = Rgba([52u8, 211u8, 153u8, 255u8]);
+    let _glucose_reading_col = Rgba([52u8, 211u8, 153u8, 255u8]);
 
     let left_margin = 80.0_f32;
     let right_margin = 40.0_f32;
@@ -226,7 +228,7 @@ pub fn draw_graph(
     let (y_min, y_max) = match pref {
         PrefUnit::MgDl => {
             let max_mg = entries.iter().map(|e| e.sgv).fold(0.0_f32, |a, b| a.max(b));
-            let calculated_max = ((max_mg / 50.0).ceil() * 50.0).clamp(200.0, 400.0);
+            let calculated_max = ((max_mg / 10.0).ceil() * 10.0).clamp(200.0, 400.0);
             (40.0_f32, calculated_max)
         }
         PrefUnit::Mmol => {
@@ -283,10 +285,22 @@ pub fn draw_graph(
         axis_col,
     );
 
-    let step_mg = y_range / (num_y_labels - 1) as f32;
-    let y_values: Vec<f32> = (0..num_y_labels)
-        .map(|i| y_min + step_mg * i as f32)
-        .collect();
+    let y_values: Vec<f32> = match pref {
+        PrefUnit::MgDl => {
+            let step = ((y_max - y_min) / (num_y_labels - 1) as f32 / 10.0).ceil() * 10.0;
+            (0..num_y_labels)
+                .map(|i| (y_min + step * i as f32).round())
+                .filter(|&val| val <= y_max)
+                .collect()
+        }
+        PrefUnit::Mmol => {
+            let step = ((y_max - y_min) / (num_y_labels - 1) as f32).ceil();
+            (0..num_y_labels)
+                .map(|i| (y_min + step * i as f32).floor())
+                .filter(|&val| val <= y_max)
+                .collect()
+        }
+    };
 
     for y_val in y_values.iter() {
         let y_px = match pref {
@@ -365,6 +379,25 @@ pub fn draw_graph(
         }
     }
 
+    if let Some(&last_y_val) = y_values.last() {
+        let y_px = match pref {
+            PrefUnit::MgDl => project_y(last_y_val),
+            PrefUnit::Mmol => {
+                inner_plot_bottom - ((last_y_val - y_min) / (y_max - y_min)) * inner_plot_h
+            }
+        };
+
+        if y_px >= inner_plot_top && y_px <= inner_plot_bottom {
+            let faint_grid_col = Rgba([25u8, 35u8, 41u8, 255u8]);
+            draw_line_segment_mut(
+                &mut img,
+                (inner_plot_left, y_px),
+                (inner_plot_right, y_px),
+                faint_grid_col,
+            );
+        }
+    }
+
     let user_tz: Tz = user_timezone.parse().unwrap_or(chrono_tz::UTC);
     let now = Utc::now().with_timezone(&user_tz);
 
@@ -421,6 +454,36 @@ pub fn draw_graph(
         }
         label_indices = filtered;
     }
+
+    let min_label_distance = 80.0;
+    let mut final_indices = Vec::new();
+
+    for (i, &entry_idx) in label_indices.iter().enumerate() {
+        let x_center = inner_plot_left + spacing_x * ((n - 1 - entry_idx) as f32 + 0.5);
+
+        let should_include = if final_indices.is_empty() {
+            true
+        } else {
+            let last_included_idx = final_indices.last().unwrap();
+            let last_x_center =
+                inner_plot_left + spacing_x * ((n - 1 - last_included_idx) as f32 + 0.5);
+            (x_center - last_x_center).abs() >= min_label_distance
+        };
+
+        if should_include || (i == label_indices.len() - 1 && final_indices.len() >= 2) {
+            if i == label_indices.len() - 1 && !final_indices.is_empty() {
+                let last_included_idx = final_indices.last().unwrap();
+                let last_x_center =
+                    inner_plot_left + spacing_x * ((n - 1 - last_included_idx) as f32 + 0.5);
+                if (x_center - last_x_center).abs() < min_label_distance {
+                    final_indices.pop();
+                }
+            }
+            final_indices.push(entry_idx);
+        }
+    }
+
+    label_indices = final_indices;
 
     for (label_pos, &entry_idx) in label_indices.iter().enumerate() {
         let e = &entries[entry_idx];
@@ -562,35 +625,30 @@ pub fn draw_graph(
 
         if treatment.is_insulin() {
             let insulin_amount = treatment.insulin.unwrap_or(0.0);
+            let is_microbolus = insulin_amount <= user_settings.microbolus_threshold;
 
-            let triangle_size = if insulin_amount < 1.0 {
-                8
-            } else if insulin_amount > 5.0 {
+            if is_microbolus && !user_settings.display_microbolus {
+                continue;
+            }
+
+            let triangle_size = if is_microbolus {
+                4
+            } else if insulin_amount <= user_settings.microbolus_threshold + 1.0 {
+                6
+            } else if insulin_amount <= user_settings.microbolus_threshold + 5.0 {
+                9
+            } else {
                 15
-            } else {
-                12
             };
 
-            let has_nearby_glucose = entries.iter().enumerate().any(|(i, _)| {
-                let (entry_x, entry_y) = points_px[i];
-                let distance =
-                    ((closest_x - entry_x).powi(2) + (closest_y - entry_y).powi(2)).sqrt();
-                distance < 25.0
-            });
-
-            let triangle_y = if has_nearby_glucose {
-                closest_y + 35.0
-            } else {
-                closest_y
-            };
+            let triangle_y = closest_y + 35.0;
 
             tracing::trace!(
-                "[GRAPH] Drawing insulin: {:.1}u at ({:.1}, {:.1}) - size: {}, overlap: {}",
+                "[GRAPH] Drawing insulin: {:.1}u at ({:.1}, {:.1}) - size: {}",
                 insulin_amount,
                 closest_x,
                 triangle_y,
-                triangle_size,
-                has_nearby_glucose
+                triangle_size
             );
 
             let triangle_points = vec![
@@ -607,22 +665,30 @@ pub fn draw_graph(
 
             draw_polygon_mut(&mut img, &triangle_points, insulin_col);
 
-            let insulin_text = format!("{:.1}u", insulin_amount);
-            let text_width = insulin_text.len() as f32 * 9.0;
-            draw_text_mut(
-                &mut img,
-                bright,
-                (closest_x - text_width / 2.0) as i32,
-                (triangle_y + triangle_size as f32 + 8.0) as i32,
-                PxScale::from(18.0),
-                &handler.font,
-                &insulin_text,
-            );
+            if !is_microbolus {
+                let insulin_text = format!("{:.1}u", insulin_amount);
+                let text_width = insulin_text.len() as f32 * 9.0;
+                draw_text_mut(
+                    &mut img,
+                    bright,
+                    (closest_x - text_width / 2.0) as i32,
+                    (triangle_y + triangle_size as f32 + 8.0) as i32,
+                    PxScale::from(18.0),
+                    &handler.font,
+                    &insulin_text,
+                );
+            }
         }
 
         if treatment.is_carbs() {
             let carbs_amount = treatment.carbs.unwrap_or(0.0);
-            let circle_radius = if carbs_amount > 30.0 { 12 } else { 9 };
+            let circle_radius = if carbs_amount < 0.5 {
+                4
+            } else if carbs_amount <= 2.0 {
+                7
+            } else {
+                12
+            };
 
             tracing::trace!(
                 "[GRAPH] Drawing carbs: {:.0}g at ({:.1}, {:.1})",
@@ -631,9 +697,11 @@ pub fn draw_graph(
                 closest_y
             );
 
+            let carbs_y = closest_y - 35.0;
+
             draw_filled_circle_mut(
                 &mut img,
-                (closest_x as i32, closest_y as i32),
+                (closest_x as i32, carbs_y as i32),
                 circle_radius,
                 carbs_col,
             );
@@ -644,7 +712,7 @@ pub fn draw_graph(
                 &mut img,
                 carbs_col,
                 (closest_x - text_width / 2.0) as i32,
-                (closest_y - circle_radius as f32 - 25.0) as i32,
+                (carbs_y - circle_radius as f32 - 25.0) as i32,
                 PxScale::from(18.0),
                 &handler.font,
                 &carbs_text,
@@ -664,11 +732,39 @@ pub fn draw_graph(
                 glucose_y
             );
 
+            let bg_check_radius = 6;
+            let grey_outline = Rgba([128u8, 128u8, 128u8, 255u8]);
+            let red_inside = Rgba([220u8, 38u8, 27u8, 255u8]);
+
+            let bg_y = glucose_y - 25.0;
+
             draw_filled_circle_mut(
                 &mut img,
-                (closest_x as i32, glucose_y as i32),
-                4,
-                glucose_reading_col,
+                (closest_x as i32, bg_y as i32),
+                bg_check_radius,
+                grey_outline,
+            );
+
+            draw_filled_circle_mut(
+                &mut img,
+                (closest_x as i32, bg_y as i32),
+                bg_check_radius - 2,
+                red_inside,
+            );
+
+            let glucose_text = match pref {
+                PrefUnit::MgDl => format!("{:.0}", glucose_value),
+                PrefUnit::Mmol => format!("{:.1}", glucose_value / 18.0),
+            };
+            let text_width = glucose_text.len() as f32 * 8.0;
+            draw_text_mut(
+                &mut img,
+                bright,
+                (closest_x - text_width / 2.0) as i32,
+                (bg_y - bg_check_radius as f32 - 20.0) as i32,
+                PxScale::from(16.0),
+                &handler.font,
+                &glucose_text,
             );
         }
     }

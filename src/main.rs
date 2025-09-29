@@ -44,27 +44,26 @@ impl EventHandler for Handler {
                             commands::error::run(&context, command, "You need to register your Nightscout URL first. Use `/setup` to get started.").await
                         } else {
                             match command.data.name.as_str() {
+                                "allow" => commands::allow::run(self, &context, command).await,
                                 "bg" => commands::bg::run(self, &context, command).await,
                                 "graph" => commands::graph::run(self, &context, command).await,
+                                "help" => commands::help::run(self, &context, command).await,
+                                "info" => commands::info::run(self, &context, command).await,
                                 "setup" => commands::setup::run(self, &context, command).await,
+                                "set-threshold" => {
+                                    commands::set_threshold::run(self, &context, command).await
+                                }
                                 "token" => commands::token::run(self, &context, command).await,
                                 unknown_command => {
                                     eprintln!(
                                         "Unknown slash command received: '{}'",
                                         unknown_command
                                     );
-                                    let data = CreateInteractionResponseMessage::new()
-                                        .content(format!("[ERROR] Unknown command: `{}`. Available commands are: `/bg`, `/graph`, `/setup`, `/token`", unknown_command));
-                                    let builder = CreateInteractionResponse::Message(data);
-                                    command
-                                        .create_response(&context.http, builder)
-                                        .await
-                                        .map_err(|e| {
-                                            anyhow::anyhow!(
-                                                "Failed to send unknown command response: {}",
-                                                e
-                                            )
-                                        })
+                                    commands::error::run(
+                                        &context,
+                                        command,
+                                        &format!("Unknown command: `{}`. Available commands are: `/allow`, `/bg`, `/graph`, `/help`, `/info`, `/setup`, `/set-threshold`, `/token`", unknown_command)
+                                    ).await
                                 }
                             }
                         }
@@ -75,6 +74,9 @@ impl EventHandler for Handler {
             Interaction::Component(ref component) => match component.data.custom_id.as_str() {
                 "setup_private" | "setup_public" => {
                     commands::setup::handle_button(self, &context, component).await
+                }
+                id if id.starts_with("help_page_") => {
+                    commands::help::handle_button(self, &context, component).await
                 }
                 _ => Ok(()),
             },
@@ -124,9 +126,13 @@ impl EventHandler for Handler {
     async fn ready(&self, context: Context, ready: Ready) {
         tracing::info!("[BOT] {} is ready and connected!", ready.user.name);
         let commands_vec = vec![
-            commands::graph::register(),
+            commands::allow::register(),
             commands::bg::register(),
+            commands::graph::register(),
+            commands::help::register(),
+            commands::info::register(),
             commands::setup::register(),
+            commands::set_threshold::register(),
             commands::token::register(),
         ];
         let command_count = commands_vec.len();

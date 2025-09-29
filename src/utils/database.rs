@@ -80,6 +80,8 @@ pub struct NightscoutInfo {
     pub nightscout_token: Option<String>,
     pub allowed_people: Vec<u64>,
     pub is_private: bool,
+    pub microbolus_threshold: f32,
+    pub display_microbolus: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -103,6 +105,9 @@ impl Database {
 
         Self::setup_tables(&pool).await?;
 
+        let migration = crate::utils::migration::Migration::new(pool.clone());
+        migration.add_microbolus_fields().await?;
+
         Ok(Database { pool })
     }
 
@@ -114,7 +119,9 @@ impl Database {
                 allowed_people TEXT DEFAULT '[]',
                 is_private INTEGER NOT NULL DEFAULT 1,
                 nightscout_url TEXT,
-                nightscout_token TEXT
+                nightscout_token TEXT,
+                microbolus_threshold REAL DEFAULT 0.5,
+                display_microbolus INTEGER DEFAULT 1
             )
             "#,
         )
@@ -184,13 +191,15 @@ impl Database {
         };
 
         sqlx::query(
-            "INSERT INTO users (discord_id, nightscout_url, nightscout_token, is_private, allowed_people) VALUES (?, ?, ?, ?, ?)"
+            "INSERT INTO users (discord_id, nightscout_url, nightscout_token, is_private, allowed_people, microbolus_threshold, display_microbolus) VALUES (?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(discord_id as i64)
         .bind(&nightscout_info.nightscout_url)
         .bind(&encrypted_token)
         .bind(nightscout_info.is_private as i32)
         .bind(allowed_people_json)
+        .bind(nightscout_info.microbolus_threshold)
+        .bind(nightscout_info.display_microbolus as i32)
         .execute(&self.pool)
         .await?;
 
@@ -229,12 +238,14 @@ impl Database {
         };
 
         sqlx::query(
-            "UPDATE users SET nightscout_url = ?, nightscout_token = ?, is_private = ?, allowed_people = ? WHERE discord_id = ?"
+            "UPDATE users SET nightscout_url = ?, nightscout_token = ?, is_private = ?, allowed_people = ?, microbolus_threshold = ?, display_microbolus = ? WHERE discord_id = ?"
         )
         .bind(&nightscout_info.nightscout_url)
         .bind(&encrypted_token)
         .bind(nightscout_info.is_private as i32)
         .bind(allowed_people_json)
+        .bind(nightscout_info.microbolus_threshold)
+        .bind(nightscout_info.display_microbolus as i32)
         .bind(discord_id as i64)
         .execute(&self.pool)
         .await?;
@@ -286,7 +297,7 @@ impl Database {
 
     async fn get_nightscout_info(&self, user_id: u64) -> Result<NightscoutInfo, sqlx::Error> {
         let row = sqlx::query(
-            "SELECT nightscout_url, nightscout_token, is_private, allowed_people FROM users WHERE discord_id = ?"
+            "SELECT nightscout_url, nightscout_token, is_private, allowed_people, microbolus_threshold, display_microbolus FROM users WHERE discord_id = ?"
         )
         .bind(user_id as i64)
         .fetch_one(&self.pool).await?;
@@ -296,6 +307,11 @@ impl Database {
         let is_private: bool = row.get::<i32, _>("is_private") != 0;
         let allowed_people: Vec<u64> =
             serde_json::from_str(&row.get::<String, _>("allowed_people")).unwrap_or_default();
+        let microbolus_threshold: f32 = row
+            .get::<Option<f32>, _>("microbolus_threshold")
+            .unwrap_or(0.5);
+        let display_microbolus: bool =
+            row.get::<Option<i32>, _>("display_microbolus").unwrap_or(1) != 0;
 
         let nightscout_token = if let Some(encrypted) = encrypted_token {
             match get_crypto().decrypt(&encrypted) {
@@ -325,6 +341,8 @@ impl Database {
             nightscout_token,
             is_private,
             allowed_people,
+            microbolus_threshold,
+            display_microbolus,
         };
 
         Ok(info)
@@ -405,5 +423,73 @@ impl Database {
         }
 
         Ok(sticker_paths)
+    }
+
+    pub async fn update_microbolus_settings(
+        &self,
+        discord_id: u64,
+        threshold: f32,
+        display: bool,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            "UPDATE users SET microbolus_threshold = ?, display_microbolus = ? WHERE discord_id = ?"
+        )
+        .bind(threshold)
+        .bind(display as i32)
+        .bind(discord_id as i64)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    pub async fn add_allowed_user(
+        &self,
+        owner_id: u64,
+        allowed_user_id: u64,
+    ) -> Result<bool, sqlx::Error> {
+        let user_data = self.get_user_info(owner_id).await?;
+        let mut allowed_people = user_data.nightscout.allowed_people;
+
+        if allowed_people.contains(&allowed_user_id) {
+            return Ok(false);
+        }
+
+        allowed_people.push(allowed_user_id);
+        let allowed_people_json =
+            serde_json::to_string(&allowed_people).unwrap_or("[]".to_string());
+
+        sqlx::query("UPDATE users SET allowed_people = ? WHERE discord_id = ?")
+            .bind(allowed_people_json)
+            .bind(owner_id as i64)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(true)
+    }
+
+    pub async fn remove_allowed_user(
+        &self,
+        owner_id: u64,
+        user_to_remove_id: u64,
+    ) -> Result<bool, sqlx::Error> {
+        let user_data = self.get_user_info(owner_id).await?;
+        let mut allowed_people = user_data.nightscout.allowed_people;
+
+        if !allowed_people.contains(&user_to_remove_id) {
+            return Ok(false);
+        }
+
+        allowed_people.retain(|&id| id != user_to_remove_id);
+        let allowed_people_json =
+            serde_json::to_string(&allowed_people).unwrap_or("[]".to_string());
+
+        sqlx::query("UPDATE users SET allowed_people = ? WHERE discord_id = ?")
+            .bind(allowed_people_json)
+            .bind(owner_id as i64)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(true)
     }
 }

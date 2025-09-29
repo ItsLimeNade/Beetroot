@@ -1,5 +1,6 @@
 use serenity::all::{
-    CommandInteraction, Context, CreateInteractionResponse, CreateInteractionResponseMessage,
+    Colour, CommandInteraction, Context, CreateEmbed, CreateInteractionResponse,
+    CreateInteractionResponseMessage,
 };
 
 pub async fn run(
@@ -7,8 +8,14 @@ pub async fn run(
     interaction: &CommandInteraction,
     error_message: &str,
 ) -> anyhow::Result<()> {
-    let message =
-        CreateInteractionResponseMessage::new().content(format!("[ERROR] {}", error_message));
+    let embed = CreateEmbed::new()
+        .title("Error")
+        .description(error_message)
+        .color(Colour::RED);
+
+    let message = CreateInteractionResponseMessage::new()
+        .embed(embed)
+        .ephemeral(true);
 
     let builder = CreateInteractionResponse::Message(message);
     interaction

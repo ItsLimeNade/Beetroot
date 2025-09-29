@@ -20,7 +20,9 @@ pub async fn run(
             .title("Not Set Up")
             .description("You need to run `/setup` first to configure your Nightscout URL before setting a token.");
 
-        let msg = CreateInteractionResponseMessage::new().embed(error_embed);
+        let msg = CreateInteractionResponseMessage::new()
+            .embed(error_embed)
+            .ephemeral(true);
         let builder = CreateInteractionResponse::Message(msg);
         interaction.create_response(&context.http, builder).await?;
         return Ok(());
@@ -58,6 +60,8 @@ pub async fn run(
         nightscout_token: token.clone(),
         is_private: current_user_info.nightscout.is_private,
         allowed_people: current_user_info.nightscout.allowed_people,
+        microbolus_threshold: current_user_info.nightscout.microbolus_threshold,
+        display_microbolus: current_user_info.nightscout.display_microbolus,
     };
 
     let user_id = interaction.user.id.get();
