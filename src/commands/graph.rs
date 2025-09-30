@@ -137,10 +137,11 @@ pub async fn run(
         &treatments,
         &profile,
         &user_data.nightscout,
+        &user_data.stickers,
         handler,
         hours as u16,
         None,
-    )?;
+    ).await?;
 
     let graph_attachment = CreateAttachment::bytes(buffer, "graph.png");
 

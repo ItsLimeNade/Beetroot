@@ -85,10 +85,19 @@ pub struct NightscoutInfo {
 }
 
 #[derive(Clone, Debug)]
+pub struct Sticker {
+    pub id: i32,
+    pub file_name: String,
+    pub x_position: f32,
+    pub y_position: f32,
+    pub rotation: f32,
+}
+
+#[derive(Clone, Debug)]
 pub struct UserInfo {
     pub nightscout: NightscoutInfo,
     #[allow(dead_code)]
-    pub stickers: Vec<String>,
+    pub stickers: Vec<Sticker>,
 }
 
 pub struct Database {
@@ -107,6 +116,7 @@ impl Database {
 
         let migration = crate::utils::migration::Migration::new(pool.clone());
         migration.add_microbolus_fields().await?;
+        migration.add_sticker_position_fields().await?;
 
         Ok(Database { pool })
     }
@@ -134,6 +144,9 @@ impl Database {
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 file_name TEXT NOT NULL,
                 discord_id INTEGER NOT NULL,
+                x_position REAL DEFAULT 0.5,
+                y_position REAL DEFAULT 0.5,
+                rotation REAL DEFAULT 0.0,
                 FOREIGN KEY (discord_id) REFERENCES users(discord_id)
             )
             "#,
@@ -270,15 +283,20 @@ impl Database {
 
         Ok(())
     }
-    #[allow(dead_code)]
     pub async fn insert_sticker(
         &self,
         discord_id: u64,
         file_name: &str,
+        x_position: f32,
+        y_position: f32,
+        rotation: f32,
     ) -> Result<(), sqlx::Error> {
-        sqlx::query("INSERT INTO stickers (file_name, discord_id) VALUES (?, ?)")
+        sqlx::query("INSERT INTO stickers (file_name, discord_id, x_position, y_position, rotation) VALUES (?, ?, ?, ?, ?)")
             .bind(file_name)
             .bind(discord_id as i64)
+            .bind(x_position)
+            .bind(y_position)
+            .bind(rotation)
             .execute(&self.pool)
             .await?;
 
@@ -293,6 +311,25 @@ impl Database {
             .await?;
 
         Ok(())
+    }
+
+    pub async fn delete_sticker_by_name(&self, discord_id: u64, file_name: &str) -> Result<(), sqlx::Error> {
+        sqlx::query("DELETE FROM stickers WHERE discord_id = ? AND file_name = ?")
+            .bind(discord_id as i64)
+            .bind(file_name)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(())
+    }
+
+    pub async fn get_user_sticker_count(&self, discord_id: u64) -> Result<i64, sqlx::Error> {
+        let row = sqlx::query("SELECT COUNT(*) as count FROM stickers WHERE discord_id = ?")
+            .bind(discord_id as i64)
+            .fetch_one(&self.pool)
+            .await?;
+
+        Ok(row.get("count"))
     }
 
     async fn get_nightscout_info(&self, user_id: u64) -> Result<NightscoutInfo, sqlx::Error> {
@@ -403,26 +440,24 @@ impl Database {
         Ok(migrated_count)
     }
 
-    async fn get_user_stickers(&self, user_id: u64) -> Result<Vec<String>, sqlx::Error> {
-        let rows = sqlx::query("SELECT file_name FROM stickers WHERE discord_id = ?")
+    async fn get_user_stickers(&self, user_id: u64) -> Result<Vec<Sticker>, sqlx::Error> {
+        let rows = sqlx::query("SELECT id, file_name, x_position, y_position, rotation FROM stickers WHERE discord_id = ?")
             .bind(user_id as i64)
             .fetch_all(&self.pool)
             .await?;
 
-        let mut sticker_paths: Vec<String> = rows
+        let stickers: Vec<Sticker> = rows
             .iter()
-            .map(|f| f.get::<String, _>("file_name"))
+            .map(|row| Sticker {
+                id: row.get("id"),
+                file_name: row.get("file_name"),
+                x_position: row.get("x_position"),
+                y_position: row.get("y_position"),
+                rotation: row.get("rotation"),
+            })
             .collect();
 
-        if sticker_paths.is_empty() {
-            sticker_paths = vec![
-                "images/stickers/thing.webp".to_string(),
-                "images/stickers/thing2.webp".to_string(),
-                "images/stickers/thing3.webp".to_string(),
-            ];
-        }
-
-        Ok(sticker_paths)
+        Ok(stickers)
     }
 
     pub async fn update_microbolus_settings(

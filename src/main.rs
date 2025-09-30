@@ -38,37 +38,57 @@ impl EventHandler for Handler {
     async fn interaction_create(&self, context: Context, interaction: Interaction) {
         let result = match interaction {
             Interaction::Command(ref command) => {
-                match self.database.user_exists(command.user.id.get()).await {
-                    Ok(exists) => {
-                        if !exists && command.data.name.as_str() != "setup" {
-                            commands::error::run(&context, command, "You need to register your Nightscout URL first. Use `/setup` to get started.").await
-                        } else {
-                            match command.data.name.as_str() {
-                                "allow" => commands::allow::run(self, &context, command).await,
-                                "bg" => commands::bg::run(self, &context, command).await,
-                                "graph" => commands::graph::run(self, &context, command).await,
-                                "help" => commands::help::run(self, &context, command).await,
-                                "info" => commands::info::run(self, &context, command).await,
-                                "setup" => commands::setup::run(self, &context, command).await,
-                                "set-threshold" => {
-                                    commands::set_threshold::run(self, &context, command).await
-                                }
-                                "token" => commands::token::run(self, &context, command).await,
-                                unknown_command => {
-                                    eprintln!(
-                                        "Unknown slash command received: '{}'",
-                                        unknown_command
-                                    );
-                                    commands::error::run(
-                                        &context,
-                                        command,
-                                        &format!("Unknown command: `{}`. Available commands are: `/allow`, `/bg`, `/graph`, `/help`, `/info`, `/setup`, `/set-threshold`, `/token`", unknown_command)
-                                    ).await
+                // Handle context menu commands
+                if command.data.kind == serenity::model::application::CommandType::Message {
+                    match command.data.name.as_str() {
+                        "Add Sticker" => commands::add_sticker::run(self, &context, command).await,
+                        unknown_context_command => {
+                            eprintln!(
+                                "Unknown context menu command received: '{}'",
+                                unknown_context_command
+                            );
+                            commands::error::run(
+                                &context,
+                                command,
+                                &format!("Unknown context menu command: `{}`", unknown_context_command)
+                            ).await
+                        }
+                    }
+                } else {
+                    // Handle regular slash commands
+                    match self.database.user_exists(command.user.id.get()).await {
+                        Ok(exists) => {
+                            if !exists && command.data.name.as_str() != "setup" {
+                                commands::error::run(&context, command, "You need to register your Nightscout URL first. Use `/setup` to get started.").await
+                            } else {
+                                match command.data.name.as_str() {
+                                    "allow" => commands::allow::run(self, &context, command).await,
+                                    "bg" => commands::bg::run(self, &context, command).await,
+                                    "graph" => commands::graph::run(self, &context, command).await,
+                                    "help" => commands::help::run(self, &context, command).await,
+                                    "info" => commands::info::run(self, &context, command).await,
+                                    "remove-sticker" => commands::remove_sticker::run(self, &context, command).await,
+                                    "setup" => commands::setup::run(self, &context, command).await,
+                                    "set-threshold" => {
+                                        commands::set_threshold::run(self, &context, command).await
+                                    }
+                                    "token" => commands::token::run(self, &context, command).await,
+                                    unknown_command => {
+                                        eprintln!(
+                                            "Unknown slash command received: '{}'",
+                                            unknown_command
+                                        );
+                                        commands::error::run(
+                                            &context,
+                                            command,
+                                            &format!("Unknown command: `{}`. Available commands are: `/allow`, `/bg`, `/graph`, `/help`, `/info`, `/remove-sticker`, `/setup`, `/set-threshold`, `/token`", unknown_command)
+                                        ).await
+                                    }
                                 }
                             }
                         }
+                        Err(db_error) => Err(anyhow::anyhow!("Database error: {}", db_error)),
                     }
-                    Err(db_error) => Err(anyhow::anyhow!("Database error: {}", db_error)),
                 }
             }
             Interaction::Component(ref component) => match component.data.custom_id.as_str() {
@@ -126,14 +146,18 @@ impl EventHandler for Handler {
     async fn ready(&self, context: Context, ready: Ready) {
         tracing::info!("[BOT] {} is ready and connected!", ready.user.name);
         let commands_vec = vec![
+            // Slash commands
             commands::allow::register(),
             commands::bg::register(),
             commands::graph::register(),
             commands::help::register(),
             commands::info::register(),
+            commands::remove_sticker::register(),
             commands::setup::register(),
             commands::set_threshold::register(),
             commands::token::register(),
+            // Context menu commands
+            commands::add_sticker::register(),
         ];
         let command_count = commands_vec.len();
         let commands = Command::set_global_commands(&context, commands_vec).await;

@@ -104,6 +104,9 @@ pub struct Entry {
     pub date: Option<u64>,
     #[serde(default)]
     pub mills: Option<u64>,
+    // Meter blood glucose (finger stick reading)
+    #[serde(default, deserialize_with = "deserialize_mbg", alias = "MBG")]
+    pub mbg: Option<f32>,
 }
 
 // Custom deserializer for glucose field that can handle both numbers and strings
@@ -165,6 +168,73 @@ where
     }
 
     deserializer.deserialize_option(GlucoseVisitor)
+}
+
+// Custom deserializer for mbg field that can handle both numbers and strings
+fn deserialize_mbg<'de, D>(deserializer: D) -> Result<Option<f32>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::Visitor;
+
+    struct MbgVisitor;
+
+    impl<'de> Visitor<'de> for MbgVisitor {
+        type Value = Option<f32>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("a number, string, or null")
+        }
+
+        fn visit_none<E>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+
+        fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            deserializer.deserialize_any(MbgValueVisitor)
+        }
+    }
+
+    struct MbgValueVisitor;
+
+    impl<'de> Visitor<'de> for MbgValueVisitor {
+        type Value = Option<f32>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("a number or string")
+        }
+
+        fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            match value.parse::<f32>() {
+                Ok(num) => Ok(Some(num)),
+                Err(_) => Ok(None),
+            }
+        }
+
+        fn visit_i64<E>(self, value: i64) -> Result<Self::Value, E> {
+            Ok(Some(value as f32))
+        }
+
+        fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E> {
+            Ok(Some(value as f32))
+        }
+
+        fn visit_f64<E>(self, value: f64) -> Result<Self::Value, E> {
+            Ok(Some(value as f32))
+        }
+
+        fn visit_unit<E>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+    }
+
+    deserializer.deserialize_option(MbgVisitor)
 }
 
 #[allow(dead_code)]
@@ -346,6 +416,11 @@ impl Entry {
     pub fn get_delta(&self, old_entry: &Entry) -> Delta {
         let delta_value = self.sgv - old_entry.sgv;
         Delta { value: delta_value }
+    }
+
+    /// Check if this entry has a meter blood glucose (finger stick) reading
+    pub fn has_mbg(&self) -> bool {
+        self.mbg.is_some() && self.mbg.unwrap_or(0.0) > 0.0
     }
 }
 
@@ -835,6 +910,82 @@ impl Nightscout {
             .ok_or(NightscoutError::MissingData)
     }
 
+    /// Filters entries to include only those within the specified time range and removes duplicates
+    ///
+    /// This method combines time filtering and deduplication logic previously scattered across the codebase.
+    /// It filters entries to only include those within the specified hours back from the current time
+    /// in the user's timezone, and removes duplicate entries based on timestamp and SGV values.
+    ///
+    /// # Arguments
+    /// * `entries` - A slice of Entry objects to filter
+    /// * `hours` - Number of hours back from now to include entries for
+    /// * `user_timezone` - The user's timezone string for time calculations
+    ///
+    /// # Returns
+    /// * `Ok(Vec<Entry>)` - Vector of filtered and deduplicated entries
+    /// * `Err(NightscoutError::NoEntries)` - If no entries remain after filtering
+    pub fn filter_and_clean_entries(&self, entries: &[Entry], hours: u16, user_timezone: &str) -> Result<Vec<Entry>, NightscoutError> {
+        if entries.is_empty() {
+            return Err(NightscoutError::NoEntries);
+        }
+
+        let user_tz: chrono_tz::Tz = user_timezone.parse().unwrap_or(chrono_tz::UTC);
+        let now = chrono::Utc::now().with_timezone(&user_tz);
+        let cutoff_time = now - chrono::Duration::hours(hours as i64);
+
+        // First filter by time range
+        let time_filtered: Vec<&Entry> = entries
+            .iter()
+            .filter(|entry| {
+                let entry_time = entry.millis_to_user_timezone(user_timezone);
+                entry_time >= cutoff_time
+            })
+            .collect();
+
+        if time_filtered.is_empty() {
+            return Err(NightscoutError::NoEntries);
+        }
+
+        // Then remove duplicates
+        let mut seen_ids = std::collections::HashSet::new();
+        let mut processed_entries = Vec::new();
+
+        for entry in time_filtered.into_iter().cloned() {
+            // Skip entries with duplicate IDs
+            if let Some(id) = &entry.id {
+                if seen_ids.contains(id) {
+                    continue;
+                }
+                seen_ids.insert(id.clone());
+            }
+
+            let entry_timestamp = entry.date.or(entry.mills).unwrap_or(0);
+            let entry_sgv = (entry.sgv * 100.0) as i32;
+
+            // Check for duplicate based on timestamp and SGV
+            let is_duplicate = processed_entries.iter().any(|existing: &Entry| {
+                let existing_timestamp = existing.date.or(existing.mills).unwrap_or(0);
+                let existing_sgv = (existing.sgv * 100.0) as i32;
+
+                let time_diff = (entry_timestamp as i64 - existing_timestamp as i64).abs();
+                let same_sgv = entry_sgv == existing_sgv;
+
+                // Consider duplicate if within 30 seconds and same SGV
+                time_diff <= 30000 && same_sgv
+            });
+
+            if !is_duplicate {
+                processed_entries.push(entry);
+            }
+        }
+
+        if processed_entries.is_empty() {
+            Err(NightscoutError::NoEntries)
+        } else {
+            Ok(processed_entries)
+        }
+    }
+
     /// Filters entries to only include those with the same date string ID as the first entry
     ///
     /// Takes a slice of entries and returns a new vector containing only the entries
@@ -898,12 +1049,20 @@ impl Nightscout {
         //? Since clean entries could delete some entries due to the duplication glitch, it is
         //? safer to pull more than two. A check to verify that enough entries are available
         //? is also mandatory to avoid stupid errors.
-        let options = NightscoutRequestOptions::default().count(4);
-        let entries = self.get_entries(base_url, options, token).await?;
+        let options = NightscoutRequestOptions::default().count(10);
+        let raw_entries = self.get_entries(base_url, options, token).await?;
         tracing::debug!(
-            "[DATA] Retrieved {} entries for delta calculation",
+            "[DATA] Retrieved {} raw entries for delta calculation",
+            raw_entries.len()
+        );
+
+        // Filter out duplicates using the clean_entries method
+        let entries = self.clean_entries(&raw_entries)?;
+        tracing::debug!(
+            "[DATA] After cleaning: {} entries remain for delta calculation",
             entries.len()
         );
+
         if entries.len() < 2 {
             return Err(NightscoutError::NoEntries);
         }

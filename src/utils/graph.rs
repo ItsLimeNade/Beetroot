@@ -1,4 +1,4 @@
-use super::database::NightscoutInfo;
+use super::database::{NightscoutInfo, Sticker};
 use super::nightscout::{Entry, Profile, Treatment};
 use crate::Handler;
 use ab_glyph::PxScale;
@@ -11,6 +11,22 @@ use imageproc::drawing::{
 };
 use imageproc::point::Point;
 use std::io::Cursor;
+
+async fn download_sticker_image(url: &str) -> Result<image::DynamicImage> {
+    tracing::debug!("[STICKER] Downloading sticker from: {}", url);
+
+    let response = reqwest::get(url).await?;
+
+    if !response.status().is_success() {
+        return Err(anyhow!("Failed to download sticker: HTTP {}", response.status()));
+    }
+
+    let bytes = response.bytes().await?;
+    let img = image::load_from_memory(&bytes)?;
+
+    tracing::debug!("[STICKER] Successfully downloaded sticker ({} bytes)", bytes.len());
+    Ok(img)
+}
 
 fn draw_dashed_vertical_line(
     img: &mut RgbaImage,
@@ -52,11 +68,12 @@ enum PrefUnit {
 }
 
 #[allow(dead_code)]
-pub fn draw_graph(
+pub async fn draw_graph(
     entries: &[Entry],
     treatments: &[Treatment],
     profile: &Profile,
     user_settings: &NightscoutInfo,
+    stickers: &[Sticker],
     handler: &Handler,
     hours: u16,
     save_path: Option<&str>,
@@ -89,78 +106,18 @@ pub fn draw_graph(
     let user_timezone = &profile_store.timezone;
     tracing::info!("[GRAPH] Using timezone: {}", user_timezone);
 
-    let user_tz: Tz = user_timezone.parse().unwrap_or(chrono_tz::UTC);
-    let now = chrono::Utc::now().with_timezone(&user_tz);
-    let cutoff_time = now - chrono::Duration::hours(hours as i64);
-
-    let filtered_entries: Vec<&Entry> = entries
-        .iter()
-        .filter(|entry| {
-            let entry_time = entry.millis_to_user_timezone(user_timezone);
-            entry_time >= cutoff_time
-        })
-        .collect();
+    // Use the new filtering method from nightscout client
+    let nightscout_client = crate::utils::nightscout::Nightscout::new();
+    let entries = match nightscout_client.filter_and_clean_entries(entries, hours, user_timezone) {
+        Ok(filtered) => filtered,
+        Err(e) => {
+            tracing::error!("[GRAPH] Failed to filter entries: {}", e);
+            return Err(anyhow!("No entries found within the requested {} hour time range", hours));
+        }
+    };
 
     tracing::info!(
-        "[GRAPH] Filtered {} entries to {} within the last {} hours",
-        entries.len(),
-        filtered_entries.len(),
-        hours
-    );
-
-    if filtered_entries.is_empty() {
-        tracing::error!("[GRAPH] No entries found within the requested time range");
-        return Err(anyhow!(
-            "No entries found within the requested {} hour time range",
-            hours
-        ));
-    }
-
-    let entries: Vec<Entry> = filtered_entries.into_iter().cloned().collect();
-
-    let mut seen_ids = std::collections::HashSet::new();
-    let mut processed_entries = Vec::new();
-
-    for entry in entries {
-        if let Some(id) = &entry.id {
-            if seen_ids.contains(id) {
-                tracing::debug!("[GRAPH] Removing duplicate entry with ID: {}", id);
-                continue;
-            }
-            seen_ids.insert(id.clone());
-        }
-
-        let entry_timestamp = entry.date.or(entry.mills).unwrap_or(0);
-        let entry_sgv = (entry.sgv * 100.0) as i32;
-
-        let is_duplicate = processed_entries.iter().any(|existing: &Entry| {
-            let existing_timestamp = existing.date.or(existing.mills).unwrap_or(0);
-            let existing_sgv = (existing.sgv * 100.0) as i32;
-
-            let time_diff = (entry_timestamp as i64 - existing_timestamp as i64).abs();
-            let same_sgv = entry_sgv == existing_sgv;
-
-            if time_diff <= 30000 && same_sgv {
-                tracing::debug!(
-                    "[GRAPH] Removing duplicate entry: SGV={:.1}, time_diff={}ms",
-                    entry.sgv,
-                    time_diff
-                );
-                true
-            } else {
-                false
-            }
-        });
-
-        if !is_duplicate {
-            processed_entries.push(entry);
-        }
-    }
-
-    let entries = processed_entries;
-
-    tracing::info!(
-        "[GRAPH] After deduplication: {} entries remain",
+        "[GRAPH] After filtering and deduplication: {} entries remain",
         entries.len()
     );
 
@@ -421,74 +378,87 @@ pub fn draw_graph(
         3.0
     };
 
-    let n = entries.len();
-    let spacing_x = inner_plot_w / n as f32;
+    // Calculate time-based positioning to preserve gaps in data
+    let time_range_seconds = (newest_time.timestamp() - oldest_time.timestamp()) as f32;
 
-    let mut label_indices = Vec::new();
+    // Helper function to calculate x position based on timestamp
+    let calculate_x_position = |entry_time: chrono::DateTime<chrono_tz::Tz>| -> f32 {
+        let time_from_oldest = (entry_time.timestamp() - oldest_time.timestamp()) as f32;
+        let time_ratio = time_from_oldest / time_range_seconds;
+        inner_plot_left + (time_ratio * inner_plot_w)
+    };
+
+    // Generate time-based labels
+    let mut label_entries = Vec::new();
     let mut last_labeled_time = oldest_time;
 
-    for (i, entry) in entries.iter().enumerate().rev() {
+    // Sample entries for labels based on time intervals, not array indices
+    for entry in entries.iter().rev() {
         let entry_time = entry.millis_to_user_timezone(user_timezone);
         let hours_since_last =
             (entry_time.timestamp() - last_labeled_time.timestamp()) as f32 / 3600.0;
 
-        if i == 0 || hours_since_last >= time_interval || label_indices.is_empty() {
-            label_indices.push(n - 1 - i);
+        if label_entries.is_empty() || hours_since_last >= time_interval {
+            label_entries.push(entry);
             last_labeled_time = entry_time;
         }
     }
 
-    if !label_indices.contains(&0) {
-        label_indices.insert(0, 0);
+    // Always include the newest entry if not already included
+    if let Some(newest_entry) = entries.first() {
+        let newest_entry_time = newest_entry.millis_to_user_timezone(user_timezone);
+        if label_entries.is_empty() ||
+           label_entries.iter().all(|e| e.millis_to_user_timezone(user_timezone) != newest_entry_time) {
+            label_entries.insert(0, newest_entry);
+        }
     }
 
-    label_indices.sort();
-    if label_indices.len() > max_x_labels {
-        let step = label_indices.len() / max_x_labels;
-        let mut filtered = vec![label_indices[0]];
-        for i in (step..label_indices.len() - step).step_by(step) {
-            filtered.push(label_indices[i]);
+    // Limit the number of labels and ensure minimum spacing
+    if label_entries.len() > max_x_labels {
+        let step = label_entries.len() / max_x_labels;
+        let mut filtered = vec![label_entries[0]];
+        for i in (step..label_entries.len() - step).step_by(step) {
+            filtered.push(label_entries[i]);
         }
-        if label_indices.len() > 1 {
-            filtered.push(*label_indices.last().unwrap());
+        if label_entries.len() > 1 {
+            filtered.push(*label_entries.last().unwrap());
         }
-        label_indices = filtered;
+        label_entries = filtered;
     }
 
     let min_label_distance = 80.0;
-    let mut final_indices = Vec::new();
+    let mut final_label_entries = Vec::new();
 
-    for (i, &entry_idx) in label_indices.iter().enumerate() {
-        let x_center = inner_plot_left + spacing_x * ((n - 1 - entry_idx) as f32 + 0.5);
+    for (i, &entry) in label_entries.iter().enumerate() {
+        let entry_time = entry.millis_to_user_timezone(user_timezone);
+        let x_center = calculate_x_position(entry_time);
 
-        let should_include = if final_indices.is_empty() {
+        let should_include = if final_label_entries.is_empty() {
             true
         } else {
-            let last_included_idx = final_indices.last().unwrap();
-            let last_x_center =
-                inner_plot_left + spacing_x * ((n - 1 - last_included_idx) as f32 + 0.5);
+            let last_entry: &&Entry = final_label_entries.last().unwrap();
+            let last_time = last_entry.millis_to_user_timezone(user_timezone);
+            let last_x_center = calculate_x_position(last_time);
             (x_center - last_x_center).abs() >= min_label_distance
         };
 
-        if should_include || (i == label_indices.len() - 1 && final_indices.len() >= 2) {
-            if i == label_indices.len() - 1 && !final_indices.is_empty() {
-                let last_included_idx = final_indices.last().unwrap();
-                let last_x_center =
-                    inner_plot_left + spacing_x * ((n - 1 - last_included_idx) as f32 + 0.5);
+        if should_include || (i == label_entries.len() - 1 && final_label_entries.len() >= 2) {
+            if i == label_entries.len() - 1 && !final_label_entries.is_empty() {
+                let last_entry: &&Entry = final_label_entries.last().unwrap();
+                let last_time = last_entry.millis_to_user_timezone(user_timezone);
+                let last_x_center = calculate_x_position(last_time);
                 if (x_center - last_x_center).abs() < min_label_distance {
-                    final_indices.pop();
+                    final_label_entries.pop();
                 }
             }
-            final_indices.push(entry_idx);
+            final_label_entries.push(entry);
         }
     }
 
-    label_indices = final_indices;
-
-    for (label_pos, &entry_idx) in label_indices.iter().enumerate() {
-        let e = &entries[entry_idx];
-        let x_center = inner_plot_left + spacing_x * ((n - 1 - entry_idx) as f32 + 0.5);
-        let entry_time = e.millis_to_user_timezone(user_timezone);
+    // Draw time labels
+    for (label_pos, entry) in final_label_entries.iter().enumerate() {
+        let entry_time = entry.millis_to_user_timezone(user_timezone);
+        let x_center = calculate_x_position(entry_time);
         let time_label = entry_time.format("%H:%M").to_string();
 
         let approx_char_width = x_label_size_primary * 0.6;
@@ -534,9 +504,9 @@ pub fn draw_graph(
             &rel,
         );
 
+        // Draw day change indicator
         if label_pos > 0 {
-            let prev_entry_idx = label_indices[label_pos - 1];
-            let prev_entry = &entries[prev_entry_idx];
+            let prev_entry = final_label_entries[label_pos - 1];
             let prev_time = prev_entry.millis_to_user_timezone(user_timezone);
 
             if entry_time.date_naive() != prev_time.date_naive() {
@@ -563,10 +533,12 @@ pub fn draw_graph(
         }
     }
 
+    // Calculate points with time-based positioning
     let mut points_px: Vec<(f32, f32)> = Vec::with_capacity(entries.len());
-    for (i, e) in entries.iter().enumerate() {
-        let x = inner_plot_left + spacing_x * ((n - 1 - i) as f32 + 0.5);
-        let y = project_y(e.sgv.clamp(
+    for entry in &entries {
+        let entry_time = entry.millis_to_user_timezone(user_timezone);
+        let x = calculate_x_position(entry_time);
+        let y = project_y(entry.sgv.clamp(
             match pref {
                 PrefUnit::MgDl => y_min,
                 PrefUnit::Mmol => y_min * 18.0,
@@ -608,20 +580,23 @@ pub fn draw_graph(
             continue;
         };
 
-        let mut closest_x = inner_plot_left;
+        // Position treatment at its actual timestamp, not closest entry
+        let treatment_x = calculate_x_position(treatment_time);
         let mut closest_y = inner_plot_bottom - inner_plot_h / 2.0;
         let mut min_time_diff = i64::MAX;
 
+        // Find closest entry for Y positioning only
         for (i, entry) in entries.iter().enumerate() {
             let entry_time = entry.millis_to_user_timezone(user_timezone);
             let time_diff = (treatment_time.timestamp() - entry_time.timestamp()).abs();
 
             if time_diff < min_time_diff {
                 min_time_diff = time_diff;
-                closest_x = points_px[i].0;
                 closest_y = points_px[i].1;
             }
         }
+
+        let closest_x = treatment_x;
 
         if treatment.is_insulin() {
             let insulin_amount = treatment.insulin.unwrap_or(0.0);
@@ -786,6 +761,63 @@ pub fn draw_graph(
         );
     }
 
+    // Draw MBG (meter blood glucose) readings as finger check indicators
+    let mbg_count = entries.iter().filter(|e| e.has_mbg()).count();
+    tracing::info!("[GRAPH] Found {} entries with MBG values", mbg_count);
+
+    for (i, entry) in entries.iter().enumerate() {
+        if entry.has_mbg() {
+            let mbg_value = entry.mbg.unwrap_or(0.0);
+            let (x, _) = points_px[i];
+            let mbg_y = project_y(mbg_value);
+
+            tracing::trace!(
+                "[GRAPH] Drawing MBG reading: {:.1} at ({:.1}, {:.1})",
+                mbg_value,
+                x,
+                mbg_y
+            );
+
+            let bg_check_radius = 6;
+            let grey_outline = Rgba([128u8, 128u8, 128u8, 255u8]);
+            let red_inside = Rgba([220u8, 38u8, 27u8, 255u8]);
+
+            let bg_y = mbg_y - 25.0;
+
+            // Draw outer circle
+            draw_filled_circle_mut(
+                &mut img,
+                (x as i32, bg_y as i32),
+                bg_check_radius,
+                grey_outline,
+            );
+
+            // Draw inner circle
+            draw_filled_circle_mut(
+                &mut img,
+                (x as i32, bg_y as i32),
+                bg_check_radius - 2,
+                red_inside,
+            );
+
+            // Draw MBG value text
+            let mbg_text = match pref {
+                PrefUnit::MgDl => format!("{:.0}", mbg_value),
+                PrefUnit::Mmol => format!("{:.1}", mbg_value / 18.0),
+            };
+            let text_width = mbg_text.len() as f32 * 8.0;
+            draw_text_mut(
+                &mut img,
+                bright,
+                (x - text_width / 2.0) as i32,
+                (bg_y - bg_check_radius as f32 - 20.0) as i32,
+                PxScale::from(16.0),
+                &handler.font,
+                &mbg_text,
+            );
+        }
+    }
+
     let header_x = (plot_left - 72.0) as i32;
     let header_y = (plot_bottom + 30.) as i32;
     match pref {
@@ -840,6 +872,137 @@ pub fn draw_graph(
         &handler.font,
         "Beetroot",
     );
+
+    tracing::info!("[GRAPH] Drawing {} stickers", stickers.len());
+
+    let mut occupied_areas: Vec<(f32, f32, f32)> = Vec::new();
+    let sticker_radius = 60.0;
+
+    for sticker in stickers {
+        let mut attempts = 0;
+        let max_attempts = 50;
+        let (random_x, random_y) = loop {
+            let x = rand::random::<f32>() * 0.6 + 0.2;
+            let y = rand::random::<f32>() * 0.6 + 0.2;
+
+            let abs_x = inner_plot_left + x * inner_plot_w;
+            let abs_y = inner_plot_top + y * inner_plot_h;
+
+            let has_collision = occupied_areas.iter().any(|(ox, oy, r)| {
+                let distance = ((abs_x - ox).powi(2) + (abs_y - oy).powi(2)).sqrt();
+                distance < (sticker_radius + r)
+            });
+
+            if !has_collision || attempts >= max_attempts {
+                occupied_areas.push((abs_x, abs_y, sticker_radius));
+                break (x, y);
+            }
+
+            attempts += 1;
+        };
+
+        let random_rotation = rand::random::<f32>() * 30.0 - 15.0;
+
+        tracing::debug!(
+            "[GRAPH] Drawing sticker: {} at ({:.2}, {:.2}) with rotation {:.1}°",
+            sticker.file_name,
+            random_x,
+            random_y,
+            random_rotation
+        );
+
+        let sticker_img = if sticker.file_name.starts_with("http") {
+            match download_sticker_image(&sticker.file_name).await {
+                Ok(img) => img,
+                Err(e) => {
+                    tracing::warn!(
+                        "[GRAPH] Failed to download sticker from {}: {}",
+                        sticker.file_name,
+                        e
+                    );
+                    continue;
+                }
+            }
+        } else {
+            match image::open(&sticker.file_name) {
+                Ok(img) => img,
+                Err(e) => {
+                    tracing::warn!(
+                        "[GRAPH] Failed to load sticker image {}: {}",
+                        sticker.file_name,
+                        e
+                    );
+                    continue;
+                }
+            }
+        };
+
+        let sticker_rgba = sticker_img.to_rgba8();
+        let (sticker_w, sticker_h) = sticker_rgba.dimensions();
+
+        let sticker_x = (inner_plot_left + random_x * inner_plot_w) as i32;
+        let sticker_y = (inner_plot_top + random_y * inner_plot_h) as i32;
+
+        let max_size = 100;
+        let scale_factor = if sticker_w > sticker_h {
+            max_size as f32 / sticker_w as f32
+        } else {
+            max_size as f32 / sticker_h as f32
+        };
+        let new_w = (sticker_w as f32 * scale_factor) as u32;
+        let new_h = (sticker_h as f32 * scale_factor) as u32;
+
+        let resized_sticker = image::imageops::resize(
+            &sticker_rgba,
+            new_w,
+            new_h,
+            image::imageops::FilterType::Lanczos3,
+        );
+
+        let start_x = (sticker_x - new_w as i32 / 2).max(0);
+        let start_y = (sticker_y - new_h as i32 / 2).max(0);
+
+        for y in 0..new_h {
+            for x in 0..new_w {
+                let img_x = start_x + x as i32;
+                let img_y = start_y + y as i32;
+
+                if img_x >= 0
+                    && img_x < img.width() as i32
+                    && img_y >= 0
+                    && img_y < img.height() as i32
+                {
+                    let sticker_pixel = resized_sticker.get_pixel(x, y);
+
+                    if sticker_pixel[3] > 128 {
+                        let base_alpha = sticker_pixel[3] as f32 / 255.0;
+                        let alpha = base_alpha * 0.8;
+                        let bg_pixel = img.get_pixel(img_x as u32, img_y as u32);
+
+                        let darkened_r = (sticker_pixel[0] as f32 * 0.8) as u8;
+                        let darkened_g = (sticker_pixel[1] as f32 * 0.8) as u8;
+                        let darkened_b = (sticker_pixel[2] as f32 * 0.8) as u8;
+
+                        let blended = Rgba([
+                            ((darkened_r as f32 * alpha) + (bg_pixel[0] as f32 * (1.0 - alpha))) as u8,
+                            ((darkened_g as f32 * alpha) + (bg_pixel[1] as f32 * (1.0 - alpha))) as u8,
+                            ((darkened_b as f32 * alpha) + (bg_pixel[2] as f32 * (1.0 - alpha))) as u8,
+                            255,
+                        ]);
+
+                        img.put_pixel(img_x as u32, img_y as u32, blended);
+                    }
+                }
+            }
+        }
+
+        tracing::trace!(
+            "[GRAPH] Successfully drew sticker {} at ({}, {})",
+            sticker.file_name,
+            sticker_x,
+            sticker_y
+        );
+    }
 
     let dyna = DynamicImage::ImageRgba8(img);
     let mut out_buf: Vec<u8> = Vec::new();

@@ -1,9 +1,11 @@
+pub mod add_sticker;
 pub mod allow;
 pub mod bg;
 pub mod error;
 pub mod graph;
 pub mod help;
 pub mod info;
+pub mod remove_sticker;
 pub mod set_threshold;
 pub mod set_visibility;
 pub mod setup;
