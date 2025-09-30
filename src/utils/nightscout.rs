@@ -203,6 +203,8 @@ pub struct Treatment {
     pub date: Option<u64>,
     #[serde(default)]
     pub mills: Option<u64>,
+    #[serde(rename = "type", default)]
+    pub type_: Option<String>,
 }
 
 #[allow(dead_code)]

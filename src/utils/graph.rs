@@ -625,7 +625,8 @@ pub fn draw_graph(
 
         if treatment.is_insulin() {
             let insulin_amount = treatment.insulin.unwrap_or(0.0);
-            let is_microbolus = insulin_amount <= user_settings.microbolus_threshold;
+            let is_smb_type = treatment.type_.as_deref() == Some("SMB");
+            let is_microbolus = is_smb_type || insulin_amount <= user_settings.microbolus_threshold;
 
             if is_microbolus && !user_settings.display_microbolus {
                 continue;
