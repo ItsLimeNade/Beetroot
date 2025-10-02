@@ -107,4 +107,52 @@ impl Migration {
         tracing::info!("[MIGRATION] Sticker position fields migration completed");
         Ok(())
     }
+
+    pub async fn add_sticker_display_name_field(&self) -> Result<(), sqlx::Error> {
+        tracing::info!("[MIGRATION] Adding display_name field to stickers table");
+
+        let check_display_name_query = sqlx::query(
+            "SELECT COUNT(*) as count FROM pragma_table_info('stickers') WHERE name = 'display_name'",
+        );
+
+        let display_name_exists = check_display_name_query
+            .fetch_one(&self.pool)
+            .await?
+            .get::<i32, _>("count")
+            > 0;
+
+        if !display_name_exists {
+            sqlx::query("ALTER TABLE stickers ADD COLUMN display_name TEXT DEFAULT ''")
+                .execute(&self.pool)
+                .await?;
+            tracing::info!("[MIGRATION] Added display_name column");
+
+            // Update existing stickers with extracted display names
+            // For old Discord stickers, we'll just use a generic name since we can't extract the original name
+            sqlx::query(
+                "UPDATE stickers SET display_name =
+                 CASE
+                   WHEN file_name LIKE 'https://media.discordapp.net/stickers/%' THEN 'Discord Sticker'
+                   WHEN file_name LIKE 'http%' THEN 'Custom Sticker'
+                   ELSE COALESCE(
+                     REPLACE(
+                       REPLACE(
+                         SUBSTR(file_name, INSTR(file_name, '/') + 1),
+                         '.webp', ''
+                       ),
+                       '.png', ''
+                     ),
+                     'Unknown'
+                   )
+                 END
+                 WHERE display_name = '' OR display_name IS NULL"
+            )
+            .execute(&self.pool)
+            .await?;
+            tracing::info!("[MIGRATION] Updated existing stickers with display names");
+        }
+
+        tracing::info!("[MIGRATION] Sticker display name field migration completed");
+        Ok(())
+    }
 }

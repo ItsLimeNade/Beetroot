@@ -141,7 +141,8 @@ pub async fn run(
         handler,
         hours as u16,
         None,
-    ).await?;
+    )
+    .await?;
 
     let graph_attachment = CreateAttachment::bytes(buffer, "graph.png");
 

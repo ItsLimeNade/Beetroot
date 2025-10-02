@@ -18,13 +18,19 @@ async fn download_sticker_image(url: &str) -> Result<image::DynamicImage> {
     let response = reqwest::get(url).await?;
 
     if !response.status().is_success() {
-        return Err(anyhow!("Failed to download sticker: HTTP {}", response.status()));
+        return Err(anyhow!(
+            "Failed to download sticker: HTTP {}",
+            response.status()
+        ));
     }
 
     let bytes = response.bytes().await?;
     let img = image::load_from_memory(&bytes)?;
 
-    tracing::debug!("[STICKER] Successfully downloaded sticker ({} bytes)", bytes.len());
+    tracing::debug!(
+        "[STICKER] Successfully downloaded sticker ({} bytes)",
+        bytes.len()
+    );
     Ok(img)
 }
 
@@ -112,7 +118,10 @@ pub async fn draw_graph(
         Ok(filtered) => filtered,
         Err(e) => {
             tracing::error!("[GRAPH] Failed to filter entries: {}", e);
-            return Err(anyhow!("No entries found within the requested {} hour time range", hours));
+            return Err(anyhow!(
+                "No entries found within the requested {} hour time range",
+                hours
+            ));
         }
     };
 
@@ -407,8 +416,11 @@ pub async fn draw_graph(
     // Always include the newest entry if not already included
     if let Some(newest_entry) = entries.first() {
         let newest_entry_time = newest_entry.millis_to_user_timezone(user_timezone);
-        if label_entries.is_empty() ||
-           label_entries.iter().all(|e| e.millis_to_user_timezone(user_timezone) != newest_entry_time) {
+        if label_entries.is_empty()
+            || label_entries
+                .iter()
+                .all(|e| e.millis_to_user_timezone(user_timezone) != newest_entry_time)
+        {
             label_entries.insert(0, newest_entry);
         }
     }
@@ -455,8 +467,48 @@ pub async fn draw_graph(
         }
     }
 
+    // Draw day change indicators by checking all entries, not just labeled ones
+    let mut drawn_day_changes: std::collections::HashSet<chrono::NaiveDate> =
+        std::collections::HashSet::new();
+    let mut prev_date: Option<chrono::NaiveDate> = None;
+
+    for entry in entries.iter() {
+        let entry_time = entry.millis_to_user_timezone(user_timezone);
+        let current_date = entry_time.date_naive();
+
+        if let Some(prev_d) = prev_date {
+            if current_date != prev_d && !drawn_day_changes.contains(&current_date) {
+                drawn_day_changes.insert(current_date);
+                let x_center = calculate_x_position(entry_time);
+
+                draw_dashed_vertical_line(
+                    &mut img,
+                    x_center,
+                    inner_plot_top,
+                    inner_plot_bottom,
+                    darker_dim,
+                    3,
+                    6,
+                );
+
+                let date_text = entry_time.format("%m/%d").to_string();
+                let text_width = (date_text.len() as f32) * 7.0;
+                draw_text_mut(
+                    &mut img,
+                    dim,
+                    (x_center - text_width / 2.0) as i32,
+                    (plot_top - 15.) as i32,
+                    PxScale::from(14.0),
+                    &handler.font,
+                    &date_text,
+                );
+            }
+        }
+        prev_date = Some(current_date);
+    }
+
     // Draw time labels
-    for (label_pos, entry) in final_label_entries.iter().enumerate() {
+    for entry in final_label_entries.iter() {
         let entry_time = entry.millis_to_user_timezone(user_timezone);
         let x_center = calculate_x_position(entry_time);
         let time_label = entry_time.format("%H:%M").to_string();
@@ -503,34 +555,6 @@ pub async fn draw_graph(
             &handler.font,
             &rel,
         );
-
-        // Draw day change indicator
-        if label_pos > 0 {
-            let prev_entry = final_label_entries[label_pos - 1];
-            let prev_time = prev_entry.millis_to_user_timezone(user_timezone);
-
-            if entry_time.date_naive() != prev_time.date_naive() {
-                draw_dashed_vertical_line(
-                    &mut img,
-                    x_center,
-                    inner_plot_top,
-                    inner_plot_bottom,
-                    darker_dim,
-                    3,
-                    6,
-                );
-
-                draw_text_mut(
-                    &mut img,
-                    dim,
-                    x_text + 15,
-                    (plot_top - 15.) as i32,
-                    PxScale::from(14.0),
-                    &handler.font,
-                    &entry_time.format("%m/%d").to_string(),
-                );
-            }
-        }
     }
 
     // Calculate points with time-based positioning
@@ -772,24 +796,27 @@ pub async fn draw_graph(
             let mbg_y = project_y(mbg_value);
 
             tracing::trace!(
-                "[GRAPH] Drawing MBG reading: {:.1} at ({:.1}, {:.1})",
+                "[GRAPH] Drawing MBG reading: {:.1} at ({:.1}, {:.1}) - type: {:?}",
                 mbg_value,
                 x,
-                mbg_y
+                mbg_y,
+                entry.entry_type
             );
 
-            let bg_check_radius = 6;
-            let grey_outline = Rgba([128u8, 128u8, 128u8, 255u8]);
-            let red_inside = Rgba([220u8, 38u8, 27u8, 255u8]);
+            let bg_check_radius = 8;
+            let mbg_outline = Rgba([255u8, 255u8, 255u8, 255u8]); // White outline for MBG
+            let mbg_inside = Rgba([255u8, 152u8, 0u8, 255u8]); // Orange inside for MBG
 
-            let bg_y = mbg_y - 25.0;
+            // For MBG entries (type == "mbg"), draw directly at the glucose level
+            // For regular entries with MBG data, maintain current behavior
+            let bg_y = mbg_y;
 
             // Draw outer circle
             draw_filled_circle_mut(
                 &mut img,
                 (x as i32, bg_y as i32),
                 bg_check_radius,
-                grey_outline,
+                mbg_outline,
             );
 
             // Draw inner circle
@@ -797,7 +824,7 @@ pub async fn draw_graph(
                 &mut img,
                 (x as i32, bg_y as i32),
                 bg_check_radius - 2,
-                red_inside,
+                mbg_inside,
             );
 
             // Draw MBG value text
@@ -810,7 +837,7 @@ pub async fn draw_graph(
                 &mut img,
                 bright,
                 (x - text_width / 2.0) as i32,
-                (bg_y - bg_check_radius as f32 - 20.0) as i32,
+                (bg_y - bg_check_radius as f32 - 15.0) as i32,
                 PxScale::from(16.0),
                 &handler.font,
                 &mbg_text,
@@ -877,13 +904,107 @@ pub async fn draw_graph(
 
     let mut occupied_areas: Vec<(f32, f32, f32)> = Vec::new();
     let sticker_radius = 60.0;
+    let curve_avoidance_distance = 100.0; // Increased distance to keep from glucose curve
+    let treatment_avoidance_distance = 80.0; // Distance to keep from treatments and MBGs
+
+    // Collect all treatment and MBG positions to avoid
+    let mut treatment_positions: Vec<(f32, f32)> = Vec::new();
+
+    // Add treatment positions
+    for treatment in treatments {
+        let treatment_time = if let Some(created_at) = &treatment.created_at {
+            match chrono::DateTime::parse_from_rfc3339(created_at) {
+                Ok(dt) => dt.with_timezone(&user_tz),
+                Err(_) => continue,
+            }
+        } else if let Some(ts) = treatment.date.or(treatment.mills) {
+            chrono::DateTime::from_timestamp_millis(ts as i64)
+                .map(|dt| dt.with_timezone(&user_tz))
+                .unwrap_or(now)
+        } else {
+            continue;
+        };
+
+        let treatment_x = calculate_x_position(treatment_time);
+        let mut closest_y = inner_plot_bottom - inner_plot_h / 2.0;
+
+        // Find closest entry for Y positioning
+        for (i, entry) in entries.iter().enumerate() {
+            let entry_time = entry.millis_to_user_timezone(user_timezone);
+            let time_diff = (treatment_time.timestamp() - entry_time.timestamp()).abs();
+
+            if time_diff < i64::MAX {
+                closest_y = points_px[i].1;
+                break;
+            }
+        }
+
+        treatment_positions.push((treatment_x, closest_y));
+    }
+
+    // Add MBG positions
+    for (i, entry) in entries.iter().enumerate() {
+        if entry.has_mbg() {
+            let (x, _) = points_px[i];
+            let mbg_y = project_y(entry.mbg.unwrap_or(0.0));
+            treatment_positions.push((x, mbg_y));
+        }
+    }
+
+    // Helper function to check if a position is too close to the glucose curve
+    let is_too_close_to_curve = |x: f32, y: f32| -> bool {
+        for (px, py) in &points_px {
+            let distance = ((x - px).powi(2) + (y - py).powi(2)).sqrt();
+            if distance < curve_avoidance_distance {
+                return true;
+            }
+        }
+        false
+    };
+
+    // Helper function to check if a position is too close to treatments/MBGs
+    let is_too_close_to_treatments = |x: f32, y: f32| -> bool {
+        for (tx, ty) in &treatment_positions {
+            let distance = ((x - tx).powi(2) + (y - ty).powi(2)).sqrt();
+            if distance < treatment_avoidance_distance {
+                return true;
+            }
+        }
+        false
+    };
 
     for sticker in stickers {
         let mut attempts = 0;
-        let max_attempts = 50;
+        let max_attempts = 100; // Increased attempts due to curve avoidance
         let (random_x, random_y) = loop {
-            let x = rand::random::<f32>() * 0.6 + 0.2;
-            let y = rand::random::<f32>() * 0.6 + 0.2;
+            // Create preferential zones - corners and edges are better for stickers
+            let (x, y) = if attempts < max_attempts / 2 {
+                // First half of attempts: try corner and edge areas
+                match rand::random::<u8>() % 4 {
+                    0 => (
+                        rand::random::<f32>() * 0.3 + 0.1,
+                        rand::random::<f32>() * 0.3 + 0.1,
+                    ), // Top-left
+                    1 => (
+                        rand::random::<f32>() * 0.3 + 0.6,
+                        rand::random::<f32>() * 0.3 + 0.1,
+                    ), // Top-right
+                    2 => (
+                        rand::random::<f32>() * 0.3 + 0.1,
+                        rand::random::<f32>() * 0.3 + 0.6,
+                    ), // Bottom-left
+                    _ => (
+                        rand::random::<f32>() * 0.3 + 0.6,
+                        rand::random::<f32>() * 0.3 + 0.6,
+                    ), // Bottom-right
+                }
+            } else {
+                // Second half: fall back to anywhere in the safer zone
+                (
+                    rand::random::<f32>() * 0.6 + 0.2,
+                    rand::random::<f32>() * 0.6 + 0.2,
+                )
+            };
 
             let abs_x = inner_plot_left + x * inner_plot_w;
             let abs_y = inner_plot_top + y * inner_plot_h;
@@ -893,7 +1014,12 @@ pub async fn draw_graph(
                 distance < (sticker_radius + r)
             });
 
-            if !has_collision || attempts >= max_attempts {
+            let too_close_to_curve = is_too_close_to_curve(abs_x, abs_y);
+            let too_close_to_treatments = is_too_close_to_treatments(abs_x, abs_y);
+
+            if (!has_collision && !too_close_to_curve && !too_close_to_treatments)
+                || attempts >= max_attempts
+            {
                 occupied_areas.push((abs_x, abs_y, sticker_radius));
                 break (x, y);
             }
@@ -984,9 +1110,12 @@ pub async fn draw_graph(
                         let darkened_b = (sticker_pixel[2] as f32 * 0.8) as u8;
 
                         let blended = Rgba([
-                            ((darkened_r as f32 * alpha) + (bg_pixel[0] as f32 * (1.0 - alpha))) as u8,
-                            ((darkened_g as f32 * alpha) + (bg_pixel[1] as f32 * (1.0 - alpha))) as u8,
-                            ((darkened_b as f32 * alpha) + (bg_pixel[2] as f32 * (1.0 - alpha))) as u8,
+                            ((darkened_r as f32 * alpha) + (bg_pixel[0] as f32 * (1.0 - alpha)))
+                                as u8,
+                            ((darkened_g as f32 * alpha) + (bg_pixel[1] as f32 * (1.0 - alpha)))
+                                as u8,
+                            ((darkened_b as f32 * alpha) + (bg_pixel[2] as f32 * (1.0 - alpha)))
+                                as u8,
                             255,
                         ]);
 

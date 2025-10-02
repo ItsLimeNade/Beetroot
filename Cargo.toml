@@ -40,3 +40,4 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 aes-gcm = "0.10.3"
 base64 = "0.22.1"
 blake3 = "1.5.1"
+regex = "1"

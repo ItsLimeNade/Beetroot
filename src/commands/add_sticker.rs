@@ -1,6 +1,6 @@
 use crate::Handler;
 use serenity::all::{
-    CommandInteraction, Context, CreateInteractionResponse,
+    Colour, CommandInteraction, Context, CreateEmbed, CreateInteractionResponse,
     CreateInteractionResponseMessage, InteractionContext,
 };
 use serenity::builder::CreateCommand;
@@ -53,7 +53,10 @@ pub async fn run(
     // Extract sticker from Discord message
     let sticker_info = if let Some(sticker) = target_message.sticker_items.first() {
         // Discord sticker found
-        (sticker.name.clone(), format!("https://media.discordapp.net/stickers/{}.png", sticker.id))
+        (
+            sticker.name.clone(),
+            format!("https://media.discordapp.net/stickers/{}.png", sticker.id),
+        )
     } else if let Some(content) = extract_sticker_name(&target_message.content) {
         // Fallback to content-based extraction
         (content.clone(), format!("images/stickers/{}.png", content))
@@ -80,15 +83,27 @@ pub async fn run(
     // Insert sticker into database
     match handler
         .database
-        .insert_sticker(user_id, &sticker_path, x_position, y_position, rotation)
+        .insert_sticker(
+            user_id,
+            &sticker_path,
+            &sticker_name,
+            x_position,
+            y_position,
+            rotation,
+        )
         .await
     {
         Ok(_) => {
-            let response = CreateInteractionResponseMessage::new()
-                .content(format!(
-                    "✅ Added sticker \"{}\" to your graph! It will appear on your next `/graph` command.",
+            let embed = CreateEmbed::new()
+                .title("Sticker Added")
+                .description(format!(
+                    "Successfully added **{}** to your graph!\n\nIt will appear on your next `/graph` command.",
                     sticker_name
                 ))
+                .color(Colour::DARK_GREEN);
+
+            let response = CreateInteractionResponseMessage::new()
+                .embed(embed)
                 .ephemeral(true);
 
             interaction
@@ -97,12 +112,19 @@ pub async fn run(
         }
         Err(e) => {
             tracing::error!("[STICKER] Failed to add sticker: {}", e);
-            crate::commands::error::run(
-                context,
-                interaction,
-                "Failed to add sticker. Please try again.",
-            )
-            .await?;
+
+            let embed = CreateEmbed::new()
+                .title("Error")
+                .description("Failed to add sticker. Please try again.")
+                .color(Colour::RED);
+
+            let response = CreateInteractionResponseMessage::new()
+                .embed(embed)
+                .ephemeral(true);
+
+            interaction
+                .create_response(&context.http, CreateInteractionResponse::Message(response))
+                .await?;
         }
     }
 

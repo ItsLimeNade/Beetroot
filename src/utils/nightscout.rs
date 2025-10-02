@@ -94,9 +94,12 @@ pub enum NightscoutError {
 pub struct Entry {
     #[serde(rename = "_id", default)]
     pub id: Option<String>,
+    #[serde(default)]
     pub sgv: f32,
     #[serde(default)]
     pub direction: Option<String>,
+    #[serde(default, rename = "type")]
+    pub entry_type: Option<String>,
     // Handle both possible field names for date string
     #[serde(default, alias = "dateString")]
     pub date_string: Option<String>,
@@ -420,7 +423,12 @@ impl Entry {
 
     /// Check if this entry has a meter blood glucose (finger stick) reading
     pub fn has_mbg(&self) -> bool {
-        self.mbg.is_some() && self.mbg.unwrap_or(0.0) > 0.0
+        // Check if this is an MBG entry (type == "mbg") or if it has an mbg field
+        if let Some(entry_type) = &self.entry_type {
+            entry_type == "mbg" && self.mbg.is_some() && self.mbg.unwrap_or(0.0) > 0.0
+        } else {
+            self.mbg.is_some() && self.mbg.unwrap_or(0.0) > 0.0
+        }
     }
 }
 
@@ -924,7 +932,12 @@ impl Nightscout {
     /// # Returns
     /// * `Ok(Vec<Entry>)` - Vector of filtered and deduplicated entries
     /// * `Err(NightscoutError::NoEntries)` - If no entries remain after filtering
-    pub fn filter_and_clean_entries(&self, entries: &[Entry], hours: u16, user_timezone: &str) -> Result<Vec<Entry>, NightscoutError> {
+    pub fn filter_and_clean_entries(
+        &self,
+        entries: &[Entry],
+        hours: u16,
+        user_timezone: &str,
+    ) -> Result<Vec<Entry>, NightscoutError> {
         if entries.is_empty() {
             return Err(NightscoutError::NoEntries);
         }

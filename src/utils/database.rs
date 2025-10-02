@@ -88,6 +88,7 @@ pub struct NightscoutInfo {
 pub struct Sticker {
     pub id: i32,
     pub file_name: String,
+    pub display_name: String,
     pub x_position: f32,
     pub y_position: f32,
     pub rotation: f32,
@@ -117,6 +118,7 @@ impl Database {
         let migration = crate::utils::migration::Migration::new(pool.clone());
         migration.add_microbolus_fields().await?;
         migration.add_sticker_position_fields().await?;
+        migration.add_sticker_display_name_field().await?;
 
         Ok(Database { pool })
     }
@@ -287,12 +289,14 @@ impl Database {
         &self,
         discord_id: u64,
         file_name: &str,
+        display_name: &str,
         x_position: f32,
         y_position: f32,
         rotation: f32,
     ) -> Result<(), sqlx::Error> {
-        sqlx::query("INSERT INTO stickers (file_name, discord_id, x_position, y_position, rotation) VALUES (?, ?, ?, ?, ?)")
+        sqlx::query("INSERT INTO stickers (file_name, display_name, discord_id, x_position, y_position, rotation) VALUES (?, ?, ?, ?, ?, ?)")
             .bind(file_name)
+            .bind(display_name)
             .bind(discord_id as i64)
             .bind(x_position)
             .bind(y_position)
@@ -313,7 +317,11 @@ impl Database {
         Ok(())
     }
 
-    pub async fn delete_sticker_by_name(&self, discord_id: u64, file_name: &str) -> Result<(), sqlx::Error> {
+    pub async fn delete_sticker_by_name(
+        &self,
+        discord_id: u64,
+        file_name: &str,
+    ) -> Result<(), sqlx::Error> {
         sqlx::query("DELETE FROM stickers WHERE discord_id = ? AND file_name = ?")
             .bind(discord_id as i64)
             .bind(file_name)
@@ -330,6 +338,15 @@ impl Database {
             .await?;
 
         Ok(row.get("count"))
+    }
+
+    pub async fn clear_user_stickers(&self, discord_id: u64) -> Result<(), sqlx::Error> {
+        sqlx::query("DELETE FROM stickers WHERE discord_id = ?")
+            .bind(discord_id as i64)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(())
     }
 
     async fn get_nightscout_info(&self, user_id: u64) -> Result<NightscoutInfo, sqlx::Error> {
@@ -440,8 +457,8 @@ impl Database {
         Ok(migrated_count)
     }
 
-    async fn get_user_stickers(&self, user_id: u64) -> Result<Vec<Sticker>, sqlx::Error> {
-        let rows = sqlx::query("SELECT id, file_name, x_position, y_position, rotation FROM stickers WHERE discord_id = ?")
+    pub async fn get_user_stickers(&self, user_id: u64) -> Result<Vec<Sticker>, sqlx::Error> {
+        let rows = sqlx::query("SELECT id, file_name, display_name, x_position, y_position, rotation FROM stickers WHERE discord_id = ?")
             .bind(user_id as i64)
             .fetch_all(&self.pool)
             .await?;
@@ -451,6 +468,7 @@ impl Database {
             .map(|row| Sticker {
                 id: row.get("id"),
                 file_name: row.get("file_name"),
+                display_name: row.get("display_name"),
                 x_position: row.get("x_position"),
                 y_position: row.get("y_position"),
                 rotation: row.get("rotation"),

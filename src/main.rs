@@ -42,6 +42,9 @@ impl EventHandler for Handler {
                 if command.data.kind == serenity::model::application::CommandType::Message {
                     match command.data.name.as_str() {
                         "Add Sticker" => commands::add_sticker::run(self, &context, command).await,
+                        "Analyze Units" => {
+                            commands::analyze_units::run(self, &context, command).await
+                        }
                         unknown_context_command => {
                             eprintln!(
                                 "Unknown context menu command received: '{}'",
@@ -50,25 +53,37 @@ impl EventHandler for Handler {
                             commands::error::run(
                                 &context,
                                 command,
-                                &format!("Unknown context menu command: `{}`", unknown_context_command)
-                            ).await
+                                &format!(
+                                    "Unknown context menu command: `{}`",
+                                    unknown_context_command
+                                ),
+                            )
+                            .await
                         }
                     }
                 } else {
                     // Handle regular slash commands
                     match self.database.user_exists(command.user.id.get()).await {
                         Ok(exists) => {
-                            if !exists && command.data.name.as_str() != "setup" {
+                            if !exists
+                                && !["setup", "convert", "help"]
+                                    .contains(&command.data.name.as_str())
+                            {
                                 commands::error::run(&context, command, "You need to register your Nightscout URL first. Use `/setup` to get started.").await
                             } else {
                                 match command.data.name.as_str() {
                                     "allow" => commands::allow::run(self, &context, command).await,
                                     "bg" => commands::bg::run(self, &context, command).await,
+                                    "convert" => {
+                                        commands::convert::run(self, &context, command).await
+                                    }
                                     "graph" => commands::graph::run(self, &context, command).await,
                                     "help" => commands::help::run(self, &context, command).await,
                                     "info" => commands::info::run(self, &context, command).await,
-                                    "remove-sticker" => commands::remove_sticker::run(self, &context, command).await,
                                     "setup" => commands::setup::run(self, &context, command).await,
+                                    "stickers" => {
+                                        commands::sticker::run(self, &context, command).await
+                                    }
                                     "set-threshold" => {
                                         commands::set_threshold::run(self, &context, command).await
                                     }
@@ -81,7 +96,7 @@ impl EventHandler for Handler {
                                         commands::error::run(
                                             &context,
                                             command,
-                                            &format!("Unknown command: `{}`. Available commands are: `/allow`, `/bg`, `/graph`, `/help`, `/info`, `/remove-sticker`, `/setup`, `/set-threshold`, `/token`", unknown_command)
+                                            &format!("Unknown command: `{}`. Available commands are: `/allow`, `/bg`, `/convert`, `/graph`, `/help`, `/info`, `/setup`, `/set-threshold`, `/stickers`, `/token`", unknown_command)
                                         ).await
                                     }
                                 }
@@ -97,6 +112,9 @@ impl EventHandler for Handler {
                 }
                 id if id.starts_with("help_page_") => {
                     commands::help::handle_button(self, &context, component).await
+                }
+                id if id.starts_with("remove_sticker_") || id == "clear_all_stickers" => {
+                    commands::sticker::handle_button(self, &context, component).await
                 }
                 _ => Ok(()),
             },
@@ -149,15 +167,17 @@ impl EventHandler for Handler {
             // Slash commands
             commands::allow::register(),
             commands::bg::register(),
+            commands::convert::register(),
             commands::graph::register(),
             commands::help::register(),
             commands::info::register(),
-            commands::remove_sticker::register(),
             commands::setup::register(),
             commands::set_threshold::register(),
+            commands::sticker::register(),
             commands::token::register(),
             // Context menu commands
             commands::add_sticker::register(),
+            commands::analyze_units::register(),
         ];
         let command_count = commands_vec.len();
         let commands = Command::set_global_commands(&context, commands_vec).await;
