@@ -8,8 +8,11 @@ use serenity::builder::CreateCommand;
 use serenity::model::application::CommandType;
 
 #[derive(Debug)]
+#[allow(dead_code)]
 struct UnitConversion {
+    #[allow(dead_code)]
     original: String,
+    #[allow(dead_code)]
     value: f64,
     unit: String,
     converted_value: f64,

@@ -2,7 +2,6 @@ use chrono::{Duration, Local, TimeZone, Utc};
 use chrono_tz::Tz;
 use reqwest::{Client, Url};
 use serde::Deserialize;
-use std::convert::From;
 use thiserror::Error;
 
 #[derive(Debug, Clone)]
@@ -173,16 +172,16 @@ where
     deserializer.deserialize_option(GlucoseVisitor)
 }
 
-// Custom deserializer for mbg field that can handle both numbers and strings
-fn deserialize_mbg<'de, D>(deserializer: D) -> Result<Option<f32>, D::Error>
+// Custom deserializer for numeric fields that can handle numbers, strings, or null
+fn deserialize_numeric_field<'de, D>(deserializer: D) -> Result<Option<f32>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
     use serde::de::Visitor;
 
-    struct MbgVisitor;
+    struct NumericFieldVisitor;
 
-    impl<'de> Visitor<'de> for MbgVisitor {
+    impl<'de> Visitor<'de> for NumericFieldVisitor {
         type Value = Option<f32>;
 
         fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -197,13 +196,13 @@ where
         where
             D: serde::Deserializer<'de>,
         {
-            deserializer.deserialize_any(MbgValueVisitor)
+            deserializer.deserialize_any(NumericValueVisitor)
         }
     }
 
-    struct MbgValueVisitor;
+    struct NumericValueVisitor;
 
-    impl<'de> Visitor<'de> for MbgValueVisitor {
+    impl<'de> Visitor<'de> for NumericValueVisitor {
         type Value = Option<f32>;
 
         fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -214,10 +213,7 @@ where
         where
             E: serde::de::Error,
         {
-            match value.parse::<f32>() {
-                Ok(num) => Ok(Some(num)),
-                Err(_) => Ok(None),
-            }
+            Ok(value.parse::<f32>().ok())
         }
 
         fn visit_i64<E>(self, value: i64) -> Result<Self::Value, E> {
@@ -237,7 +233,15 @@ where
         }
     }
 
-    deserializer.deserialize_option(MbgVisitor)
+    deserializer.deserialize_option(NumericFieldVisitor)
+}
+
+// Alias for mbg field deserialization
+fn deserialize_mbg<'de, D>(deserializer: D) -> Result<Option<f32>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    deserialize_numeric_field(deserializer)
 }
 
 #[allow(dead_code)]
@@ -500,6 +504,90 @@ pub struct Profile {
     pub store: std::collections::HashMap<String, ProfileStore>,
 }
 
+#[derive(Deserialize, Debug, Clone)]
+pub struct DeviceStatus {
+    #[serde(default)]
+    pub openaps: Option<OpenApsStatus>,
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub pump: Option<PumpStatus>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct OpenApsStatus {
+    #[serde(default)]
+    pub iob: Option<IobData>,
+    #[serde(default)]
+    pub suggested: Option<SuggestedData>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct IobData {
+    #[serde(default)]
+    pub iob: Option<f32>,
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub basaliob: Option<f32>,
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub bolusiob: Option<f32>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct SuggestedData {
+    #[serde(default)]
+    #[allow(non_snake_case)]
+    pub COB: Option<f32>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct PumpStatus {
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub iob: Option<PumpIob>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct PumpIob {
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub bolusiob: Option<f32>,
+}
+
+// Alias for cob field deserialization
+fn deserialize_cob<'de, D>(deserializer: D) -> Result<Option<f32>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    deserialize_numeric_field(deserializer)
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct PebbleResponse {
+    #[serde(default)]
+    pub bgs: Vec<PebbleData>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct PebbleData {
+    #[serde(default)]
+    pub sgv: Option<String>,
+    #[serde(default)]
+    pub trend: Option<i32>,
+    #[serde(default)]
+    pub direction: Option<String>,
+    #[serde(default)]
+    pub datetime: Option<u64>,
+    #[serde(default)]
+    pub bgdelta: Option<i32>,
+    #[serde(default)]
+    pub battery: Option<String>,
+    #[serde(default)]
+    pub iob: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_cob")]
+    pub cob: Option<f32>,
+}
+
 #[allow(dead_code)]
 #[derive(Debug, Default, Clone, Copy)]
 pub struct NightscoutRequestOptions {
@@ -552,6 +640,55 @@ impl Nightscout {
         }
     }
 
+    /// Parse and validate a base URL
+    fn parse_base_url(base_url: &str) -> Result<Url, NightscoutError> {
+        if base_url.trim().is_empty() {
+            return Err(NightscoutError::Url(url::ParseError::EmptyHost));
+        }
+
+        let url = Url::parse(base_url.trim())?;
+        if url.host().is_none() {
+            return Err(NightscoutError::Url(url::ParseError::EmptyHost));
+        }
+        if !matches!(url.scheme(), "http" | "https") {
+            return Err(NightscoutError::Url(url::ParseError::InvalidIpv4Address));
+        }
+        Ok(url)
+    }
+
+    /// Handle SSL/connection errors with detailed logging
+    fn handle_connection_error(e: reqwest::Error, url: &Url) -> NightscoutError {
+        tracing::error!("[ERROR] HTTP request failed: {}", e);
+        tracing::error!(
+            "[DEBUG] Request details - URL: {}, Error type: {:?}",
+            url,
+            e
+        );
+
+        if e.is_timeout() {
+            tracing::error!("[SSL] Connection timeout - check if Nightscout site is accessible");
+        } else if e.is_connect() {
+            tracing::error!("[SSL] Connection failed - possible SSL certificate or network issue");
+            tracing::error!(
+                "[SSL] Try accessing {} in a browser to verify SSL certificate",
+                url
+            );
+        } else if e.to_string().contains("certificate")
+            || e.to_string().contains("tls")
+            || e.to_string().contains("ssl")
+        {
+            tracing::error!("[SSL] SSL/TLS certificate error detected");
+            tracing::error!(
+                "[SSL] Your Nightscout site may have an invalid or expired SSL certificate"
+            );
+            tracing::error!(
+                "[SSL] Contact your Nightscout hosting provider to fix the SSL certificate"
+            );
+        }
+
+        NightscoutError::Network(e)
+    }
+
     /// Request a JWT token from Nightscout using an access token
     pub async fn request_jwt_token(
         &self,
@@ -592,10 +729,6 @@ impl Nightscout {
         base_url: &str,
         token: Option<&str>,
     ) -> Result<Profile, NightscoutError> {
-        if base_url.trim().is_empty() {
-            return Err(NightscoutError::Url(url::ParseError::EmptyHost));
-        }
-
         tracing::debug!("[API] Fetching profile from URL: '{}'", base_url);
         let auth_method = token.map(AuthMethod::from_token);
         if let Some(ref auth) = auth_method {
@@ -617,43 +750,11 @@ impl Nightscout {
             tracing::debug!("[AUTH] No authentication token provided");
         }
 
-        let base = match Url::parse(base_url.trim()) {
-            Ok(url) => {
-                if url.host().is_none() {
-                    tracing::error!("[ERROR] URL has no host: '{}'", base_url);
-                    return Err(NightscoutError::Url(url::ParseError::EmptyHost));
-                }
-                if !matches!(url.scheme(), "http" | "https") {
-                    tracing::error!(
-                        "[ERROR] Invalid scheme '{}' in URL: '{}'",
-                        url.scheme(),
-                        base_url
-                    );
-                    return Err(NightscoutError::Url(url::ParseError::InvalidIpv4Address));
-                }
-                tracing::debug!("[OK] Successfully parsed base URL: {}", url);
-                url
-            }
-            Err(e) => {
-                tracing::error!("[ERROR] Failed to parse base URL '{}': {}", base_url, e);
-                return Err(NightscoutError::Url(e));
-            }
-        };
+        let base = Self::parse_base_url(base_url)?;
+        tracing::debug!("[OK] Successfully parsed base URL: {}", base);
 
-        let url = match base.join("api/v1/profile.json") {
-            Ok(url) => {
-                tracing::debug!("[API] Profile API URL: {}", url);
-                url
-            }
-            Err(e) => {
-                tracing::error!(
-                    "[ERROR] Failed to join profile URL with base '{}': {}",
-                    base,
-                    e
-                );
-                return Err(NightscoutError::Url(e));
-            }
-        };
+        let url = base.join("api/v1/profile.json")?;
+        tracing::debug!("[API] Profile API URL: {}", url);
 
         let mut req = self.http_client.get(url.clone());
 
@@ -668,42 +769,7 @@ impl Nightscout {
                 tracing::debug!("[HTTP] Received HTTP response from Nightscout");
                 response
             }
-            Err(e) => {
-                tracing::error!("[ERROR] Profile HTTP request failed: {}", e);
-                tracing::error!(
-                    "[DEBUG] Request details - URL: {}, Error type: {:?}",
-                    url,
-                    e
-                );
-
-                // Provide specific guidance for common SSL/connection issues
-                if e.is_timeout() {
-                    tracing::error!(
-                        "[SSL] Connection timeout - check if Nightscout site is accessible"
-                    );
-                } else if e.is_connect() {
-                    tracing::error!(
-                        "[SSL] Connection failed - possible SSL certificate or network issue"
-                    );
-                    tracing::error!(
-                        "[SSL] Try accessing {} in a browser to verify SSL certificate",
-                        url
-                    );
-                } else if e.to_string().contains("certificate")
-                    || e.to_string().contains("tls")
-                    || e.to_string().contains("ssl")
-                {
-                    tracing::error!("[SSL] SSL/TLS certificate error detected");
-                    tracing::error!(
-                        "[SSL] Your Nightscout site may have an invalid or expired SSL certificate"
-                    );
-                    tracing::error!(
-                        "[SSL] Contact your Nightscout hosting provider to fix the SSL certificate"
-                    );
-                }
-
-                return Err(NightscoutError::Network(e));
-            }
+            Err(e) => return Err(Self::handle_connection_error(e, &url)),
         };
 
         let res = match res.error_for_status() {
@@ -760,22 +826,7 @@ impl Nightscout {
         options: NightscoutRequestOptions,
         token: Option<&str>,
     ) -> Result<Vec<Entry>, NightscoutError> {
-        if base_url.trim().is_empty() {
-            return Err(NightscoutError::Url(url::ParseError::EmptyHost));
-        }
-
-        let base = match Url::parse(base_url.trim()) {
-            Ok(url) => {
-                if url.host().is_none() {
-                    return Err(NightscoutError::Url(url::ParseError::EmptyHost));
-                }
-                if !matches!(url.scheme(), "http" | "https") {
-                    return Err(NightscoutError::Url(url::ParseError::InvalidIpv4Address));
-                }
-                url
-            }
-            Err(e) => return Err(NightscoutError::Url(e)),
-        };
+        let base = Self::parse_base_url(base_url)?;
 
         let url = if let Some(hours) = options.hours_back {
             let count = options.count.unwrap_or(2000); // Fetch up to 2000 entries for large time ranges
@@ -814,42 +865,7 @@ impl Nightscout {
                 tracing::debug!("[HTTP] Received entries response from Nightscout");
                 response
             }
-            Err(e) => {
-                tracing::error!("[ERROR] Entries HTTP request failed: {}", e);
-                tracing::error!(
-                    "[DEBUG] Request details - URL: {}, Error type: {:?}",
-                    url,
-                    e
-                );
-
-                // Provide specific guidance for common SSL/connection issues
-                if e.is_timeout() {
-                    tracing::error!(
-                        "[SSL] Connection timeout - check if Nightscout site is accessible"
-                    );
-                } else if e.is_connect() {
-                    tracing::error!(
-                        "[SSL] Connection failed - possible SSL certificate or network issue"
-                    );
-                    tracing::error!(
-                        "[SSL] Try accessing {} in a browser to verify SSL certificate",
-                        url
-                    );
-                } else if e.to_string().contains("certificate")
-                    || e.to_string().contains("tls")
-                    || e.to_string().contains("ssl")
-                {
-                    tracing::error!("[SSL] SSL/TLS certificate error detected");
-                    tracing::error!(
-                        "[SSL] Your Nightscout site may have an invalid or expired SSL certificate"
-                    );
-                    tracing::error!(
-                        "[SSL] Contact your Nightscout hosting provider to fix the SSL certificate"
-                    );
-                }
-
-                return Err(NightscoutError::Network(e));
-            }
+            Err(e) => return Err(Self::handle_connection_error(e, &url)),
         };
 
         let res = match res.error_for_status() {
@@ -1099,22 +1115,7 @@ impl Nightscout {
             end_time
         );
 
-        if base_url.trim().is_empty() {
-            return Err(NightscoutError::Url(url::ParseError::EmptyHost));
-        }
-
-        let base = match Url::parse(base_url.trim()) {
-            Ok(url) => {
-                if url.host().is_none() {
-                    return Err(NightscoutError::Url(url::ParseError::EmptyHost));
-                }
-                if !matches!(url.scheme(), "http" | "https") {
-                    return Err(NightscoutError::Url(url::ParseError::InvalidIpv4Address));
-                }
-                url
-            }
-            Err(e) => return Err(NightscoutError::Url(e)),
-        };
+        let base = Self::parse_base_url(base_url)?;
 
         let query_params = format!(
             "api/v1/treatments.json?find[created_at][$gte]={}&find[created_at][$lte]={}",
@@ -1159,5 +1160,128 @@ impl Nightscout {
         tracing::info!("[TREATMENTS] Retrieved {} treatments", treatments.len());
 
         Ok(treatments)
+    }
+
+    pub async fn get_devicestatus(
+        &self,
+        base_url: &str,
+        token: Option<&str>,
+    ) -> Result<Option<DeviceStatus>, NightscoutError> {
+        tracing::debug!("[API] Fetching devicestatus from URL: '{}'", base_url);
+
+        let base = Self::parse_base_url(base_url)?;
+
+        let url = base.join("api/v1/devicestatus.json?count=1")?;
+        tracing::debug!("[API] Devicestatus API URL: {}", url);
+
+        let mut req = self.http_client.get(url.clone());
+
+        let auth_method = token.map(AuthMethod::from_token);
+        if let Some(auth) = auth_method {
+            req = auth.apply_to_request(req);
+            tracing::debug!("[OK] Applied {} authentication", auth.description());
+        }
+
+        tracing::debug!("[HTTP] Sending devicestatus request...");
+        let res = match req.send().await {
+            Ok(response) => {
+                tracing::debug!("[HTTP] Received devicestatus response");
+                response
+            }
+            Err(e) => {
+                tracing::error!("[ERROR] Devicestatus HTTP request failed: {}", e);
+                return Err(NightscoutError::Network(e));
+            }
+        };
+
+        let res = match res.error_for_status() {
+            Ok(response) => {
+                tracing::info!("[HTTP] Devicestatus response status: {}", response.status());
+                response
+            }
+            Err(e) => {
+                tracing::error!("[ERROR] Devicestatus request returned error status: {}", e);
+                return Err(NightscoutError::Network(e));
+            }
+        };
+
+        let device_statuses: Vec<DeviceStatus> = res.json().await?;
+        tracing::debug!(
+            "[DEVICESTATUS] Retrieved {} device status entries",
+            device_statuses.len()
+        );
+
+        Ok(device_statuses.into_iter().next())
+    }
+
+    pub async fn get_pebble_data(
+        &self,
+        base_url: &str,
+        token: Option<&str>,
+    ) -> Result<Option<PebbleData>, NightscoutError> {
+        tracing::debug!("[API] Fetching pebble data from URL: '{}'", base_url);
+
+        let base = Self::parse_base_url(base_url)?;
+
+        let url = base.join("pebble")?;
+        tracing::debug!("[API] Pebble API URL: {}", url);
+
+        let mut req = self.http_client.get(url.clone());
+
+        let auth_method = token.map(AuthMethod::from_token);
+        if let Some(auth) = auth_method {
+            req = auth.apply_to_request(req);
+            tracing::debug!("[OK] Applied {} authentication", auth.description());
+        }
+
+        tracing::debug!("[HTTP] Sending pebble request...");
+        let res = match req.send().await {
+            Ok(response) => {
+                tracing::debug!("[HTTP] Received pebble response");
+                response
+            }
+            Err(e) => {
+                tracing::warn!("[WARN] Pebble HTTP request failed: {}", e);
+                return Ok(None);
+            }
+        };
+
+        let res = match res.error_for_status() {
+            Ok(response) => {
+                tracing::info!("[HTTP] Pebble response status: {}", response.status());
+                response
+            }
+            Err(e) => {
+                tracing::warn!("[WARN] Pebble request returned error status: {}", e);
+                return Ok(None);
+            }
+        };
+
+        let response_text = match res.text().await {
+            Ok(text) => text,
+            Err(e) => {
+                tracing::error!("[ERROR] Failed to read pebble response body: {}", e);
+                return Ok(None);
+            }
+        };
+
+        tracing::debug!("[PEBBLE] Raw response: {}", response_text);
+
+        match serde_json::from_str::<PebbleResponse>(&response_text) {
+            Ok(pebble_response) => {
+                tracing::debug!("[PEBBLE] Successfully parsed pebble data");
+                if !pebble_response.bgs.is_empty() {
+                    Ok(Some(pebble_response.bgs[0].clone()))
+                } else {
+                    tracing::warn!("[PEBBLE] Pebble response bgs array is empty");
+                    Ok(None)
+                }
+            }
+            Err(e) => {
+                tracing::error!("[ERROR] Failed to parse pebble JSON: {}", e);
+                tracing::error!("[ERROR] Raw response was: {}", response_text);
+                Ok(None)
+            }
+        }
     }
 }

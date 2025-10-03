@@ -74,6 +74,7 @@ enum PrefUnit {
 }
 
 #[allow(dead_code)]
+#[allow(clippy::too_many_arguments)]
 pub async fn draw_graph(
     entries: &[Entry],
     treatments: &[Treatment],
@@ -476,33 +477,34 @@ pub async fn draw_graph(
         let entry_time = entry.millis_to_user_timezone(user_timezone);
         let current_date = entry_time.date_naive();
 
-        if let Some(prev_d) = prev_date {
-            if current_date != prev_d && !drawn_day_changes.contains(&current_date) {
-                drawn_day_changes.insert(current_date);
-                let x_center = calculate_x_position(entry_time);
+        if let Some(prev_d) = prev_date
+            && current_date != prev_d
+            && !drawn_day_changes.contains(&current_date)
+        {
+            drawn_day_changes.insert(current_date);
+            let x_center = calculate_x_position(entry_time);
 
-                draw_dashed_vertical_line(
-                    &mut img,
-                    x_center,
-                    inner_plot_top,
-                    inner_plot_bottom,
-                    darker_dim,
-                    3,
-                    6,
-                );
+            draw_dashed_vertical_line(
+                &mut img,
+                x_center,
+                inner_plot_top,
+                inner_plot_bottom,
+                darker_dim,
+                3,
+                6,
+            );
 
-                let date_text = entry_time.format("%m/%d").to_string();
-                let text_width = (date_text.len() as f32) * 7.0;
-                draw_text_mut(
-                    &mut img,
-                    dim,
-                    (x_center - text_width / 2.0) as i32,
-                    (plot_top - 15.) as i32,
-                    PxScale::from(14.0),
-                    &handler.font,
-                    &date_text,
-                );
-            }
+            let date_text = entry_time.format("%m/%d").to_string();
+            let text_width = (date_text.len() as f32) * 7.0;
+            draw_text_mut(
+                &mut img,
+                dim,
+                (x_center - text_width / 2.0) as i32,
+                (plot_top - 15.) as i32,
+                PxScale::from(14.0),
+                &handler.font,
+                &date_text,
+            );
         }
         prev_date = Some(current_date);
     }
@@ -735,18 +737,16 @@ pub async fn draw_graph(
             let grey_outline = Rgba([128u8, 128u8, 128u8, 255u8]);
             let red_inside = Rgba([220u8, 38u8, 27u8, 255u8]);
 
-            let bg_y = glucose_y - 25.0;
-
             draw_filled_circle_mut(
                 &mut img,
-                (closest_x as i32, bg_y as i32),
+                (closest_x as i32, glucose_y as i32),
                 bg_check_radius,
                 grey_outline,
             );
 
             draw_filled_circle_mut(
                 &mut img,
-                (closest_x as i32, bg_y as i32),
+                (closest_x as i32, glucose_y as i32),
                 bg_check_radius - 2,
                 red_inside,
             );
@@ -760,7 +760,7 @@ pub async fn draw_graph(
                 &mut img,
                 bright,
                 (closest_x - text_width / 2.0) as i32,
-                (bg_y - bg_check_radius as f32 - 20.0) as i32,
+                (glucose_y - bg_check_radius as f32 - 20.0) as i32,
                 PxScale::from(16.0),
                 &handler.font,
                 &glucose_text,

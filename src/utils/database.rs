@@ -89,8 +89,11 @@ pub struct Sticker {
     pub id: i32,
     pub file_name: String,
     pub display_name: String,
+    #[allow(dead_code)]
     pub x_position: f32,
+    #[allow(dead_code)]
     pub y_position: f32,
+    #[allow(dead_code)]
     pub rotation: f32,
 }
 
@@ -317,6 +320,7 @@ impl Database {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub async fn delete_sticker_by_name(
         &self,
         discord_id: u64,

@@ -113,6 +113,24 @@ pub async fn run(
         }
     };
 
+    let pebble_data = handler
+        .nightscout_client
+        .get_pebble_data(base_url, token)
+        .await
+        .ok()
+        .flatten();
+
+    let devicestatus = if pebble_data.is_none() {
+        handler
+            .nightscout_client
+            .get_devicestatus(base_url, token)
+            .await
+            .ok()
+            .flatten()
+    } else {
+        None
+    };
+
     let default_profile_name = &profile.default_profile;
     let profile_store = profile
         .store
@@ -158,32 +176,62 @@ pub async fn run(
     let icon_bytes = std::fs::read("assets/images/nightscout_icon.png")?;
     let icon_attachment = CreateAttachment::bytes(icon_bytes, "nightscout_icon.png");
 
-    let message = CreateInteractionResponseMessage::new()
-        .add_embed(
-            CreateEmbed::new()
-                .thumbnail(thumbnail_url)
-                .title(title)
-                .color(color)
-                .field(
-                    "mg/dL",
-                    format!("{} ({})", entry.sgv, delta.as_signed_str()),
-                    true,
-                )
-                .field(
-                    "mmol/L",
-                    format!(
-                        "{} ({})",
-                        entry.svg_as_mmol(),
-                        delta.as_mmol().as_signed_str()
-                    ),
-                    true,
-                )
-                .field("Trend", entry.trend().as_arrow(), true)
-                .footer(
-                    CreateEmbedFooter::new(format!("measured • {time_ago}"))
-                        .icon_url("attachment://nightscout_icon.png"),
-                ),
+    let mut embed = CreateEmbed::new()
+        .thumbnail(thumbnail_url)
+        .title(title)
+        .color(color)
+        .field(
+            "mg/dL",
+            format!("{} ({})", entry.sgv, delta.as_signed_str()),
+            true,
         )
+        .field(
+            "mmol/L",
+            format!(
+                "{} ({})",
+                entry.svg_as_mmol(),
+                delta.as_mmol().as_signed_str()
+            ),
+            true,
+        )
+        .field("Trend", entry.trend().as_arrow(), true);
+
+    if let Some(pebble) = pebble_data {
+        if let Some(iob_str) = pebble.iob
+            && let Ok(iob) = iob_str.parse::<f32>()
+            && iob > 0.0
+        {
+            embed = embed.field("IOB", format!("{:.2}u", iob), true);
+        }
+        if let Some(cob) = pebble.cob
+            && cob > 0.0
+        {
+            embed = embed.field("COB", format!("{:.0}g", cob), true);
+        }
+    } else if let Some(status) = devicestatus
+        && let Some(openaps) = status.openaps
+    {
+        if let Some(iob_data) = openaps.iob
+            && let Some(iob) = iob_data.iob
+            && iob > 0.0
+        {
+            embed = embed.field("IOB", format!("{:.2}u", iob), true);
+        }
+        if let Some(suggested) = openaps.suggested
+            && let Some(cob) = suggested.COB
+            && cob > 0.0
+        {
+            embed = embed.field("COB", format!("{:.0}g", cob), true);
+        }
+    }
+
+    embed = embed.footer(
+        CreateEmbedFooter::new(format!("measured • {time_ago}"))
+            .icon_url("attachment://nightscout_icon.png"),
+    );
+
+    let message = CreateInteractionResponseMessage::new()
+        .add_embed(embed)
         .add_file(icon_attachment);
 
     interaction
