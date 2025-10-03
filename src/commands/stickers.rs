@@ -71,6 +71,7 @@ pub async fn run(
             stickers.len(),
             sticker_list
         ))
+        .field("Info", "To add a sticker to your graph, use the context menu command `Applications > Add Sticker` when right clicking a sticker sent in chat.", true)
         .color(Colour::BLUE)
         .footer(serenity::all::CreateEmbedFooter::new(
             "Click a button below to remove a sticker",

@@ -122,6 +122,7 @@ impl Database {
         migration.add_microbolus_fields().await?;
         migration.add_sticker_position_fields().await?;
         migration.add_sticker_display_name_field().await?;
+        migration.add_last_seen_version_field().await?;
 
         Ok(Database { pool })
     }
@@ -548,5 +549,28 @@ impl Database {
             .await?;
 
         Ok(true)
+    }
+
+    pub async fn get_user_last_seen_version(&self, discord_id: u64) -> Result<String, sqlx::Error> {
+        let row = sqlx::query("SELECT last_seen_version FROM users WHERE discord_id = ?")
+            .bind(discord_id as i64)
+            .fetch_one(&self.pool)
+            .await?;
+
+        Ok(row.get::<String, _>("last_seen_version"))
+    }
+
+    pub async fn update_user_last_seen_version(
+        &self,
+        discord_id: u64,
+        version: &str,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query("UPDATE users SET last_seen_version = ? WHERE discord_id = ?")
+            .bind(version)
+            .bind(discord_id as i64)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(())
     }
 }

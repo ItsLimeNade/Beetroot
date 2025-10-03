@@ -16,3 +16,4 @@ data.db
 *.pdb
 Cargo.lock
 db.sqlite
+.claude/

@@ -42,14 +42,14 @@ pub async fn run(
 }
 
 fn create_help_page(page: u8) -> (CreateEmbed, Option<CreateActionRow>) {
-    let total_pages = 2;
+    let total_pages = 3;
     let page = page.clamp(1, total_pages);
 
     let embed = match page {
         1 => CreateEmbed::new()
-            .title("Beetroot Commands (Page 1/2)")
-            .description("Here are the main commands:")
-            .color(Colour::from_rgb(34, 197, 94))
+            .title("Beetroot Commands (Page 1/3)")
+            .description("🩸 **Main Commands** - Blood Glucose Monitoring")
+            .color(Colour::from_rgb(139, 69, 19))
             .field(
                 "/bg [user]",
                 "Get current blood glucose reading. Optionally specify a user to view their data (requires permission).",
@@ -61,32 +61,56 @@ fn create_help_page(page: u8) -> (CreateEmbed, Option<CreateActionRow>) {
                 false,
             )
             .field(
+                "/convert <value> <from_unit>",
+                "Convert blood glucose units between mg/dL and mmol/L. Example: `/convert 100 mg/dl`",
+                false,
+            ),
+        2 => CreateEmbed::new()
+            .title("Beetroot Commands (Page 2/3)")
+            .description("⚙️ **Setup & Configuration**")
+            .color(Colour::from_rgb(252, 186, 0))
+            .field(
                 "/setup",
                 "Configure your Nightscout URL and privacy settings. Required before using other commands.",
                 false,
             )
             .field(
-                "/token",
+                "/token <token>",
                 "Set or update your Nightscout API token for authentication (optional but recommended).",
                 false,
-            ),
-        2 => CreateEmbed::new()
-            .title("Beetroot Commands (Page 2/2)")
-            .description("Additional commands and settings:")
-            .color(Colour::from_rgb(34, 197, 94))
+            )
             .field(
                 "/allow @user [action]",
                 "Manage who can view your blood glucose data. Add or remove users from your allowed list.",
                 false,
             )
             .field(
-                "/set-threshold value [display]",
+                "/set-threshold <value> [display]",
                 "Configure microbolus threshold (in units) and whether to display them on graphs. Doses ≤ threshold are considered microbolus.",
+                false,
+            ),
+        3 => CreateEmbed::new()
+            .title("Beetroot Commands (Page 3/3)")
+            .description("🎨 **Customization & Info**")
+            .color(Colour::from_rgb(139, 69, 19))
+            .field(
+                "/stickers",
+                "Manage your stickers - view and remove stickers from your graph. Makes your graphs more personalized!",
+                false,
+            )
+            .field(
+                "Add Sticker (Context Menu)",
+                "Right-click/long-press a message with a sticker → Apps → **Add Sticker** to add it to your graphs.",
+                false,
+            )
+            .field(
+                "Analyze Units (Context Menu)",
+                "Right-click/long-press a message → Apps → **Analyze Units** to detect and convert diabetes units in messages.",
                 false,
             )
             .field(
                 "/help [page]",
-                "Show this help message with all available commands. Use page parameter to navigate.",
+                "Show this help message with all available commands. Use page parameter to navigate pages.",
                 false,
             )
             .field(
@@ -164,10 +188,10 @@ pub fn register() -> CreateCommand {
             CreateCommandOption::new(
                 CommandOptionType::Integer,
                 "page",
-                "Page number to view (1-2)",
+                "Page number to view (1-3)",
             )
             .min_int_value(1)
-            .max_int_value(2)
+            .max_int_value(3)
             .required(false),
         )
         .contexts(vec![

@@ -10,5 +10,6 @@ pub mod info;
 pub mod set_threshold;
 pub mod set_visibility;
 pub mod setup;
-pub mod sticker;
+pub mod stickers;
 pub mod token;
+pub mod update_message;

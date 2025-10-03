@@ -155,4 +155,28 @@ impl Migration {
         tracing::info!("[MIGRATION] Sticker display name field migration completed");
         Ok(())
     }
+
+    pub async fn add_last_seen_version_field(&self) -> Result<(), sqlx::Error> {
+        tracing::info!("[MIGRATION] Adding last_seen_version field to users table");
+
+        let check_version_query = sqlx::query(
+            "SELECT COUNT(*) as count FROM pragma_table_info('users') WHERE name = 'last_seen_version'",
+        );
+
+        let version_exists = check_version_query
+            .fetch_one(&self.pool)
+            .await?
+            .get::<i32, _>("count")
+            > 0;
+
+        if !version_exists {
+            sqlx::query("ALTER TABLE users ADD COLUMN last_seen_version TEXT DEFAULT '0.1.0'")
+                .execute(&self.pool)
+                .await?;
+            tracing::info!("[MIGRATION] Added last_seen_version column");
+        }
+
+        tracing::info!("[MIGRATION] Last seen version field migration completed");
+        Ok(())
+    }
 }

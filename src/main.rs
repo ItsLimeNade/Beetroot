@@ -4,7 +4,8 @@ mod utils;
 use ab_glyph::FontArc;
 use anyhow::anyhow;
 use serenity::all::{
-    Command, CreateInteractionResponse, CreateInteractionResponseMessage, Interaction, Ready,
+    Command, CreateInteractionResponse, CreateInteractionResponseFollowup,
+    CreateInteractionResponseMessage, Interaction, Ready,
 };
 use serenity::prelude::*;
 
@@ -30,6 +31,58 @@ impl Handler {
                 .map_err(|_| anyhow!("Failed to parse font"))
                 .unwrap(),
         }
+    }
+
+    async fn check_and_notify_version_update(
+        &self,
+        context: &Context,
+        command: &serenity::all::CommandInteraction,
+    ) -> anyhow::Result<()> {
+        let current_version = dotenvy::var("BOT_VERSION").unwrap_or_else(|_| "0.1.1".to_string());
+        let user_id = command.user.id.get();
+
+        // Get user's last seen version
+        match self.database.get_user_last_seen_version(user_id).await {
+            Ok(last_seen_version) => {
+                // If versions differ, show update message
+                if last_seen_version != current_version {
+                    let embed = commands::update_message::create_update_embed(&current_version);
+                    let response = CreateInteractionResponseFollowup::new()
+                        .embed(embed)
+                        .ephemeral(true);
+
+                    // Send as follow-up message
+                    if let Err(e) = command.create_followup(&context.http, response).await {
+                        tracing::warn!("[VERSION] Failed to send update notification: {}", e);
+                    }
+
+                    // Update the user's last seen version
+                    if let Err(e) = self
+                        .database
+                        .update_user_last_seen_version(user_id, &current_version)
+                        .await
+                    {
+                        tracing::error!("[VERSION] Failed to update last seen version: {}", e);
+                    } else {
+                        tracing::info!(
+                            "[VERSION] User {} notified of update from {} to {}",
+                            user_id,
+                            last_seen_version,
+                            current_version
+                        );
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::debug!(
+                    "[VERSION] Could not get last seen version for user {}: {}",
+                    user_id,
+                    e
+                );
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -63,7 +116,7 @@ impl EventHandler for Handler {
                     }
                 } else {
                     // Handle regular slash commands
-                    match self.database.user_exists(command.user.id.get()).await {
+                    let cmd_result = match self.database.user_exists(command.user.id.get()).await {
                         Ok(exists) => {
                             if !exists
                                 && !["setup", "convert", "help"]
@@ -82,7 +135,7 @@ impl EventHandler for Handler {
                                     "info" => commands::info::run(self, &context, command).await,
                                     "setup" => commands::setup::run(self, &context, command).await,
                                     "stickers" => {
-                                        commands::sticker::run(self, &context, command).await
+                                        commands::stickers::run(self, &context, command).await
                                     }
                                     "set-threshold" => {
                                         commands::set_threshold::run(self, &context, command).await
@@ -103,7 +156,19 @@ impl EventHandler for Handler {
                             }
                         }
                         Err(db_error) => Err(anyhow::anyhow!("Database error: {}", db_error)),
+                    };
+
+                    // After command execution, check for version updates
+                    if cmd_result.is_ok()
+                        && let Ok(exists) = self.database.user_exists(command.user.id.get()).await
+                        && exists
+                    {
+                        let _ = self
+                            .check_and_notify_version_update(&context, command)
+                            .await;
                     }
+
+                    cmd_result
                 }
             }
             Interaction::Component(ref component) => match component.data.custom_id.as_str() {
@@ -114,7 +179,7 @@ impl EventHandler for Handler {
                     commands::help::handle_button(self, &context, component).await
                 }
                 id if id.starts_with("remove_sticker_") || id == "clear_all_stickers" => {
-                    commands::sticker::handle_button(self, &context, component).await
+                    commands::stickers::handle_button(self, &context, component).await
                 }
                 _ => Ok(()),
             },
@@ -173,7 +238,7 @@ impl EventHandler for Handler {
             commands::info::register(),
             commands::setup::register(),
             commands::set_threshold::register(),
-            commands::sticker::register(),
+            commands::stickers::register(),
             commands::token::register(),
             // Context menu commands
             commands::add_sticker::register(),
