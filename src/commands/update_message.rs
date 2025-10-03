@@ -8,6 +8,8 @@ pub fn create_update_embed(version: &str) -> CreateEmbed {
             "• Blood glucose unit conversion features (`/convert {value} {unit}`)",
             "• Sticker customization improvements (`/stickers`)",
             "• Analyzing blood glucose values in any mesages using the `Analyzing Units` context menu command",
+            "• Thanks to Gar, AAPS users will now benefit from SMB detection instead of using the `/threshold` command, which makes the bot
+            easier and more convenient to use by separating manual boluses from automatic ones.",
             "",
             "**Fixes:**",
             "• Help command updates",
