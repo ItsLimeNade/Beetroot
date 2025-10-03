@@ -171,6 +171,7 @@ pub async fn handle_button(
 
             let success_response = CreateInteractionResponseMessage::new()
                 .embed(success_embed)
+                .components(vec![])
                 .ephemeral(true);
             interaction
                 .create_response(
