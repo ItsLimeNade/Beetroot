@@ -261,21 +261,9 @@ pub struct Treatment {
     #[serde(default)]
     pub carbs: Option<f32>,
     #[serde(default)]
-    pub protein: Option<f32>,
-    #[serde(default)]
-    pub fat: Option<f32>,
-    #[serde(default)]
     pub insulin: Option<f32>,
     #[serde(default)]
     pub units: Option<String>,
-    #[serde(default)]
-    pub transmitter_id: Option<String>,
-    #[serde(default)]
-    pub sensor_code: Option<String>,
-    #[serde(default)]
-    pub notes: Option<String>,
-    #[serde(default)]
-    pub entered_by: Option<String>,
     #[serde(default)]
     pub date: Option<u64>,
     #[serde(default)]
@@ -505,6 +493,7 @@ pub struct Profile {
 }
 
 #[derive(Deserialize, Debug, Clone)]
+#[allow(dead_code)]
 pub struct DeviceStatus {
     #[serde(default)]
     pub openaps: Option<OpenApsStatus>,
@@ -514,6 +503,7 @@ pub struct DeviceStatus {
 }
 
 #[derive(Deserialize, Debug, Clone)]
+#[allow(dead_code)]
 pub struct OpenApsStatus {
     #[serde(default)]
     pub iob: Option<IobData>,
@@ -522,6 +512,7 @@ pub struct OpenApsStatus {
 }
 
 #[derive(Deserialize, Debug, Clone)]
+#[allow(dead_code)]
 pub struct IobData {
     #[serde(default)]
     pub iob: Option<f32>,
@@ -534,6 +525,7 @@ pub struct IobData {
 }
 
 #[derive(Deserialize, Debug, Clone)]
+#[allow(dead_code)]
 pub struct SuggestedData {
     #[serde(rename = "COB", default)]
     pub cob: Option<f32>,
@@ -1160,58 +1152,6 @@ impl Nightscout {
         tracing::info!("[TREATMENTS] Retrieved {} treatments", treatments.len());
 
         Ok(treatments)
-    }
-
-    pub async fn get_devicestatus(
-        &self,
-        base_url: &str,
-        token: Option<&str>,
-    ) -> Result<Option<DeviceStatus>, NightscoutError> {
-        tracing::debug!("[API] Fetching devicestatus from URL: '{}'", base_url);
-
-        let base = Self::parse_base_url(base_url)?;
-
-        let url = base.join("api/v1/devicestatus.json?count=1")?;
-        tracing::debug!("[API] Devicestatus API URL: {}", url);
-
-        let mut req = self.http_client.get(url.clone());
-
-        let auth_method = token.map(AuthMethod::from_token);
-        if let Some(auth) = auth_method {
-            req = auth.apply_to_request(req);
-            tracing::debug!("[OK] Applied {} authentication", auth.description());
-        }
-
-        tracing::debug!("[HTTP] Sending devicestatus request...");
-        let res = match req.send().await {
-            Ok(response) => {
-                tracing::debug!("[HTTP] Received devicestatus response");
-                response
-            }
-            Err(e) => {
-                tracing::error!("[ERROR] Devicestatus HTTP request failed: {}", e);
-                return Err(NightscoutError::Network(e));
-            }
-        };
-
-        let res = match res.error_for_status() {
-            Ok(response) => {
-                tracing::info!("[HTTP] Devicestatus response status: {}", response.status());
-                response
-            }
-            Err(e) => {
-                tracing::error!("[ERROR] Devicestatus request returned error status: {}", e);
-                return Err(NightscoutError::Network(e));
-            }
-        };
-
-        let device_statuses: Vec<DeviceStatus> = res.json().await?;
-        tracing::debug!(
-            "[DEVICESTATUS] Retrieved {} device status entries",
-            device_statuses.len()
-        );
-
-        Ok(device_statuses.into_iter().next())
     }
 
     pub async fn get_pebble_data(

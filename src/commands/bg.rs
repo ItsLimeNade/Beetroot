@@ -120,17 +120,6 @@ pub async fn run(
         .ok()
         .flatten();
 
-    let devicestatus = if pebble_data.is_none() {
-        handler
-            .nightscout_client
-            .get_devicestatus(base_url, token)
-            .await
-            .ok()
-            .flatten()
-    } else {
-        None
-    };
-
     let default_profile_name = &profile.default_profile;
     let profile_store = profile
         .store
@@ -204,21 +193,6 @@ pub async fn run(
             embed = embed.field("IOB", format!("{:.2}u", iob), true);
         }
         if let Some(cob) = pebble.cob
-            && cob > 0.0
-        {
-            embed = embed.field("COB", format!("{:.0}g", cob), true);
-        }
-    } else if let Some(status) = devicestatus
-        && let Some(openaps) = status.openaps
-    {
-        if let Some(iob_data) = openaps.iob
-            && let Some(iob) = iob_data.iob
-            && iob > 0.0
-        {
-            embed = embed.field("IOB", format!("{:.2}u", iob), true);
-        }
-        if let Some(suggested) = openaps.suggested
-            && let Some(cob) = suggested.cob
             && cob > 0.0
         {
             embed = embed.field("COB", format!("{:.0}g", cob), true);
