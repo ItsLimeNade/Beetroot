@@ -535,9 +535,8 @@ pub struct IobData {
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct SuggestedData {
-    #[serde(default)]
-    #[allow(non_snake_case)]
-    pub COB: Option<f32>,
+    #[serde(rename = "COB", default)]
+    pub cob: Option<f32>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -569,6 +568,7 @@ pub struct PebbleResponse {
 }
 
 #[derive(Deserialize, Debug, Clone)]
+#[allow(dead_code)]
 pub struct PebbleData {
     #[serde(default)]
     pub sgv: Option<String>,
@@ -578,8 +578,8 @@ pub struct PebbleData {
     pub direction: Option<String>,
     #[serde(default)]
     pub datetime: Option<u64>,
-    #[serde(default)]
-    pub bgdelta: Option<i32>,
+    #[serde(default, deserialize_with = "deserialize_numeric_field")]
+    pub bgdelta: Option<f32>,
     #[serde(default)]
     pub battery: Option<String>,
     #[serde(default)]

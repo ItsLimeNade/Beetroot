@@ -218,7 +218,7 @@ pub async fn run(
             embed = embed.field("IOB", format!("{:.2}u", iob), true);
         }
         if let Some(suggested) = openaps.suggested
-            && let Some(cob) = suggested.COB
+            && let Some(cob) = suggested.cob
             && cob > 0.0
         {
             embed = embed.field("COB", format!("{:.0}g", cob), true);
