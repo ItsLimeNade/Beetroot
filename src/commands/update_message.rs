@@ -3,8 +3,11 @@ use serenity::all::{Colour, CreateEmbed, CreateEmbedFooter};
 pub fn create_update_embed(version: &str) -> CreateEmbed {
     let changelog = match version {
         "0.1.2" => vec![
+            "**⚠️WARNING⚠️**",
+            "We recommend closed loops users to remove the threshold (by setting it to 0) they set prior to this update (read changelog)",
+            "",
             "**New Features:**",
-            "• Added IOB (Insulin On Board) & COB (Carbs On Board) display (appears when using `/bg`",
+            "• Added IOB (Insulin On Board) & COB (Carbs On Board) display (appears when using `/bg`)",
             "• Blood glucose unit conversion features (`/convert {value} {unit}`)",
             "• Sticker customization improvements (`/stickers`)",
             "• Analyzing blood glucose values in any mesages using the `Analyzing Units` context menu command",
@@ -25,8 +28,9 @@ pub fn create_update_embed(version: &str) -> CreateEmbed {
     CreateEmbed::new()
         .title(format!("🎉 Beetroot has been updated to v{}", version))
         .description("Here's what's new in this update:")
-        .color(Colour::from_rgb(252, 186, 0))
+        .color(Colour::DARK_GREEN)
         .field("Changelog", changelog.join("\n"), false)
+        .field("For more info","For additional information, please check out the official repository: https://github.com/ItsLimeNade/Beetroot/releases", false)
         .footer(CreateEmbedFooter::new(
             "Thank you for using Beetroot! Use /help to see all available commands.",
         ))
