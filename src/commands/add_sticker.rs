@@ -44,7 +44,7 @@ pub async fn run(
         crate::commands::error::run(
             context,
             interaction,
-            "You already have the maximum number of stickers (3). Use `/remove-sticker` to remove one first.",
+            "You already have the maximum number of stickers (3). Use `/sticker` to remove one first.",
         )
         .await?;
         return Ok(());
