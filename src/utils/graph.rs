@@ -147,8 +147,8 @@ pub async fn draw_graph(
 
     let num_y_labels = 8;
     let approximation = false;
-    let width = 850u32;
-    let height = 550u32;
+    let width = 1700u32;
+    let height = 1100u32;
 
     let bg = Rgba([17u8, 24u8, 28u8, 255u8]);
     let grid_col = Rgba([30u8, 41u8, 47u8, 255u8]);
@@ -162,10 +162,10 @@ pub async fn draw_graph(
     let carbs_col = Rgba([251u8, 191u8, 36u8, 255u8]);
     let _glucose_reading_col = Rgba([52u8, 211u8, 153u8, 255u8]);
 
-    let left_margin = 80.0_f32;
-    let right_margin = 40.0_f32;
-    let top_margin = 40.0_f32;
-    let bottom_margin = 80.0_f32;
+    let left_margin = 160.0_f32;
+    let right_margin = 80.0_f32;
+    let top_margin = 80.0_f32;
+    let bottom_margin = 160.0_f32;
 
     let plot_w = (width as f32) - left_margin - right_margin;
     let plot_h = (height as f32) - top_margin - bottom_margin;
@@ -174,7 +174,7 @@ pub async fn draw_graph(
     let plot_right = plot_left + plot_w;
     let plot_bottom = plot_top + plot_h;
 
-    let plot_padding = 10.0;
+    let plot_padding = 20.0;
 
     let inner_plot_left = plot_left + plot_padding;
     let inner_plot_right = plot_right - plot_padding;
@@ -183,14 +183,14 @@ pub async fn draw_graph(
     let inner_plot_w = inner_plot_right - inner_plot_left;
     let inner_plot_h = inner_plot_bottom - inner_plot_top;
 
-    let y_label_size_primary = 20.0_f32;
-    let y_label_size_secondary = 18.0_f32;
-    let x_label_size_primary = 20.0_f32;
-    let x_label_size_secondary = 18.0_f32;
-    let primary_legend_font_size: f32 = 20.0_f32;
-    let secondary_legend_font_size: f32 = 18.0_f32;
+    let y_label_size_primary = 40.0_f32;
+    let y_label_size_secondary = 36.0_f32;
+    let x_label_size_primary = 40.0_f32;
+    let x_label_size_secondary = 36.0_f32;
+    let primary_legend_font_size: f32 = 40.0_f32;
+    let secondary_legend_font_size: f32 = 36.0_f32;
 
-    let svg_radius: i32 = if entries.len() < 100 { 4 } else { 3 };
+    let svg_radius: i32 = if entries.len() < 100 { 8 } else { 6 };
 
     let (y_min, y_max) = match pref {
         PrefUnit::MgDl => {
@@ -286,7 +286,7 @@ pub async fn draw_graph(
             );
         }
 
-        let label_x = (plot_left - 68.0) as i32;
+        let label_x = (plot_left - 136.0) as i32;
 
         match pref {
             PrefUnit::MgDl => {
@@ -294,7 +294,7 @@ pub async fn draw_graph(
                     &mut img,
                     bright,
                     label_x,
-                    (y_px - 8.0) as i32,
+                    (y_px - 16.0) as i32,
                     PxScale::from(y_label_size_primary),
                     &handler.font,
                     &format!("{}", (*y_val as i32)),
@@ -310,7 +310,7 @@ pub async fn draw_graph(
                     &mut img,
                     dim,
                     label_x,
-                    (y_px + 6.0) as i32,
+                    (y_px + 12.0) as i32,
                     PxScale::from(y_label_size_secondary),
                     &handler.font,
                     &mmol_display,
@@ -321,7 +321,7 @@ pub async fn draw_graph(
                     &mut img,
                     bright,
                     label_x,
-                    (y_px - 8.0) as i32,
+                    (y_px - 16.0) as i32,
                     PxScale::from(y_label_size_primary),
                     &handler.font,
                     &format!("{:.1}", y_val),
@@ -337,7 +337,7 @@ pub async fn draw_graph(
                     &mut img,
                     dim,
                     label_x,
-                    (y_px + 6.0) as i32,
+                    (y_px + 12.0) as i32,
                     PxScale::from(y_label_size_secondary),
                     &handler.font,
                     &mg_display,
@@ -439,7 +439,7 @@ pub async fn draw_graph(
         label_entries = filtered;
     }
 
-    let min_label_distance = 80.0;
+    let min_label_distance = 160.0;
     let mut final_label_entries = Vec::new();
 
     for (i, &entry) in label_entries.iter().enumerate() {
@@ -490,18 +490,18 @@ pub async fn draw_graph(
                 inner_plot_top,
                 inner_plot_bottom,
                 darker_dim,
-                3,
                 6,
+                12,
             );
 
             let date_text = entry_time.format("%m/%d").to_string();
-            let text_width = (date_text.len() as f32) * 7.0;
+            let text_width = (date_text.len() as f32) * 14.0;
             draw_text_mut(
                 &mut img,
                 dim,
                 (x_center - text_width / 2.0) as i32,
-                (plot_top - 15.) as i32,
-                PxScale::from(14.0),
+                (plot_top - 30.) as i32,
+                PxScale::from(28.0),
                 &handler.font,
                 &date_text,
             );
@@ -523,7 +523,7 @@ pub async fn draw_graph(
             &mut img,
             bright,
             x_text,
-            (plot_bottom + 8.0) as i32,
+            (plot_bottom + 16.0) as i32,
             PxScale::from(x_label_size_primary),
             &handler.font,
             &time_label,
@@ -552,7 +552,7 @@ pub async fn draw_graph(
             &mut img,
             dim,
             x_text2,
-            (plot_bottom + 28.0) as i32,
+            (plot_bottom + 56.0) as i32,
             PxScale::from(x_label_size_secondary),
             &handler.font,
             &rel,
@@ -634,16 +634,16 @@ pub async fn draw_graph(
             }
 
             let triangle_size = if is_microbolus {
-                4
+                8
             } else if insulin_amount <= user_settings.microbolus_threshold + 1.0 {
-                6
+                12
             } else if insulin_amount <= user_settings.microbolus_threshold + 5.0 {
-                9
+                18
             } else {
-                15
+                30
             };
 
-            let triangle_y = closest_y + 35.0;
+            let triangle_y = closest_y + 70.0;
 
             tracing::trace!(
                 "[GRAPH] Drawing insulin: {:.1}u at ({:.1}, {:.1}) - size: {}",
@@ -669,13 +669,13 @@ pub async fn draw_graph(
 
             if !is_microbolus {
                 let insulin_text = format!("{:.1}u", insulin_amount);
-                let text_width = insulin_text.len() as f32 * 9.0;
+                let text_width = insulin_text.len() as f32 * 18.0;
                 draw_text_mut(
                     &mut img,
                     bright,
                     (closest_x - text_width / 2.0) as i32,
-                    (triangle_y + triangle_size as f32 + 8.0) as i32,
-                    PxScale::from(18.0),
+                    (triangle_y + triangle_size as f32 + 16.0) as i32,
+                    PxScale::from(36.0),
                     &handler.font,
                     &insulin_text,
                 );
@@ -685,11 +685,11 @@ pub async fn draw_graph(
         if treatment.is_carbs() {
             let carbs_amount = treatment.carbs.unwrap_or(0.0);
             let circle_radius = if carbs_amount < 0.5 {
-                4
+                8
             } else if carbs_amount <= 2.0 {
-                7
+                14
             } else {
-                12
+                24
             };
 
             tracing::trace!(
@@ -699,7 +699,7 @@ pub async fn draw_graph(
                 closest_y
             );
 
-            let carbs_y = closest_y - 35.0;
+            let carbs_y = closest_y - 70.0;
 
             draw_filled_circle_mut(
                 &mut img,
@@ -709,13 +709,13 @@ pub async fn draw_graph(
             );
 
             let carbs_text = format!("{}g", carbs_amount as i32);
-            let text_width = carbs_text.len() as f32 * 9.0;
+            let text_width = carbs_text.len() as f32 * 18.0;
             draw_text_mut(
                 &mut img,
                 carbs_col,
                 (closest_x - text_width / 2.0) as i32,
-                (carbs_y - circle_radius as f32 - 25.0) as i32,
-                PxScale::from(18.0),
+                (carbs_y - circle_radius as f32 - 50.0) as i32,
+                PxScale::from(36.0),
                 &handler.font,
                 &carbs_text,
             );
@@ -734,7 +734,7 @@ pub async fn draw_graph(
                 glucose_y
             );
 
-            let bg_check_radius = 6;
+            let bg_check_radius = 12;
             let grey_outline = Rgba([128u8, 128u8, 128u8, 255u8]);
             let red_inside = Rgba([220u8, 38u8, 27u8, 255u8]);
 
@@ -748,7 +748,7 @@ pub async fn draw_graph(
             draw_filled_circle_mut(
                 &mut img,
                 (closest_x as i32, glucose_y as i32),
-                bg_check_radius - 2,
+                bg_check_radius - 4,
                 red_inside,
             );
 
@@ -756,13 +756,13 @@ pub async fn draw_graph(
                 PrefUnit::MgDl => format!("{:.0}", glucose_value),
                 PrefUnit::Mmol => format!("{:.1}", glucose_value / 18.0),
             };
-            let text_width = glucose_text.len() as f32 * 8.0;
+            let text_width = glucose_text.len() as f32 * 16.0;
             draw_text_mut(
                 &mut img,
                 bright,
                 (closest_x - text_width / 2.0) as i32,
-                (glucose_y - bg_check_radius as f32 - 20.0) as i32,
-                PxScale::from(16.0),
+                (glucose_y - bg_check_radius as f32 - 40.0) as i32,
+                PxScale::from(32.0),
                 &handler.font,
                 &glucose_text,
             );
@@ -804,7 +804,7 @@ pub async fn draw_graph(
                 entry.entry_type
             );
 
-            let bg_check_radius = 8;
+            let bg_check_radius = 16;
             let mbg_outline = Rgba([255u8, 255u8, 255u8, 255u8]); // White outline for MBG
             let mbg_inside = Rgba([255u8, 152u8, 0u8, 255u8]); // Orange inside for MBG
 
@@ -824,7 +824,7 @@ pub async fn draw_graph(
             draw_filled_circle_mut(
                 &mut img,
                 (x as i32, bg_y as i32),
-                bg_check_radius - 2,
+                bg_check_radius - 4,
                 mbg_inside,
             );
 
@@ -833,21 +833,21 @@ pub async fn draw_graph(
                 PrefUnit::MgDl => format!("{:.0}", mbg_value),
                 PrefUnit::Mmol => format!("{:.1}", mbg_value / 18.0),
             };
-            let text_width = mbg_text.len() as f32 * 8.0;
+            let text_width = mbg_text.len() as f32 * 16.0;
             draw_text_mut(
                 &mut img,
                 bright,
                 (x - text_width / 2.0) as i32,
-                (bg_y - bg_check_radius as f32 - 15.0) as i32,
-                PxScale::from(16.0),
+                (bg_y - bg_check_radius as f32 - 30.0) as i32,
+                PxScale::from(32.0),
                 &handler.font,
                 &mbg_text,
             );
         }
     }
 
-    let header_x = (plot_left - 72.0) as i32;
-    let header_y = (plot_bottom + 30.) as i32;
+    let header_x = (plot_left - 144.0) as i32;
+    let header_y = (plot_bottom + 60.) as i32;
     match pref {
         PrefUnit::MgDl => {
             draw_text_mut(
@@ -863,7 +863,7 @@ pub async fn draw_graph(
                 &mut img,
                 dim,
                 header_x,
-                header_y + 18,
+                header_y + 36,
                 PxScale::from(secondary_legend_font_size),
                 &handler.font,
                 "mmol/L",
@@ -883,7 +883,7 @@ pub async fn draw_graph(
                 &mut img,
                 dim,
                 header_x,
-                header_y + 18,
+                header_y + 36,
                 PxScale::from(secondary_legend_font_size),
                 &handler.font,
                 "mg/dL",
@@ -894,8 +894,8 @@ pub async fn draw_graph(
     draw_text_mut(
         &mut img,
         dim,
+        20,
         10,
-        5,
         PxScale::from(secondary_legend_font_size),
         &handler.font,
         "Beetroot",
@@ -904,9 +904,9 @@ pub async fn draw_graph(
     tracing::info!("[GRAPH] Drawing {} stickers", stickers.len());
 
     let mut occupied_areas: Vec<(f32, f32, f32)> = Vec::new();
-    let sticker_radius = 60.0;
-    let curve_avoidance_distance = 100.0; // Increased distance to keep from glucose curve
-    let treatment_avoidance_distance = 80.0; // Distance to keep from treatments and MBGs
+    let sticker_radius = 120.0;
+    let curve_avoidance_distance = 200.0; // Increased distance to keep from glucose curve
+    let treatment_avoidance_distance = 160.0; // Distance to keep from treatments and MBGs
 
     // Collect all treatment and MBG positions to avoid
     let mut treatment_positions: Vec<(f32, f32)> = Vec::new();
@@ -1070,7 +1070,7 @@ pub async fn draw_graph(
         let sticker_x = (inner_plot_left + random_x * inner_plot_w) as i32;
         let sticker_y = (inner_plot_top + random_y * inner_plot_h) as i32;
 
-        let max_size = 100;
+        let max_size = 200;
         let scale_factor = if sticker_w > sticker_h {
             max_size as f32 / sticker_w as f32
         } else {
