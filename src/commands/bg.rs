@@ -168,21 +168,41 @@ pub async fn run(
     let mut embed = CreateEmbed::new()
         .thumbnail(thumbnail_url)
         .title(title)
-        .color(color)
-        .field(
-            "mg/dL",
-            format!("{} ({})", entry.sgv, delta.as_signed_str()),
-            true,
+        .color(color);
+
+    let is_data_old = duration.num_minutes() > 15;
+
+    if is_data_old {
+        embed = embed.field(
+            "⚠️ Warning ⚠️",
+            format!("Data is {}min old!", duration.num_minutes()),
+            false,
+        );
+    }
+
+    let (mgdl_value, mmol_value) = if is_data_old {
+        (
+            format!("~~{} ({})~~", entry.sgv, delta.as_signed_str()),
+            format!(
+                "~~{} ({})~~",
+                entry.svg_as_mmol(),
+                delta.as_mmol().as_signed_str()
+            ),
         )
-        .field(
-            "mmol/L",
+    } else {
+        (
+            format!("{} ({})", entry.sgv, delta.as_signed_str()),
             format!(
                 "{} ({})",
                 entry.svg_as_mmol(),
                 delta.as_mmol().as_signed_str()
             ),
-            true,
         )
+    };
+
+    embed = embed
+        .field("mg/dL", mgdl_value, true)
+        .field("mmol/L", mmol_value, true)
         .field("Trend", entry.trend().as_arrow(), true);
 
     if let Some(pebble) = pebble_data {

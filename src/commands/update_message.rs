@@ -2,21 +2,12 @@ use serenity::all::{Colour, CreateEmbed, CreateEmbedFooter};
 
 pub fn create_update_embed(version: &str) -> CreateEmbed {
     let changelog = match version {
-        "0.1.2" => vec![
-            "**⚠️WARNING⚠️**",
-            "We recommend closed loops users to remove the threshold (by setting it to 0) they set prior to this update (read changelog)",
-            "",
-            "**New Features:**",
-            "• Added IOB (Insulin On Board) & COB (Carbs On Board) display (appears when using `/bg`)",
-            "• Blood glucose unit conversion features (`/convert {value} {unit}`)",
-            "• Sticker customization improvements (`/stickers`)",
-            "• Analyzing blood glucose values in any mesages using the `Analyzing Units` context menu command",
-            "• Thanks to Gar, AAPS users will now benefit from SMB detection instead of using the `/threshold` command, which makes the bot
-            easier and more convenient to use by separating manual boluses from automatic ones.",
+        "0.2.0" => vec![
+            "**What's new:**",
+            "• **Doubled** the graph resolution allowing for noticeably bigger and clearer resulting images",
+            "• Added a warning in the `/bg` command if the data is older than 15 min",
             "",
             "**Fixes:**",
-            "• Help command updates",
-            "• Various bug fixes and improvements",
         ],
         _ => vec![
             "**What's New:**",
