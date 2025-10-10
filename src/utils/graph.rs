@@ -368,14 +368,14 @@ pub async fn draw_graph(
     let user_tz: Tz = user_timezone.parse().unwrap_or(chrono_tz::UTC);
     let now = Utc::now().with_timezone(&user_tz);
 
-    let oldest_entry = entries.last().unwrap();
-    let newest_entry = entries.first().unwrap();
+    let newest_time = now;
+    let oldest_time = now - chrono::Duration::hours(hours as i64);
 
-    let oldest_time = oldest_entry.millis_to_user_timezone(user_timezone);
-    let newest_time = newest_entry.millis_to_user_timezone(user_timezone);
-
-    let total_hours = (newest_time.timestamp() - oldest_time.timestamp()) as f32 / 3600.0;
-    tracing::info!("[GRAPH] Data spans {:.1} hours", total_hours);
+    let total_hours = hours as f32;
+    tracing::info!(
+        "[GRAPH] Displaying {} hours of data (as requested)",
+        total_hours
+    );
 
     let max_x_labels = 6;
     let time_interval = if total_hours <= 3.0 {
