@@ -173,18 +173,30 @@ pub async fn run(
     let is_data_old = duration.num_minutes() > 15;
 
     if is_data_old {
-        embed = embed.field("⚠️ Warning ⚠️", format!("Data is {}min old!",duration.num_minutes()), false);
+        embed = embed.field(
+            "⚠️ Warning ⚠️",
+            format!("Data is {}min old!", duration.num_minutes()),
+            false,
+        );
     }
 
     let (mgdl_value, mmol_value) = if is_data_old {
         (
             format!("~~{} ({})~~", entry.sgv, delta.as_signed_str()),
-            format!("~~{} ({})~~", entry.svg_as_mmol(), delta.as_mmol().as_signed_str())
+            format!(
+                "~~{} ({})~~",
+                entry.svg_as_mmol(),
+                delta.as_mmol().as_signed_str()
+            ),
         )
     } else {
         (
             format!("{} ({})", entry.sgv, delta.as_signed_str()),
-            format!("{} ({})", entry.svg_as_mmol(), delta.as_mmol().as_signed_str())
+            format!(
+                "{} ({})",
+                entry.svg_as_mmol(),
+                delta.as_mmol().as_signed_str()
+            ),
         )
     };
 
