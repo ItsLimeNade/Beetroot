@@ -41,22 +41,18 @@ impl Handler {
         let current_version = dotenvy::var("BOT_VERSION").unwrap_or_else(|_| "0.1.1".to_string());
         let user_id = command.user.id.get();
 
-        // Get user's last seen version
         match self.database.get_user_last_seen_version(user_id).await {
             Ok(last_seen_version) => {
-                // If versions differ, show update message
                 if last_seen_version != current_version {
                     let embed = commands::update_message::create_update_embed(&current_version);
                     let response = CreateInteractionResponseFollowup::new()
                         .embed(embed)
                         .ephemeral(true);
 
-                    // Send as follow-up message
                     if let Err(e) = command.create_followup(&context.http, response).await {
                         tracing::warn!("[VERSION] Failed to send update notification: {}", e);
                     }
 
-                    // Update the user's last seen version
                     if let Err(e) = self
                         .database
                         .update_user_last_seen_version(user_id, &current_version)
@@ -91,7 +87,6 @@ impl EventHandler for Handler {
     async fn interaction_create(&self, context: Context, interaction: Interaction) {
         let result = match interaction {
             Interaction::Command(ref command) => {
-                // Handle context menu commands
                 if command.data.kind == serenity::model::application::CommandType::Message {
                     match command.data.name.as_str() {
                         "Add Sticker" => commands::add_sticker::run(self, &context, command).await,
@@ -115,7 +110,6 @@ impl EventHandler for Handler {
                         }
                     }
                 } else {
-                    // Handle regular slash commands
                     let cmd_result = match self.database.user_exists(command.user.id.get()).await {
                         Ok(exists) => {
                             if !exists
@@ -158,7 +152,6 @@ impl EventHandler for Handler {
                         Err(db_error) => Err(anyhow::anyhow!("Database error: {}", db_error)),
                     };
 
-                    // After command execution, check for version updates
                     if cmd_result.is_ok()
                         && let Ok(exists) = self.database.user_exists(command.user.id.get()).await
                         && exists
@@ -178,7 +171,14 @@ impl EventHandler for Handler {
                 id if id.starts_with("help_page_") => {
                     commands::help::handle_button(self, &context, component).await
                 }
-                id if id.starts_with("remove_sticker_") || id == "clear_all_stickers" => {
+                id if id.starts_with("add_sticker_") => {
+                    commands::add_sticker::handle_button(self, &context, component).await
+                }
+                id if id.starts_with("remove_sticker_")
+                    || id == "clear_all_stickers"
+                    || id.starts_with("clear_category_stickers_")
+                    || id.starts_with("stickers_page_") =>
+                {
                     commands::stickers::handle_button(self, &context, component).await
                 }
                 _ => Ok(()),
@@ -229,7 +229,6 @@ impl EventHandler for Handler {
     async fn ready(&self, context: Context, ready: Ready) {
         tracing::info!("[BOT] {} is ready and connected!", ready.user.name);
         let commands_vec = vec![
-            // Slash commands
             commands::allow::register(),
             commands::bg::register(),
             commands::convert::register(),
@@ -240,17 +239,16 @@ impl EventHandler for Handler {
             commands::set_threshold::register(),
             commands::stickers::register(),
             commands::token::register(),
-            // Context menu commands
             commands::add_sticker::register(),
             commands::analyze_units::register(),
         ];
         let command_count = commands_vec.len();
-        let commands = Command::set_global_commands(&context, commands_vec).await;
+        let _commands = Command::set_global_commands(&context, commands_vec).await;
         tracing::info!(
             "[CMD] Successfully registered {} global slash commands",
             command_count
         );
-        tracing::debug!("Registered commands: {:#?}", commands);
+        // tracing::debug!("Registered commands: {:#?}", commands);
     }
 }
 
