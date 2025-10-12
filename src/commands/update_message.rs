@@ -8,6 +8,7 @@ pub fn create_update_embed(version: &str) -> CreateEmbed {
             "• Added a warning in the `/bg` command if the data is older than 15 min",
             "",
             "**Fixes:**",
+            "• Fixed issue where missing data on the edges of the graph would collapse the graph instead of showing the gap",
         ],
         _ => vec![
             "**What's New:**",
