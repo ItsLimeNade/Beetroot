@@ -417,12 +417,12 @@ impl Entry {
 
     /// Check if this entry has a meter blood glucose (finger stick) reading
     pub fn has_mbg(&self) -> bool {
-        // Check if this is an MBG entry (type == "mbg") or if it has an mbg field
-        if let Some(entry_type) = &self.entry_type {
-            entry_type == "mbg" && self.mbg.is_some() && self.mbg.unwrap_or(0.0) > 0.0
-        } else {
-            self.mbg.is_some() && self.mbg.unwrap_or(0.0) > 0.0
+        if let Some(entry_type) = &self.entry_type
+            && entry_type == "mbg"
+        {
+            return self.mbg.is_some() && self.mbg.unwrap_or(0.0) > 0.0;
         }
+        self.mbg.is_some() && self.mbg.unwrap_or(0.0) > 0.0
     }
 }
 
@@ -481,10 +481,24 @@ impl Treatment {
 }
 
 #[derive(Deserialize, Debug, Clone)]
+pub struct TargetRange {
+    #[allow(dead_code)]
+    pub time: String,
+    pub value: f32,
+    #[allow(dead_code)]
+    #[serde(rename = "timeAsSeconds")]
+    pub time_as_seconds: u32,
+}
+
+#[derive(Deserialize, Debug, Clone)]
 pub struct ProfileStore {
     pub timezone: String,
     #[serde(default)]
     pub units: Option<String>,
+    #[serde(default)]
+    pub target_low: Option<Vec<TargetRange>>,
+    #[serde(default)]
+    pub target_high: Option<Vec<TargetRange>>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -492,6 +506,76 @@ pub struct Profile {
     #[serde(rename = "defaultProfile")]
     pub default_profile: String,
     pub store: std::collections::HashMap<String, ProfileStore>,
+}
+
+impl ProfileStore {
+    pub fn get_target_low(&self, status_thresholds: Option<&StatusThresholds>) -> f32 {
+        self.target_low
+            .as_ref()
+            .and_then(|ranges| ranges.first())
+            .map(|range| range.value)
+            .or_else(|| status_thresholds.map(|thresholds| thresholds.bg_target_bottom as f32))
+            .unwrap_or(70.0)
+    }
+
+    pub fn get_target_high(&self, status_thresholds: Option<&StatusThresholds>) -> f32 {
+        self.target_high
+            .as_ref()
+            .and_then(|ranges| ranges.first())
+            .map(|range| range.value)
+            .or_else(|| status_thresholds.map(|thresholds| thresholds.bg_target_top as f32))
+            .unwrap_or(180.0)
+    }
+
+    pub fn get_target_low_mg(&self, status_thresholds: Option<&StatusThresholds>) -> f32 {
+        let low = self.get_target_low(status_thresholds);
+        if self.units.as_deref() == Some("mmol") {
+            low * 18.0
+        } else {
+            low
+        }
+    }
+
+    pub fn get_target_high_mg(&self, status_thresholds: Option<&StatusThresholds>) -> f32 {
+        let high = self.get_target_high(status_thresholds);
+        if self.units.as_deref() == Some("mmol") {
+            high * 18.0
+        } else {
+            high
+        }
+    }
+}
+
+#[derive(Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct StatusThresholds {
+    #[allow(dead_code)]
+    #[serde(rename = "bgHigh")]
+    pub bg_high: u16,
+    #[serde(rename = "bgTargetTop")]
+    pub bg_target_top: u16,
+    #[serde(rename = "bgTargetBottom")]
+    pub bg_target_bottom: u16,
+    #[allow(dead_code)]
+    #[serde(rename = "bgLow")]
+    pub bg_low: u16,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct StatusSettings {
+    #[serde(default)]
+    pub custom_title: Option<String>,
+    #[serde(default)]
+    pub thresholds: Option<StatusThresholds>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct Status {
+    #[allow(dead_code)]
+    pub name: String,
+    #[serde(default)]
+    pub settings: Option<StatusSettings>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -830,7 +914,7 @@ impl Nightscout {
             let end_timestamp = now.timestamp_millis() as u64;
 
             let mut query_params = format!(
-                "api/v1/entries/sgv.json?find[date][$gte]={}&find[date][$lte]={}",
+                "api/v1/entries.json?find[date][$gte]={}&find[date][$lte]={}",
                 start_timestamp, end_timestamp
             );
 
@@ -839,7 +923,7 @@ impl Nightscout {
             base.join(&query_params)?
         } else {
             let count = options.count.unwrap_or(2000); // Increase default count from u8::MAX (255) to 2000
-            base.join(&format!("api/v1/entries/sgv.json?count={count}"))?
+            base.join(&format!("api/v1/entries.json?count={count}"))?
         };
         tracing::debug!("[API] Entries API URL: {}", url);
         let mut req = self.http_client.get(url.clone());
@@ -874,11 +958,23 @@ impl Nightscout {
         };
         let entries: Vec<Entry> = res.json().await?;
 
-        // TEMPORARY: Skip entry cleaning to avoid sanitization issues
         tracing::debug!(
             "[ENTRIES] Retrieved {} entries (cleaning disabled)",
             entries.len()
         );
+
+        let mbg_count = entries
+            .iter()
+            .filter(|e| {
+                e.entry_type.as_deref() == Some("mbg")
+                    || (e.mbg.is_some() && e.mbg.unwrap_or(0.0) > 0.0)
+            })
+            .count();
+        tracing::info!(
+            "[ENTRIES] Found {} entries with type='mbg' or mbg field",
+            mbg_count
+        );
+
         if entries.is_empty() {
             Err(NightscoutError::NoEntries)
         } else {
@@ -984,17 +1080,24 @@ impl Nightscout {
 
             let entry_timestamp = entry.date.or(entry.mills).unwrap_or(0);
             let entry_sgv = (entry.sgv * 100.0) as i32;
+            let entry_mbg = entry.mbg.map(|v| (v * 100.0) as i32);
 
-            // Check for duplicate based on timestamp and SGV
             let is_duplicate = processed_entries.iter().any(|existing: &Entry| {
                 let existing_timestamp = existing.date.or(existing.mills).unwrap_or(0);
                 let existing_sgv = (existing.sgv * 100.0) as i32;
+                let existing_mbg = existing.mbg.map(|v| (v * 100.0) as i32);
 
                 let time_diff = (entry_timestamp as i64 - existing_timestamp as i64).abs();
-                let same_sgv = entry_sgv == existing_sgv;
 
-                // Consider duplicate if within 30 seconds and same SGV
-                time_diff <= 30000 && same_sgv
+                let same_value = if entry_mbg.is_some() && existing_mbg.is_some() {
+                    entry_mbg == existing_mbg
+                } else if entry_mbg.is_none() && existing_mbg.is_none() {
+                    entry_sgv == existing_sgv
+                } else {
+                    false
+                };
+
+                time_diff <= 30000 && same_value
             });
 
             if !is_duplicate {
@@ -1225,5 +1328,50 @@ impl Nightscout {
                 Ok(None)
             }
         }
+    }
+
+    pub async fn get_status(
+        &self,
+        base_url: &str,
+        token: Option<&str>,
+    ) -> Result<Status, NightscoutError> {
+        tracing::debug!("[API] Fetching status from URL: '{}'", base_url);
+
+        let base = Self::parse_base_url(base_url)?;
+        let url = base.join("api/v1/status.json")?;
+        tracing::debug!("[API] Status API URL: {}", url);
+
+        let mut req = self.http_client.get(url.clone());
+
+        let auth_method = token.map(AuthMethod::from_token);
+        if let Some(auth) = auth_method {
+            req = auth.apply_to_request(req);
+            tracing::debug!("[OK] Applied {} authentication", auth.description());
+        }
+
+        tracing::debug!("[HTTP] Sending status request...");
+        let res = match req.send().await {
+            Ok(response) => {
+                tracing::debug!("[HTTP] Received status response");
+                response
+            }
+            Err(e) => return Err(Self::handle_connection_error(e, &url)),
+        };
+
+        let res = match res.error_for_status() {
+            Ok(response) => {
+                tracing::info!("[HTTP] Status response status: {}", response.status());
+                response
+            }
+            Err(e) => {
+                tracing::error!("[ERROR] Status request returned error status: {}", e);
+                return Err(NightscoutError::Network(e));
+            }
+        };
+
+        let status: Status = res.json().await?;
+        tracing::info!("[STATUS] Successfully retrieved status");
+
+        Ok(status)
     }
 }

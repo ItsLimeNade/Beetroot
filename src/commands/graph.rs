@@ -1,4 +1,4 @@
-use crate::Handler;
+use crate::bot::Handler;
 use crate::utils::graph::draw_graph;
 use serenity::all::{
     CommandInteraction, CommandOptionType, Context, CreateInteractionResponse,
@@ -115,6 +115,12 @@ pub async fn run(
         }
     };
 
+    let status = handler
+        .nightscout_client
+        .get_status(base_url, token)
+        .await
+        .ok();
+
     let now = chrono::Utc::now();
     let hours_ago = now - chrono::Duration::hours(hours);
     let start_time = hours_ago.to_rfc3339();
@@ -132,6 +138,11 @@ pub async fn run(
         }
     };
 
+    let thresholds = status
+        .as_ref()
+        .and_then(|s| s.settings.as_ref())
+        .and_then(|settings| settings.thresholds.as_ref());
+
     let buffer = draw_graph(
         &entries,
         &treatments,
@@ -141,6 +152,7 @@ pub async fn run(
         handler,
         hours as u16,
         None,
+        thresholds,
     )
     .await?;
 

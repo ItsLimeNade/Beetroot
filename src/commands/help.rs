@@ -1,8 +1,9 @@
-use crate::Handler;
+use crate::bot::Handler;
+use crate::bot::helpers::pagination;
 use serenity::all::{
-    ButtonStyle, Colour, CommandInteraction, CommandOptionType, ComponentInteraction, Context,
-    CreateActionRow, CreateButton, CreateEmbed, CreateInteractionResponse,
-    CreateInteractionResponseMessage, InteractionContext, ResolvedOption, ResolvedValue,
+    Colour, CommandInteraction, CommandOptionType, ComponentInteraction, Context, CreateActionRow,
+    CreateEmbed, CreateInteractionResponse, CreateInteractionResponseMessage, InteractionContext,
+    ResolvedOption, ResolvedValue,
 };
 use serenity::builder::{CreateCommand, CreateCommandOption};
 
@@ -75,13 +76,33 @@ fn create_help_page(page: u8) -> (CreateEmbed, Option<CreateActionRow>) {
                 false,
             )
             .field(
-                "/token <token>",
-                "Set or update your Nightscout API token for authentication (optional but recommended).",
+                "/token",
+                "Set or update your Nightscout API token for authentication (optional but recommended). Opens a modal for secure input.",
+                false,
+            )
+            .field(
+                "/set-token",
+                "Alternative command to set or update your Nightscout API token. Same as /token.",
+                false,
+            )
+            .field(
+                "/set-nightscout-url",
+                "Update your Nightscout URL. Tests the connection before saving changes.",
+                false,
+            )
+            .field(
+                "/get-nightscout-url",
+                "View your current Nightscout URL and token status (without revealing the token).",
+                false,
+            )
+            .field(
+                "/set-visibility <public|private>",
+                "Set your profile visibility. Public = anyone can view, Private = only you and allowed users can view.",
                 false,
             )
             .field(
                 "/allow @user [action]",
-                "Manage who can view your blood glucose data. Add or remove users from your allowed list.",
+                "Manage who can view your blood glucose data when your profile is private. Add or remove users from your allowed list.",
                 false,
             )
             .field(
@@ -125,33 +146,7 @@ fn create_help_page(page: u8) -> (CreateEmbed, Option<CreateActionRow>) {
         "Use /info for bot information and GitHub repository",
     ));
 
-    let components = if total_pages > 1 {
-        let mut buttons = Vec::new();
-
-        if page > 1 {
-            buttons.push(
-                CreateButton::new(format!("help_page_{}", page - 1))
-                    .label("◀ Previous")
-                    .style(ButtonStyle::Secondary),
-            );
-        }
-
-        if page < total_pages {
-            buttons.push(
-                CreateButton::new(format!("help_page_{}", page + 1))
-                    .label("Next ▶")
-                    .style(ButtonStyle::Secondary),
-            );
-        }
-
-        if !buttons.is_empty() {
-            Some(CreateActionRow::Buttons(buttons))
-        } else {
-            None
-        }
-    } else {
-        None
-    };
+    let components = pagination::create_pagination_buttons("help_page_", page, total_pages);
 
     (embed, components)
 }
@@ -163,8 +158,7 @@ pub async fn handle_button(
 ) -> anyhow::Result<()> {
     let custom_id = &interaction.data.custom_id;
 
-    if let Some(page_str) = custom_id.strip_prefix("help_page_") {
-        let page: u8 = page_str.parse().unwrap_or(1);
+    if let Some(page) = pagination::extract_page_number(custom_id, "help_page_") {
         let (embed, components) = create_help_page(page);
 
         let mut response = CreateInteractionResponseMessage::new().embed(embed);

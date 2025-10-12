@@ -1,4 +1,5 @@
-use crate::{Handler, utils::database::NightscoutInfo};
+use crate::bot::Handler;
+use crate::utils::database::NightscoutInfo;
 use serenity::all::{
     ButtonStyle, Colour, CommandInteraction, ComponentInteraction, Context, CreateActionRow,
     CreateButton, CreateCommand, CreateEmbed, CreateInputText, CreateInteractionResponse,

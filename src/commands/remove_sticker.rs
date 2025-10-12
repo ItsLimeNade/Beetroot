@@ -1,4 +1,4 @@
-use crate::Handler;
+use crate::bot::Handler;
 use serenity::all::{
     CommandInteraction, CommandOptionType, Context, CreateInteractionResponse,
     CreateInteractionResponseMessage, InteractionContext, ResolvedOption, ResolvedValue,

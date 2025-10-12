@@ -179,4 +179,36 @@ impl Migration {
         tracing::info!("[MIGRATION] Last seen version field migration completed");
         Ok(())
     }
+
+    pub async fn add_sticker_category_field(&self) -> Result<(), sqlx::Error> {
+        tracing::info!("[MIGRATION] Adding category field to stickers table");
+
+        let check_category_query = sqlx::query(
+            "SELECT COUNT(*) as count FROM pragma_table_info('stickers') WHERE name = 'category'",
+        );
+
+        let category_exists = check_category_query
+            .fetch_one(&self.pool)
+            .await?
+            .get::<i32, _>("count")
+            > 0;
+
+        if !category_exists {
+            sqlx::query("ALTER TABLE stickers ADD COLUMN category TEXT DEFAULT 'any'")
+                .execute(&self.pool)
+                .await?;
+            tracing::info!("[MIGRATION] Added category column");
+
+            // Update existing stickers to have 'any' category
+            sqlx::query(
+                "UPDATE stickers SET category = 'any' WHERE category IS NULL OR category = ''",
+            )
+            .execute(&self.pool)
+            .await?;
+            tracing::info!("[MIGRATION] Updated existing stickers with default 'any' category");
+        }
+
+        tracing::info!("[MIGRATION] Sticker category field migration completed");
+        Ok(())
+    }
 }

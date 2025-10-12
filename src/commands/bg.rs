@@ -1,4 +1,4 @@
-use crate::Handler;
+use crate::bot::Handler;
 use anyhow::Context as AnyhowContext;
 use serenity::all::{
     Colour, CommandInteraction, CommandOptionType, Context, CreateAttachment, CreateEmbed,
@@ -102,6 +102,12 @@ pub async fn run(
         }
     };
 
+    let status = handler
+        .nightscout_client
+        .get_status(base_url, token)
+        .await
+        .ok();
+
     let profile = match handler.nightscout_client.get_profile(base_url, token).await {
         Ok(profile) => profile,
         Err(e) => {
@@ -120,13 +126,38 @@ pub async fn run(
         .ok()
         .flatten();
 
+    let now_utc = chrono::Utc::now();
+    let thirty_min_ago = now_utc - chrono::Duration::minutes(30);
+    let start_time = thirty_min_ago.to_rfc3339();
+    let end_time = now_utc.to_rfc3339();
+
+    let recent_entries = handler
+        .nightscout_client
+        .get_entries_for_hours(base_url, 1, token)
+        .await
+        .unwrap_or_default();
+
+    let recent_treatments = handler
+        .nightscout_client
+        .fetch_treatments_between(base_url, &start_time, &end_time, token)
+        .await
+        .unwrap_or_default();
+
     let default_profile_name = &profile.default_profile;
     let profile_store = profile
         .store
         .get(default_profile_name)
         .context("Default profile not found")?;
 
+    let thresholds = status
+        .as_ref()
+        .and_then(|s| s.settings.as_ref())
+        .and_then(|settings| settings.thresholds.as_ref());
+
     let user_timezone = &profile_store.timezone;
+    let target_low_mg = profile_store.get_target_low_mg(thresholds);
+    let target_high_mg = profile_store.get_target_high_mg(thresholds);
+
     let entry_time = entry.millis_to_user_timezone(user_timezone);
     let now = chrono::Utc::now()
         .with_timezone(&chrono_tz::Tz::from_str(user_timezone).unwrap_or(chrono_tz::UTC));
@@ -140,9 +171,9 @@ pub async fn run(
         format!("{} days ago", duration.num_days())
     };
 
-    let color = if entry.sgv > 180.0 {
+    let color = if entry.sgv > target_high_mg {
         Colour::from_rgb(227, 177, 11)
-    } else if entry.sgv < 70.0 {
+    } else if entry.sgv < target_low_mg {
         Colour::from_rgb(235, 47, 47)
     } else {
         Colour::from_rgb(87, 189, 79)
@@ -154,13 +185,23 @@ pub async fn run(
         .and_then(|u| u.avatar_url())
         .unwrap_or_default();
 
-    let title = format!(
-        "{}'s Nightscout data",
-        target_user
-            .as_ref()
-            .map(|u| u.display_name())
-            .unwrap_or_else(|| "User")
-    );
+    let custom_title = status
+        .as_ref()
+        .and_then(|s| s.settings.as_ref())
+        .and_then(|settings| settings.custom_title.as_deref())
+        .filter(|title| *title != "Nightscout");
+
+    let title = if let Some(custom) = custom_title {
+        custom.to_string()
+    } else {
+        format!(
+            "{}'s Nightscout data",
+            target_user
+                .as_ref()
+                .map(|u| u.display_name())
+                .unwrap_or_else(|| "User")
+        )
+    };
 
     let icon_bytes = std::fs::read("assets/images/nightscout_icon.png")?;
     let icon_attachment = CreateAttachment::bytes(icon_bytes, "nightscout_icon.png");
@@ -168,21 +209,41 @@ pub async fn run(
     let mut embed = CreateEmbed::new()
         .thumbnail(thumbnail_url)
         .title(title)
-        .color(color)
-        .field(
-            "mg/dL",
-            format!("{} ({})", entry.sgv, delta.as_signed_str()),
-            true,
+        .color(color);
+
+    let is_data_old = duration.num_minutes() > 15;
+
+    if is_data_old {
+        embed = embed.field(
+            "⚠️ Warning ⚠️",
+            format!("Data is {}min old!", duration.num_minutes()),
+            false,
+        );
+    }
+
+    let (mgdl_value, mmol_value) = if is_data_old {
+        (
+            format!("~~{} ({})~~", entry.sgv, delta.as_signed_str()),
+            format!(
+                "~~{} ({})~~",
+                entry.svg_as_mmol(),
+                delta.as_mmol().as_signed_str()
+            ),
         )
-        .field(
-            "mmol/L",
+    } else {
+        (
+            format!("{} ({})", entry.sgv, delta.as_signed_str()),
             format!(
                 "{} ({})",
                 entry.svg_as_mmol(),
                 delta.as_mmol().as_signed_str()
             ),
-            true,
         )
+    };
+
+    embed = embed
+        .field("mg/dL", mgdl_value, true)
+        .field("mmol/L", mmol_value, true)
         .field("Trend", entry.trend().as_arrow(), true);
 
     if let Some(pebble) = pebble_data {
@@ -197,6 +258,80 @@ pub async fn run(
         {
             embed = embed.field("COB", format!("{:.0}g", cob), true);
         }
+    }
+
+    let mut fingerprick_value: Option<(f32, u64)> = None;
+    let thirty_min_ago_millis = thirty_min_ago.timestamp_millis() as u64;
+
+    for entry in recent_entries.iter() {
+        if entry.has_mbg()
+            && let Some(entry_time_millis) = entry.date
+            && entry_time_millis >= thirty_min_ago_millis
+            && let Some(mbg) = entry.mbg
+        {
+            fingerprick_value = Some((mbg, entry_time_millis));
+            break;
+        }
+    }
+
+    if fingerprick_value.is_none() {
+        for treatment in recent_treatments.iter() {
+            if treatment.event_type.as_deref() == Some("BG Check")
+                && let Some(glucose_str) = &treatment.glucose
+                && let Ok(glucose) = glucose_str.parse::<f32>()
+            {
+                let treatment_time_millis = if let Some(time) = treatment.date.or(treatment.mills) {
+                    time
+                } else if let Some(created_at) = &treatment.created_at {
+                    if let Ok(parsed_time) = chrono::DateTime::parse_from_rfc3339(created_at) {
+                        parsed_time.timestamp_millis() as u64
+                    } else {
+                        continue;
+                    }
+                } else {
+                    continue;
+                };
+
+                if treatment_time_millis >= thirty_min_ago_millis {
+                    fingerprick_value = Some((glucose, treatment_time_millis));
+                    break;
+                }
+            }
+        }
+    }
+
+    if let Some((fp_value, fp_timestamp)) = fingerprick_value {
+        let fp_mmol = fp_value / 18.0;
+
+        let now_millis = now_utc.timestamp_millis() as u64;
+
+        tracing::info!("[BG] Fingerprick timestamp: {}", fp_timestamp);
+        tracing::info!("[BG] Now timestamp: {}", now_millis);
+
+        let timestamp_millis = if fp_timestamp < 10000000000 {
+            tracing::info!("[BG] Converting seconds to milliseconds");
+            fp_timestamp * 1000
+        } else {
+            tracing::info!("[BG] Timestamp already in milliseconds");
+            fp_timestamp
+        };
+
+        tracing::info!("[BG] Normalized timestamp: {}", timestamp_millis);
+
+        let diff_millis = now_millis.saturating_sub(timestamp_millis);
+        tracing::info!("[BG] Difference in milliseconds: {}", diff_millis);
+
+        let fp_age_minutes = diff_millis / 1000 / 60;
+        tracing::info!("[BG] Age in minutes: {}", fp_age_minutes);
+
+        embed = embed.field(
+            "Fingerprick",
+            format!(
+                "{:.0} mg/dL ({:.1} mmol/L)\n-# {} min ago",
+                fp_value, fp_mmol, fp_age_minutes
+            ),
+            false,
+        );
     }
 
     embed = embed.footer(
