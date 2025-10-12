@@ -84,17 +84,59 @@ pub struct NightscoutInfo {
     pub display_microbolus: bool,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum StickerCategory {
+    Low,
+    InRange,
+    High,
+    Any,
+}
+
+impl StickerCategory {
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "low" => Some(Self::Low),
+            "inrange" | "in_range" | "in range" => Some(Self::InRange),
+            "high" => Some(Self::High),
+            "any" => Some(Self::Any),
+            _ => None,
+        }
+    }
+
+    pub fn to_str(self) -> &'static str {
+        match self {
+            Self::Low => "low",
+            Self::InRange => "inrange",
+            Self::High => "high",
+            Self::Any => "any",
+        }
+    }
+
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            Self::Low => "Low",
+            Self::InRange => "In Range",
+            Self::High => "High",
+            Self::Any => "Any",
+        }
+    }
+
+    pub fn max_count(&self) -> i64 {
+        match self {
+            Self::Low => 3,
+            Self::InRange => 3,
+            Self::High => 3,
+            Self::Any => 5,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Sticker {
     pub id: i32,
     pub file_name: String,
     pub display_name: String,
-    #[allow(dead_code)]
-    pub x_position: f32,
-    #[allow(dead_code)]
-    pub y_position: f32,
-    #[allow(dead_code)]
-    pub rotation: f32,
+    pub category: StickerCategory,
 }
 
 #[derive(Clone, Debug)]
@@ -123,6 +165,7 @@ impl Database {
         migration.add_sticker_position_fields().await?;
         migration.add_sticker_display_name_field().await?;
         migration.add_last_seen_version_field().await?;
+        migration.add_sticker_category_field().await?;
 
         Ok(Database { pool })
     }
@@ -294,17 +337,13 @@ impl Database {
         discord_id: u64,
         file_name: &str,
         display_name: &str,
-        x_position: f32,
-        y_position: f32,
-        rotation: f32,
+        category: StickerCategory,
     ) -> Result<(), sqlx::Error> {
-        sqlx::query("INSERT INTO stickers (file_name, display_name, discord_id, x_position, y_position, rotation) VALUES (?, ?, ?, ?, ?, ?)")
+        sqlx::query("INSERT INTO stickers (file_name, display_name, discord_id, category) VALUES (?, ?, ?, ?)")
             .bind(file_name)
             .bind(display_name)
             .bind(discord_id as i64)
-            .bind(x_position)
-            .bind(y_position)
-            .bind(rotation)
+            .bind(category.to_str())
             .execute(&self.pool)
             .await?;
 
@@ -336,6 +375,7 @@ impl Database {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub async fn get_user_sticker_count(&self, discord_id: u64) -> Result<i64, sqlx::Error> {
         let row = sqlx::query("SELECT COUNT(*) as count FROM stickers WHERE discord_id = ?")
             .bind(discord_id as i64)
@@ -463,24 +503,72 @@ impl Database {
     }
 
     pub async fn get_user_stickers(&self, user_id: u64) -> Result<Vec<Sticker>, sqlx::Error> {
-        let rows = sqlx::query("SELECT id, file_name, display_name, x_position, y_position, rotation FROM stickers WHERE discord_id = ?")
+        let rows = sqlx::query(
+            "SELECT id, file_name, display_name, category FROM stickers WHERE discord_id = ?",
+        )
+        .bind(user_id as i64)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let stickers: Vec<Sticker> = rows
+            .iter()
+            .map(|row| {
+                let category_str: String = row.get("category");
+                Sticker {
+                    id: row.get("id"),
+                    file_name: row.get("file_name"),
+                    display_name: row.get("display_name"),
+                    category: StickerCategory::from_str(&category_str)
+                        .unwrap_or(StickerCategory::Any),
+                }
+            })
+            .collect();
+
+        Ok(stickers)
+    }
+
+    pub async fn get_user_stickers_by_category(
+        &self,
+        user_id: u64,
+        category: StickerCategory,
+    ) -> Result<Vec<Sticker>, sqlx::Error> {
+        let rows = sqlx::query("SELECT id, file_name, display_name, category FROM stickers WHERE discord_id = ? AND category = ?")
             .bind(user_id as i64)
+            .bind(category.to_str())
             .fetch_all(&self.pool)
             .await?;
 
         let stickers: Vec<Sticker> = rows
             .iter()
-            .map(|row| Sticker {
-                id: row.get("id"),
-                file_name: row.get("file_name"),
-                display_name: row.get("display_name"),
-                x_position: row.get("x_position"),
-                y_position: row.get("y_position"),
-                rotation: row.get("rotation"),
+            .map(|row| {
+                let category_str: String = row.get("category");
+                Sticker {
+                    id: row.get("id"),
+                    file_name: row.get("file_name"),
+                    display_name: row.get("display_name"),
+                    category: StickerCategory::from_str(&category_str)
+                        .unwrap_or(StickerCategory::Any),
+                }
             })
             .collect();
 
         Ok(stickers)
+    }
+
+    pub async fn get_user_sticker_count_by_category(
+        &self,
+        user_id: u64,
+        category: StickerCategory,
+    ) -> Result<i64, sqlx::Error> {
+        let row = sqlx::query(
+            "SELECT COUNT(*) as count FROM stickers WHERE discord_id = ? AND category = ?",
+        )
+        .bind(user_id as i64)
+        .bind(category.to_str())
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(row.get("count"))
     }
 
     pub async fn update_microbolus_settings(
