@@ -6,7 +6,7 @@ mod types;
 use drawing::{
     draw_carbs_treatment, draw_glucose_points, draw_glucose_reading, draw_insulin_treatment,
 };
-use helpers::draw_dashed_vertical_line;
+use helpers::{draw_dashed_horizontal_line, draw_dashed_vertical_line};
 use stickers::{
     StickerConfig, draw_sticker, filter_ranges_by_duration, find_sticker_position,
     identify_status_ranges, select_stickers_to_place,
@@ -35,6 +35,7 @@ pub async fn draw_graph(
     handler: &Handler,
     hours: u16,
     save_path: Option<&str>,
+    status_thresholds: Option<&super::nightscout::StatusThresholds>,
 ) -> Result<Vec<u8>> {
     tracing::info!(
         "[GRAPH] Starting graph generation for {} hours of data",
@@ -63,6 +64,14 @@ pub async fn draw_graph(
 
     let user_timezone = &profile_store.timezone;
     tracing::info!("[GRAPH] Using timezone: {}", user_timezone);
+
+    let target_low_mg = profile_store.get_target_low_mg(status_thresholds);
+    let target_high_mg = profile_store.get_target_high_mg(status_thresholds);
+    tracing::info!(
+        "[GRAPH] Using target ranges: {:.1} - {:.1} mg/dL",
+        target_low_mg,
+        target_high_mg
+    );
 
     let nightscout_client = crate::utils::nightscout::Nightscout::new();
     let entries = match nightscout_client.filter_and_clean_entries(entries, hours, user_timezone) {
@@ -315,6 +324,34 @@ pub async fn draw_graph(
         }
     }
 
+    let target_high_y = project_y(target_high_mg);
+    if target_high_y >= inner_plot_top && target_high_y <= inner_plot_bottom {
+        let faint_orange = Rgba([255u8, 159u8, 10u8, 80u8]);
+        draw_dashed_horizontal_line(
+            &mut img,
+            target_high_y,
+            inner_plot_left,
+            inner_plot_right,
+            faint_orange,
+            10,
+            5,
+        );
+    }
+
+    let target_low_y = project_y(target_low_mg);
+    if target_low_y >= inner_plot_top && target_low_y <= inner_plot_bottom {
+        let faint_red = Rgba([255u8, 69u8, 58u8, 80u8]);
+        draw_dashed_horizontal_line(
+            &mut img,
+            target_low_y,
+            inner_plot_left,
+            inner_plot_right,
+            faint_red,
+            10,
+            5,
+        );
+    }
+
     let user_tz: Tz = user_timezone.parse().unwrap_or(chrono_tz::UTC);
     let now = Utc::now().with_timezone(&user_tz);
 
@@ -520,7 +557,8 @@ pub async fn draw_graph(
 
     tracing::info!("[GRAPH] Drawing contextual stickers");
 
-    let status_ranges = identify_status_ranges(&entries, user_timezone);
+    let status_ranges =
+        identify_status_ranges(&entries, user_timezone, target_low_mg, target_high_mg);
     let status_ranges = filter_ranges_by_duration(status_ranges, &entries, user_timezone);
 
     let mut treatment_positions: Vec<(f32, f32)> = Vec::new();
@@ -595,7 +633,6 @@ pub async fn draw_graph(
                 inner_plot_top,
                 inner_plot_bottom,
                 handler,
-                bright,
             )
             .await
             {
@@ -712,7 +749,15 @@ pub async fn draw_graph(
     }
 
     draw_glucose_points(
-        &mut img, &entries, &points_px, svg_radius, high_col, low_col, axis_col,
+        &mut img,
+        &entries,
+        &points_px,
+        svg_radius,
+        high_col,
+        low_col,
+        axis_col,
+        target_high_mg,
+        target_low_mg,
     );
 
     let mbg_count = entries.iter().filter(|e| e.has_mbg()).count();
