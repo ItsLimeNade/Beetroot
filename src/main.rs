@@ -125,13 +125,15 @@ impl EventHandler for Handler {
                                         commands::convert::run(self, &context, command).await
                                     }
                                     "get-nightscout-url" => {
-                                        commands::get_nightscout_url::run(self, &context, command).await
+                                        commands::get_nightscout_url::run(self, &context, command)
+                                            .await
                                     }
                                     "graph" => commands::graph::run(self, &context, command).await,
                                     "help" => commands::help::run(self, &context, command).await,
                                     "info" => commands::info::run(self, &context, command).await,
                                     "set-nightscout-url" => {
-                                        commands::set_nightscout_url::run(self, &context, command).await
+                                        commands::set_nightscout_url::run(self, &context, command)
+                                            .await
                                     }
                                     "set-threshold" => {
                                         commands::set_threshold::run(self, &context, command).await

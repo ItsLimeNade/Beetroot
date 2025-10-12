@@ -37,7 +37,8 @@ pub async fn run(
         }
     }
 
-    let visibility = visibility.ok_or_else(|| anyhow::anyhow!("Visibility parameter is required"))?;
+    let visibility =
+        visibility.ok_or_else(|| anyhow::anyhow!("Visibility parameter is required"))?;
 
     let is_private = match visibility {
         "public" => false,
