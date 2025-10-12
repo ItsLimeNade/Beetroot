@@ -214,7 +214,6 @@ pub fn draw_glucose_reading(
     );
 }
 
-
 /// Draw glucose data points on the graph
 pub fn draw_glucose_points(
     img: &mut RgbaImage,

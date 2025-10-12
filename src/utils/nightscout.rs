@@ -417,11 +417,10 @@ impl Entry {
 
     /// Check if this entry has a meter blood glucose (finger stick) reading
     pub fn has_mbg(&self) -> bool {
-        if let Some(entry_type) = &self.entry_type {
-            if entry_type == "mbg" {
+        if let Some(entry_type) = &self.entry_type
+            && entry_type == "mbg" {
                 return self.mbg.is_some() && self.mbg.unwrap_or(0.0) > 0.0;
             }
-        }
         self.mbg.is_some() && self.mbg.unwrap_or(0.0) > 0.0
     }
 }
@@ -879,10 +878,17 @@ impl Nightscout {
             entries.len()
         );
 
-        let mbg_count = entries.iter().filter(|e| {
-            e.entry_type.as_deref() == Some("mbg") || (e.mbg.is_some() && e.mbg.unwrap_or(0.0) > 0.0)
-        }).count();
-        tracing::info!("[ENTRIES] Found {} entries with type='mbg' or mbg field", mbg_count);
+        let mbg_count = entries
+            .iter()
+            .filter(|e| {
+                e.entry_type.as_deref() == Some("mbg")
+                    || (e.mbg.is_some() && e.mbg.unwrap_or(0.0) > 0.0)
+            })
+            .count();
+        tracing::info!(
+            "[ENTRIES] Found {} entries with type='mbg' or mbg field",
+            mbg_count
+        );
 
         if entries.is_empty() {
             Err(NightscoutError::NoEntries)
