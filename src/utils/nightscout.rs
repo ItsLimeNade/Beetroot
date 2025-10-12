@@ -569,10 +569,43 @@ impl ProfileStore {
 
     /// Get the low target threshold always in mg/dL
     pub fn get_target_low_mg(&self, status_thresholds: Option<&StatusThresholds>) -> f32 {
-        let low = self.get_target_low(status_thresholds);
+        // If we have status thresholds and they're valid (non-zero), use them directly
+        // Status.json thresholds are ALWAYS in mg/dL, never convert them
+        if let Some(thresholds) = status_thresholds {
+            let value = thresholds.bg_target_bottom as f32;
+            if value > 0.0 {
+                tracing::debug!(
+                    "[THRESHOLDS] Using bgTargetBottom from status.json: {} mg/dL",
+                    value
+                );
+                return value;
+            }
+            tracing::warn!(
+                "[THRESHOLDS] bgTargetBottom from status.json is invalid ({}), falling back to profile",
+                value
+            );
+        }
+
+        // Fall back to profile target_low
+        let low = self
+            .target_low
+            .as_ref()
+            .and_then(|ranges| ranges.first())
+            .map(|range| {
+                tracing::debug!(
+                    "[THRESHOLDS] Using target_low from profile: {}",
+                    range.value
+                );
+                range.value
+            })
+            .unwrap_or_else(|| {
+                tracing::debug!("[THRESHOLDS] Using default target_low: 70 mg/dL");
+                70.0
+            });
 
         // If profile units are mmol, convert to mg/dL
         if self.units.as_deref() == Some("mmol") || self.units.as_deref() == Some("mmol/l") {
+            tracing::debug!("[THRESHOLDS] Converting {} mmol/L to mg/dL", low);
             low * 18.0
         } else {
             low
@@ -581,10 +614,43 @@ impl ProfileStore {
 
     /// Get the high target threshold always in mg/dL
     pub fn get_target_high_mg(&self, status_thresholds: Option<&StatusThresholds>) -> f32 {
-        let high = self.get_target_high(status_thresholds);
+        // If we have status thresholds and they're valid (non-zero), use them directly
+        // Status.json thresholds are ALWAYS in mg/dL, never convert them
+        if let Some(thresholds) = status_thresholds {
+            let value = thresholds.bg_target_top as f32;
+            if value > 0.0 {
+                tracing::debug!(
+                    "[THRESHOLDS] Using bgTargetTop from status.json: {} mg/dL",
+                    value
+                );
+                return value;
+            }
+            tracing::warn!(
+                "[THRESHOLDS] bgTargetTop from status.json is invalid ({}), falling back to profile",
+                value
+            );
+        }
+
+        // Fall back to profile target_high
+        let high = self
+            .target_high
+            .as_ref()
+            .and_then(|ranges| ranges.first())
+            .map(|range| {
+                tracing::debug!(
+                    "[THRESHOLDS] Using target_high from profile: {}",
+                    range.value
+                );
+                range.value
+            })
+            .unwrap_or_else(|| {
+                tracing::debug!("[THRESHOLDS] Using default target_high: 180 mg/dL");
+                180.0
+            });
 
         // If profile units are mmol, convert to mg/dL
         if self.units.as_deref() == Some("mmol") || self.units.as_deref() == Some("mmol/l") {
+            tracing::debug!("[THRESHOLDS] Converting {} mmol/L to mg/dL", high);
             high * 18.0
         } else {
             high
