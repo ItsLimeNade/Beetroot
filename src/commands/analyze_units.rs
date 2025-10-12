@@ -1,4 +1,4 @@
-use crate::Handler;
+use crate::bot::Handler;
 use regex::Regex;
 use serenity::all::{
     Colour, CommandInteraction, Context, CreateEmbed, CreateInteractionResponse,

@@ -16,7 +16,7 @@ use types::PrefUnit;
 
 use super::database::{NightscoutInfo, Sticker};
 use super::nightscout::{Entry, Profile, Treatment};
-use crate::Handler;
+use crate::bot::Handler;
 use ab_glyph::PxScale;
 use anyhow::{Result, anyhow};
 use chrono::Utc;

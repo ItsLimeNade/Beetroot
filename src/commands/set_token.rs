@@ -28,7 +28,7 @@ pub async fn run(
         return Ok(());
     }
 
-    let modal = CreateQuickModal::new("Nightscout API Token")
+    let modal = CreateQuickModal::new("Set Nightscout API Token")
         .timeout(std::time::Duration::from_secs(600))
         .field(
             CreateInputText::new(
@@ -37,7 +37,7 @@ pub async fn run(
                 "",
             )
             .required(false)
-            .placeholder("leave empty if you don't want to answer"),
+            .placeholder("Leave empty to remove token"),
         );
 
     let response = interaction.quick_modal(context, modal).await?;
@@ -124,7 +124,7 @@ pub async fn run(
 }
 
 pub fn register() -> CreateCommand {
-    CreateCommand::new("token")
+    CreateCommand::new("set-token")
         .description("Set or update your Nightscout API token for authentication")
         .contexts(vec![
             InteractionContext::Guild,

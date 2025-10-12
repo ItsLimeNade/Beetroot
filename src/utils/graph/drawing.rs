@@ -4,7 +4,7 @@ use imageproc::drawing::{draw_filled_circle_mut, draw_polygon_mut, draw_text_mut
 use imageproc::point::Point;
 
 use super::types::PrefUnit;
-use crate::Handler;
+use crate::bot::Handler;
 use crate::utils::nightscout::Entry;
 
 /// Draw insulin treatment (triangle)

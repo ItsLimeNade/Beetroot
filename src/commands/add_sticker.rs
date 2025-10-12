@@ -1,4 +1,4 @@
-use crate::Handler;
+use crate::bot::Handler;
 use crate::utils::database::StickerCategory;
 use serenity::all::{
     ButtonStyle, Colour, CommandInteraction, ComponentInteraction, Context, CreateActionRow,
