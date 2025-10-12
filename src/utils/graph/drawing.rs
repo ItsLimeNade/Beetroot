@@ -215,6 +215,7 @@ pub fn draw_glucose_reading(
 }
 
 /// Draw glucose data points on the graph
+#[allow(clippy::too_many_arguments)]
 pub fn draw_glucose_points(
     img: &mut RgbaImage,
     entries: &[Entry],
@@ -223,12 +224,14 @@ pub fn draw_glucose_points(
     high_col: Rgba<u8>,
     low_col: Rgba<u8>,
     axis_col: Rgba<u8>,
+    target_high: f32,
+    target_low: f32,
 ) {
     for (i, e) in entries.iter().enumerate() {
         let (x, y) = points_px[i];
-        let color = if e.sgv > 180.0 {
+        let color = if e.sgv > target_high {
             high_col
-        } else if e.sgv < 70.0 {
+        } else if e.sgv < target_low {
             low_col
         } else {
             axis_col

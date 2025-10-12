@@ -1,7 +1,5 @@
-use ab_glyph::PxScale;
 use anyhow::Result;
 use image::{Rgba, RgbaImage};
-use imageproc::drawing::draw_text_mut;
 
 use super::helpers::download_sticker_image;
 use super::types::GlucoseStatus;
@@ -35,6 +33,8 @@ impl Default for StickerConfig {
 pub fn identify_status_ranges(
     entries: &[Entry],
     _user_timezone: &str,
+    target_low: f32,
+    target_high: f32,
 ) -> Vec<(GlucoseStatus, usize, usize)> {
     let mut status_ranges: Vec<(GlucoseStatus, usize, usize)> = Vec::new();
 
@@ -42,11 +42,11 @@ pub fn identify_status_ranges(
         return status_ranges;
     }
 
-    let mut current_status = GlucoseStatus::from_sgv(entries[0].sgv);
+    let mut current_status = GlucoseStatus::from_sgv(entries[0].sgv, target_low, target_high);
     let mut range_start = 0;
 
     for (i, entry) in entries.iter().enumerate().skip(1) {
-        let status = GlucoseStatus::from_sgv(entry.sgv);
+        let status = GlucoseStatus::from_sgv(entry.sgv, target_low, target_high);
         if status != current_status {
             status_ranges.push((current_status, range_start, i - 1));
             current_status = status;
@@ -295,8 +295,7 @@ pub async fn draw_sticker(
     inner_plot_right: f32,
     inner_plot_top: f32,
     inner_plot_bottom: f32,
-    handler: &Handler,
-    bright: Rgba<u8>,
+    _handler: &Handler,
 ) -> Result<()> {
     let inner_plot_w = inner_plot_right - inner_plot_left;
     let inner_plot_h = inner_plot_bottom - inner_plot_top;
@@ -377,25 +376,25 @@ pub async fn draw_sticker(
         sticker_y
     );
 
-    let debug_label = match sticker.category {
-        StickerCategory::Low => "low_sticker",
-        StickerCategory::InRange => "inrange_sticker",
-        StickerCategory::High => "high_sticker",
-        StickerCategory::Any => "any_sticker",
-    };
+    // let debug_label = match sticker.category {
+    //     StickerCategory::Low => "low_sticker",
+    //     StickerCategory::InRange => "inrange_sticker",
+    //     StickerCategory::High => "high_sticker",
+    //     StickerCategory::Any => "any_sticker",
+    // };
 
-    let label_y = (sticker_y + new_h as i32 / 2 + 50).min(img.height() as i32 - 20);
-    let label_x = (sticker_x - 60).max(10);
+    // let label_y = (sticker_y + new_h as i32 / 2 + 50).min(img.height() as i32 - 20);
+    // let label_x = (sticker_x - 60).max(10);
 
-    draw_text_mut(
-        img,
-        bright,
-        label_x,
-        label_y,
-        PxScale::from(32.0),
-        &handler.font,
-        debug_label,
-    );
+    // draw_text_mut(
+    //     img,
+    //     bright,
+    //     label_x,
+    //     label_y,
+    //     PxScale::from(32.0),
+    //     &handler.font,
+    //     debug_label,
+    // );
 
     Ok(())
 }

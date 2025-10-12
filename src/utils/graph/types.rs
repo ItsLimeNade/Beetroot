@@ -15,10 +15,10 @@ pub enum GlucoseStatus {
 }
 
 impl GlucoseStatus {
-    pub fn from_sgv(sgv: f32) -> Self {
-        if sgv < 70.0 {
+    pub fn from_sgv(sgv: f32, target_low: f32, target_high: f32) -> Self {
+        if sgv < target_low {
             Self::Low
-        } else if sgv > 180.0 {
+        } else if sgv > target_high {
             Self::High
         } else {
             Self::InRange

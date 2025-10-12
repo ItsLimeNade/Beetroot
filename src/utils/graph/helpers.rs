@@ -56,3 +56,36 @@ pub fn draw_dashed_vertical_line(
         drawing_dash = !drawing_dash;
     }
 }
+
+/// Draw a dashed horizontal line on the image
+pub fn draw_dashed_horizontal_line(
+    img: &mut RgbaImage,
+    y: f32,
+    x_start: f32,
+    x_end: f32,
+    color: image::Rgba<u8>,
+    dash_length: i32,
+    gap_length: i32,
+) {
+    let y = y.round() as i32;
+    let x_start = x_start.round() as i32;
+    let x_end = x_end.round() as i32;
+
+    let mut x = x_start;
+    let mut drawing_dash = true;
+
+    while x < x_end {
+        if drawing_dash {
+            let dash_end = (x + dash_length).min(x_end);
+            for px in x..dash_end {
+                if px >= 0 && px < img.width() as i32 && y >= 0 && y < img.height() as i32 {
+                    img.put_pixel(px as u32, y as u32, color);
+                }
+            }
+            x += dash_length;
+        } else {
+            x += gap_length;
+        }
+        drawing_dash = !drawing_dash;
+    }
+}
