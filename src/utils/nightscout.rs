@@ -417,12 +417,12 @@ impl Entry {
 
     /// Check if this entry has a meter blood glucose (finger stick) reading
     pub fn has_mbg(&self) -> bool {
-        // Check if this is an MBG entry (type == "mbg") or if it has an mbg field
         if let Some(entry_type) = &self.entry_type {
-            entry_type == "mbg" && self.mbg.is_some() && self.mbg.unwrap_or(0.0) > 0.0
-        } else {
-            self.mbg.is_some() && self.mbg.unwrap_or(0.0) > 0.0
+            if entry_type == "mbg" {
+                return self.mbg.is_some() && self.mbg.unwrap_or(0.0) > 0.0;
+            }
         }
+        self.mbg.is_some() && self.mbg.unwrap_or(0.0) > 0.0
     }
 }
 
@@ -830,7 +830,7 @@ impl Nightscout {
             let end_timestamp = now.timestamp_millis() as u64;
 
             let mut query_params = format!(
-                "api/v1/entries/sgv.json?find[date][$gte]={}&find[date][$lte]={}",
+                "api/v1/entries.json?find[date][$gte]={}&find[date][$lte]={}",
                 start_timestamp, end_timestamp
             );
 
@@ -839,7 +839,7 @@ impl Nightscout {
             base.join(&query_params)?
         } else {
             let count = options.count.unwrap_or(2000); // Increase default count from u8::MAX (255) to 2000
-            base.join(&format!("api/v1/entries/sgv.json?count={count}"))?
+            base.join(&format!("api/v1/entries.json?count={count}"))?
         };
         tracing::debug!("[API] Entries API URL: {}", url);
         let mut req = self.http_client.get(url.clone());
@@ -874,11 +874,16 @@ impl Nightscout {
         };
         let entries: Vec<Entry> = res.json().await?;
 
-        // TEMPORARY: Skip entry cleaning to avoid sanitization issues
         tracing::debug!(
             "[ENTRIES] Retrieved {} entries (cleaning disabled)",
             entries.len()
         );
+
+        let mbg_count = entries.iter().filter(|e| {
+            e.entry_type.as_deref() == Some("mbg") || (e.mbg.is_some() && e.mbg.unwrap_or(0.0) > 0.0)
+        }).count();
+        tracing::info!("[ENTRIES] Found {} entries with type='mbg' or mbg field", mbg_count);
+
         if entries.is_empty() {
             Err(NightscoutError::NoEntries)
         } else {
@@ -984,17 +989,24 @@ impl Nightscout {
 
             let entry_timestamp = entry.date.or(entry.mills).unwrap_or(0);
             let entry_sgv = (entry.sgv * 100.0) as i32;
+            let entry_mbg = entry.mbg.map(|v| (v * 100.0) as i32);
 
-            // Check for duplicate based on timestamp and SGV
             let is_duplicate = processed_entries.iter().any(|existing: &Entry| {
                 let existing_timestamp = existing.date.or(existing.mills).unwrap_or(0);
                 let existing_sgv = (existing.sgv * 100.0) as i32;
+                let existing_mbg = existing.mbg.map(|v| (v * 100.0) as i32);
 
                 let time_diff = (entry_timestamp as i64 - existing_timestamp as i64).abs();
-                let same_sgv = entry_sgv == existing_sgv;
 
-                // Consider duplicate if within 30 seconds and same SGV
-                time_diff <= 30000 && same_sgv
+                let same_value = if entry_mbg.is_some() && existing_mbg.is_some() {
+                    entry_mbg == existing_mbg
+                } else if entry_mbg.is_none() && existing_mbg.is_none() {
+                    entry_sgv == existing_sgv
+                } else {
+                    false
+                };
+
+                time_diff <= 30000 && same_value
             });
 
             if !is_duplicate {

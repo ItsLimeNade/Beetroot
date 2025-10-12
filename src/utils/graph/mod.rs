@@ -5,7 +5,6 @@ mod types;
 
 use drawing::{
     draw_carbs_treatment, draw_glucose_points, draw_glucose_reading, draw_insulin_treatment,
-    draw_mbg_reading,
 };
 use helpers::draw_dashed_vertical_line;
 use stickers::{
@@ -733,7 +732,7 @@ pub async fn draw_graph(
                 entry.entry_type
             );
 
-            draw_mbg_reading(&mut img, mbg_value, x, mbg_y, pref, bg, bright, handler);
+            draw_glucose_reading(&mut img, mbg_value, x, mbg_y, pref, bg, bright, handler);
         }
     }
 

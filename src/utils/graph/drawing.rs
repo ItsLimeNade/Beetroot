@@ -214,59 +214,6 @@ pub fn draw_glucose_reading(
     );
 }
 
-/// Draw MBG (meter blood glucose) reading
-#[allow(clippy::too_many_arguments)]
-pub fn draw_mbg_reading(
-    img: &mut RgbaImage,
-    mbg_value: f32,
-    x: f32,
-    y: f32,
-    pref: PrefUnit,
-    bg: Rgba<u8>,
-    bright: Rgba<u8>,
-    handler: &Handler,
-) {
-    tracing::trace!(
-        "[GRAPH] Drawing MBG reading: {:.1} at ({:.1}, {:.1})",
-        mbg_value,
-        x,
-        y
-    );
-
-    let bg_check_radius = 16;
-    let mbg_outline = Rgba([255u8, 255u8, 255u8, 255u8]);
-    let mbg_inside = Rgba([255u8, 152u8, 0u8, 255u8]);
-
-    draw_filled_circle_mut(img, (x as i32, y as i32), bg_check_radius, mbg_outline);
-    draw_filled_circle_mut(img, (x as i32, y as i32), bg_check_radius - 4, mbg_inside);
-
-    let mbg_text = match pref {
-        PrefUnit::MgDl => format!("{:.0}", mbg_value),
-        PrefUnit::Mmol => format!("{:.1}", mbg_value / 18.0),
-    };
-    let text_width = mbg_text.len() as f32 * 16.0;
-    let text_x = (x - text_width / 2.0) as i32;
-    let text_y = (y - bg_check_radius as f32 - 30.0) as i32;
-    let scale = PxScale::from(32.0);
-
-    for dx in [-1, 0, 1] {
-        for dy in [-1, 0, 1] {
-            if dx != 0 || dy != 0 {
-                draw_text_mut(
-                    img,
-                    bg,
-                    text_x + dx,
-                    text_y + dy,
-                    scale,
-                    &handler.font,
-                    &mbg_text,
-                );
-            }
-        }
-    }
-
-    draw_text_mut(img, bright, text_x, text_y, scale, &handler.font, &mbg_text);
-}
 
 /// Draw glucose data points on the graph
 pub fn draw_glucose_points(
