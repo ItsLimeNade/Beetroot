@@ -6,6 +6,9 @@ pub fn create_update_embed(version: &str) -> CreateEmbed {
             "**What's new:**",
             "• **Doubled** the graph resolution allowing for noticeably bigger and clearer resulting images",
             "• Added a warning in the `/bg` command if the data is older than 15 min",
+            "• Added contextual stickers. When adding a new sticker it will prompt you to categorize it. The sticker will now generate Depending your blood glucose value!",
+            "• Updated the `/stickers` commmand to work with contextual stickers",
+            "• Added `/set-token`, `/set-nightscout-url`, `/get-nightscout-url` and `/set-visibility` commands to avoid having to run `/setup` each time to change their values.",
             "",
             "**Fixes:**",
             "• Fixed issue where missing data on the edges of the graph would collapse the graph instead of showing the gap",
@@ -18,7 +21,7 @@ pub fn create_update_embed(version: &str) -> CreateEmbed {
     };
 
     CreateEmbed::new()
-        .title(format!("🎉 Beetroot has been updated to v{}", version))
+        .title(format!("🎉 Beetroot has been updated to v{} | Enhancements Update", version))
         .description("Here's what's new in this update:")
         .color(Colour::DARK_GREEN)
         .field("Changelog", changelog.join("\n"), false)

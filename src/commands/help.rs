@@ -75,13 +75,33 @@ fn create_help_page(page: u8) -> (CreateEmbed, Option<CreateActionRow>) {
                 false,
             )
             .field(
-                "/token <token>",
-                "Set or update your Nightscout API token for authentication (optional but recommended).",
+                "/token",
+                "Set or update your Nightscout API token for authentication (optional but recommended). Opens a modal for secure input.",
+                false,
+            )
+            .field(
+                "/set-token",
+                "Alternative command to set or update your Nightscout API token. Same as /token.",
+                false,
+            )
+            .field(
+                "/set-nightscout-url",
+                "Update your Nightscout URL. Tests the connection before saving changes.",
+                false,
+            )
+            .field(
+                "/get-nightscout-url",
+                "View your current Nightscout URL and token status (without revealing the token).",
+                false,
+            )
+            .field(
+                "/set-visibility <public|private>",
+                "Set your profile visibility. Public = anyone can view, Private = only you and allowed users can view.",
                 false,
             )
             .field(
                 "/allow @user [action]",
-                "Manage who can view your blood glucose data. Add or remove users from your allowed list.",
+                "Manage who can view your blood glucose data when your profile is private. Add or remove users from your allowed list.",
                 false,
             )
             .field(

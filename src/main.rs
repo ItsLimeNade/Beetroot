@@ -124,15 +124,27 @@ impl EventHandler for Handler {
                                     "convert" => {
                                         commands::convert::run(self, &context, command).await
                                     }
+                                    "get-nightscout-url" => {
+                                        commands::get_nightscout_url::run(self, &context, command).await
+                                    }
                                     "graph" => commands::graph::run(self, &context, command).await,
                                     "help" => commands::help::run(self, &context, command).await,
                                     "info" => commands::info::run(self, &context, command).await,
-                                    "setup" => commands::setup::run(self, &context, command).await,
-                                    "stickers" => {
-                                        commands::stickers::run(self, &context, command).await
+                                    "set-nightscout-url" => {
+                                        commands::set_nightscout_url::run(self, &context, command).await
                                     }
                                     "set-threshold" => {
                                         commands::set_threshold::run(self, &context, command).await
+                                    }
+                                    "set-token" => {
+                                        commands::set_token::run(self, &context, command).await
+                                    }
+                                    "set-visibility" => {
+                                        commands::set_visibility::run(self, &context, command).await
+                                    }
+                                    "setup" => commands::setup::run(self, &context, command).await,
+                                    "stickers" => {
+                                        commands::stickers::run(self, &context, command).await
                                     }
                                     "token" => commands::token::run(self, &context, command).await,
                                     unknown_command => {
@@ -143,7 +155,7 @@ impl EventHandler for Handler {
                                         commands::error::run(
                                             &context,
                                             command,
-                                            &format!("Unknown command: `{}`. Available commands are: `/allow`, `/bg`, `/convert`, `/graph`, `/help`, `/info`, `/setup`, `/set-threshold`, `/stickers`, `/token`", unknown_command)
+                                            &format!("Unknown command: `{}`. Available commands are: `/allow`, `/bg`, `/convert`, `/get-nightscout-url`, `/graph`, `/help`, `/info`, `/set-nightscout-url`, `/set-threshold`, `/set-token`, `/set-visibility`, `/setup`, `/stickers`, `/token`", unknown_command)
                                         ).await
                                     }
                                 }
@@ -232,11 +244,15 @@ impl EventHandler for Handler {
             commands::allow::register(),
             commands::bg::register(),
             commands::convert::register(),
+            commands::get_nightscout_url::register(),
             commands::graph::register(),
             commands::help::register(),
             commands::info::register(),
-            commands::setup::register(),
+            commands::set_nightscout_url::register(),
             commands::set_threshold::register(),
+            commands::set_token::register(),
+            commands::set_visibility::register(),
+            commands::setup::register(),
             commands::stickers::register(),
             commands::token::register(),
             commands::add_sticker::register(),
