@@ -509,36 +509,82 @@ pub struct Profile {
 }
 
 impl ProfileStore {
+    /// Get the low target threshold in the profile's units (mg/dL or mmol/L)
+    /// Priority: status.json bgTargetBottom -> profile target_low -> default 70
     pub fn get_target_low(&self, status_thresholds: Option<&StatusThresholds>) -> f32 {
-        self.target_low
-            .as_ref()
-            .and_then(|ranges| ranges.first())
-            .map(|range| range.value)
-            .or_else(|| status_thresholds.map(|thresholds| thresholds.bg_target_bottom as f32))
-            .unwrap_or(70.0)
+        status_thresholds
+            .map(|thresholds| {
+                tracing::debug!(
+                    "[THRESHOLDS] Using bgTargetBottom from status.json: {}",
+                    thresholds.bg_target_bottom
+                );
+                thresholds.bg_target_bottom as f32
+            })
+            .or_else(|| {
+                self.target_low
+                    .as_ref()
+                    .and_then(|ranges| ranges.first())
+                    .map(|range| {
+                        tracing::debug!(
+                            "[THRESHOLDS] Using target_low from profile: {}",
+                            range.value
+                        );
+                        range.value
+                    })
+            })
+            .unwrap_or_else(|| {
+                tracing::debug!("[THRESHOLDS] Using default target_low: 70");
+                70.0
+            })
     }
 
+    /// Get the high target threshold in the profile's units (mg/dL or mmol/L)
+    /// Priority: status.json bgTargetTop -> profile target_high -> default 180
     pub fn get_target_high(&self, status_thresholds: Option<&StatusThresholds>) -> f32 {
-        self.target_high
-            .as_ref()
-            .and_then(|ranges| ranges.first())
-            .map(|range| range.value)
-            .or_else(|| status_thresholds.map(|thresholds| thresholds.bg_target_top as f32))
-            .unwrap_or(180.0)
+        status_thresholds
+            .map(|thresholds| {
+                tracing::debug!(
+                    "[THRESHOLDS] Using bgTargetTop from status.json: {}",
+                    thresholds.bg_target_top
+                );
+                thresholds.bg_target_top as f32
+            })
+            .or_else(|| {
+                self.target_high
+                    .as_ref()
+                    .and_then(|ranges| ranges.first())
+                    .map(|range| {
+                        tracing::debug!(
+                            "[THRESHOLDS] Using target_high from profile: {}",
+                            range.value
+                        );
+                        range.value
+                    })
+            })
+            .unwrap_or_else(|| {
+                tracing::debug!("[THRESHOLDS] Using default target_high: 180");
+                180.0
+            })
     }
 
+    /// Get the low target threshold always in mg/dL
     pub fn get_target_low_mg(&self, status_thresholds: Option<&StatusThresholds>) -> f32 {
         let low = self.get_target_low(status_thresholds);
-        if self.units.as_deref() == Some("mmol") {
+
+        // If profile units are mmol, convert to mg/dL
+        if self.units.as_deref() == Some("mmol") || self.units.as_deref() == Some("mmol/l") {
             low * 18.0
         } else {
             low
         }
     }
 
+    /// Get the high target threshold always in mg/dL
     pub fn get_target_high_mg(&self, status_thresholds: Option<&StatusThresholds>) -> f32 {
         let high = self.get_target_high(status_thresholds);
-        if self.units.as_deref() == Some("mmol") {
+
+        // If profile units are mmol, convert to mg/dL
+        if self.units.as_deref() == Some("mmol") || self.units.as_deref() == Some("mmol/l") {
             high * 18.0
         } else {
             high

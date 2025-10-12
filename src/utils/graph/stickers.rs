@@ -36,6 +36,12 @@ pub fn identify_status_ranges(
     target_low: f32,
     target_high: f32,
 ) -> Vec<(GlucoseStatus, usize, usize)> {
+    tracing::info!(
+        "[GRAPH] Using thresholds for status ranges: LOW={:.1} mg/dL, HIGH={:.1} mg/dL",
+        target_low,
+        target_high
+    );
+
     let mut status_ranges: Vec<(GlucoseStatus, usize, usize)> = Vec::new();
 
     if entries.is_empty() {

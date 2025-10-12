@@ -2,7 +2,7 @@ use serenity::all::{Colour, CreateEmbed, CreateEmbedFooter};
 
 pub fn create_update_embed(version: &str) -> CreateEmbed {
     match version {
-        "0.2.0" => {
+        "0.2.1" => {
             let whats_new = [
                 "• **Doubled** graph resolution for bigger and clearer images",
                 "• Added warning in `/bg` if data is older than 15 min",
@@ -20,6 +20,7 @@ pub fn create_update_embed(version: &str) -> CreateEmbed {
                 "• Fixed missing data on graph edges collapsing the graph",
                 "• Fixed MBG entries not being fetched from the API",
                 "• Fixed duplicate detection treating MBG and SGV entries the same",
+                "• Fixed incorrect thresholds fetching.",
             ];
 
             CreateEmbed::new()
