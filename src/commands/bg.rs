@@ -126,6 +126,23 @@ pub async fn run(
         .ok()
         .flatten();
 
+    let now_utc = chrono::Utc::now();
+    let thirty_min_ago = now_utc - chrono::Duration::minutes(30);
+    let start_time = thirty_min_ago.to_rfc3339();
+    let end_time = now_utc.to_rfc3339();
+
+    let recent_entries = handler
+        .nightscout_client
+        .get_entries_for_hours(base_url, 1, token)
+        .await
+        .unwrap_or_default();
+
+    let recent_treatments = handler
+        .nightscout_client
+        .fetch_treatments_between(base_url, &start_time, &end_time, token)
+        .await
+        .unwrap_or_default();
+
     let default_profile_name = &profile.default_profile;
     let profile_store = profile
         .store
@@ -241,6 +258,80 @@ pub async fn run(
         {
             embed = embed.field("COB", format!("{:.0}g", cob), true);
         }
+    }
+
+    let mut fingerprick_value: Option<(f32, u64)> = None;
+    let thirty_min_ago_millis = thirty_min_ago.timestamp_millis() as u64;
+
+    for entry in recent_entries.iter() {
+        if entry.has_mbg()
+            && let Some(entry_time_millis) = entry.date
+            && entry_time_millis >= thirty_min_ago_millis
+            && let Some(mbg) = entry.mbg
+        {
+            fingerprick_value = Some((mbg, entry_time_millis));
+            break;
+        }
+    }
+
+    if fingerprick_value.is_none() {
+        for treatment in recent_treatments.iter() {
+            if treatment.event_type.as_deref() == Some("BG Check")
+                && let Some(glucose_str) = &treatment.glucose
+                && let Ok(glucose) = glucose_str.parse::<f32>()
+            {
+                let treatment_time_millis = if let Some(time) = treatment.date.or(treatment.mills) {
+                    time
+                } else if let Some(created_at) = &treatment.created_at {
+                    if let Ok(parsed_time) = chrono::DateTime::parse_from_rfc3339(created_at) {
+                        parsed_time.timestamp_millis() as u64
+                    } else {
+                        continue;
+                    }
+                } else {
+                    continue;
+                };
+
+                if treatment_time_millis >= thirty_min_ago_millis {
+                    fingerprick_value = Some((glucose, treatment_time_millis));
+                    break;
+                }
+            }
+        }
+    }
+
+    if let Some((fp_value, fp_timestamp)) = fingerprick_value {
+        let fp_mmol = fp_value / 18.0;
+
+        let now_millis = now_utc.timestamp_millis() as u64;
+
+        tracing::info!("[BG] Fingerprick timestamp: {}", fp_timestamp);
+        tracing::info!("[BG] Now timestamp: {}", now_millis);
+
+        let timestamp_millis = if fp_timestamp < 10000000000 {
+            tracing::info!("[BG] Converting seconds to milliseconds");
+            fp_timestamp * 1000
+        } else {
+            tracing::info!("[BG] Timestamp already in milliseconds");
+            fp_timestamp
+        };
+
+        tracing::info!("[BG] Normalized timestamp: {}", timestamp_millis);
+
+        let diff_millis = now_millis.saturating_sub(timestamp_millis);
+        tracing::info!("[BG] Difference in milliseconds: {}", diff_millis);
+
+        let fp_age_minutes = diff_millis / 1000 / 60;
+        tracing::info!("[BG] Age in minutes: {}", fp_age_minutes);
+
+        embed = embed.field(
+            "Fingerprick",
+            format!(
+                "{:.0} mg/dL ({:.1} mmol/L)\n-# {} min ago",
+                fp_value, fp_mmol, fp_age_minutes
+            ),
+            false,
+        );
     }
 
     embed = embed.footer(
