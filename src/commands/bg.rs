@@ -1,4 +1,4 @@
-use crate::Handler;
+use crate::bot::Handler;
 use anyhow::Context as AnyhowContext;
 use serenity::all::{
     Colour, CommandInteraction, CommandOptionType, Context, CreateAttachment, CreateEmbed,

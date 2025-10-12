@@ -1,4 +1,4 @@
-use crate::Handler;
+use crate::bot::Handler;
 use crate::utils::graph::draw_graph;
 use serenity::all::{
     CommandInteraction, CommandOptionType, Context, CreateInteractionResponse,

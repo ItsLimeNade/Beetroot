@@ -5,7 +5,7 @@ use imageproc::drawing::draw_text_mut;
 
 use super::helpers::download_sticker_image;
 use super::types::GlucoseStatus;
-use crate::Handler;
+use crate::bot::Handler;
 use crate::utils::database::{Sticker, StickerCategory};
 use crate::utils::nightscout::Entry;
 
