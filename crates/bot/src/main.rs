@@ -8,7 +8,7 @@ use std::env;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    dotenvy::dotenv().ok(); 
+    dotenvy::dotenv().ok();
 
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -20,11 +20,8 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("[INIT] Starting Beetroot (Poise Refactor)");
 
     let options = poise::FrameworkOptions {
-        commands: vec![
-            commands::bg::bg(), 
-            commands::setup::setup(),
-        ],
-        
+        commands: vec![commands::bg::bg(), commands::setup::setup()],
+
         event_handler: |ctx, event, framework, data| {
             Box::pin(events::event_handler(ctx, event, framework, data))
         },
@@ -43,16 +40,14 @@ async fn main() -> anyhow::Result<()> {
 
                 let db_url = env::var("DATABASE_URL").expect("Missing DATABASE_URL");
                 let database = database::Database::new(&db_url).await?;
-                
-                Ok(data::Data {
-                    database,
-                })
+
+                Ok(data::Data { database })
             })
         })
         .build();
 
     let token = env::var("DISCORD_TOKEN").context("Missing DISCORD_TOKEN")?;
-    
+
     let intents = serenity::GatewayIntents::non_privileged();
 
     let mut client = serenity::Client::builder(token, intents)

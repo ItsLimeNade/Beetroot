@@ -1,9 +1,9 @@
 use crate::data::{Context, Error};
 use anyhow::Context as AnyhowContext;
-use poise::serenity_prelude as serenity;
-use serenity::all::{Colour, CreateAttachment, CreateEmbed, CreateEmbedFooter};
 use cinnamon::client::NightscoutClient;
 use cinnamon::models::properties::PropertyType;
+use poise::serenity_prelude as serenity;
+use serenity::all::{Colour, CreateAttachment, CreateEmbed, CreateEmbedFooter};
 
 #[poise::command(
     slash_command,
@@ -20,11 +20,17 @@ pub async fn bg(
 
     let database = &ctx.data().database;
 
-    if database.get_user_data(target_user_id.get()).await?.is_none() {
-        ctx.send(poise::CreateReply::default()
-            .content("The specified user hasn't set up their Nightscout data yet.")
-            .ephemeral(true)
-        ).await?;
+    if database
+        .get_user_data(target_user_id.get())
+        .await?
+        .is_none()
+    {
+        ctx.send(
+            poise::CreateReply::default()
+                .content("The specified user hasn't set up their Nightscout data yet.")
+                .ephemeral(true),
+        )
+        .await?;
         return Ok(());
     }
 
@@ -40,36 +46,43 @@ pub async fn bg(
     };
 
     if !can_access {
-        ctx.send(poise::CreateReply::default()
-            .content("This user's blood glucose data is set to private.")
-            .ephemeral(true)
-        ).await?;
+        ctx.send(
+            poise::CreateReply::default()
+                .content("This user's blood glucose data is set to private.")
+                .ephemeral(true),
+        )
+        .await?;
         return Ok(());
     }
 
-    let base_url = user_data.nightscout_url
+    let base_url = user_data
+        .nightscout_url
         .as_deref()
         .context("Nightscout URL missing")?;
 
     if base_url.trim().is_empty() {
-        ctx.send(poise::CreateReply::default()
-            .content("Your Nightscout URL is empty. Please run `/setup` to configure it properly.")
-            .ephemeral(true)
-        ).await?;
+        ctx.send(
+            poise::CreateReply::default()
+                .content(
+                    "Your Nightscout URL is empty. Please run `/setup` to configure it properly.",
+                )
+                .ephemeral(true),
+        )
+        .await?;
         return Ok(());
     }
 
-    let client = NightscoutClient::new(
-        base_url,
-        user_data.nightscout_token.clone(),
-    )?;
+    let client = NightscoutClient::new(base_url, user_data.nightscout_token.clone())?;
 
     ctx.defer().await?;
 
-        let entries_builder = client.entries().sgv();
+    let entries_builder = client.entries().sgv();
     let entries_fut = entries_builder.list().limit(2);
 
-    let properties_builder = client.properties().get().only(&[PropertyType::Iob, PropertyType::Cob]);
+    let properties_builder = client
+        .properties()
+        .get()
+        .only(&[PropertyType::Iob, PropertyType::Cob]);
     let properties_fut = properties_builder.send();
 
     let profiles_builder = client.profiles();
@@ -102,13 +115,9 @@ pub async fn bg(
         if let Some(profile) = profiles.first() {
             let default_name = &profile.default_profile_name;
             if let Some(store) = profile.store.get(default_name) {
-                let low = store.target_low.first()
-                    .map(|x| x.value)
-                    .unwrap_or(80.0);
-                
-                let high = store.target_high.first()
-                    .map(|x| x.value)
-                    .unwrap_or(180.0);
+                let low = store.target_low.first().map(|x| x.value).unwrap_or(80.0);
+
+                let high = store.target_high.first().map(|x| x.value).unwrap_or(180.0);
                 (low, high)
             } else {
                 (80.0, 180.0)
@@ -123,7 +132,7 @@ pub async fn bg(
     let entry_time = chrono::DateTime::parse_from_rfc3339(&entry.date_string)
         .unwrap_or_else(|_| chrono::Utc::now().into())
         .with_timezone(&chrono::Utc);
-    
+
     let now = chrono::Utc::now();
     let duration = now.signed_duration_since(entry_time);
 
@@ -166,10 +175,14 @@ pub async fn bg(
     let sgv_val = entry.sgv;
     let mmol_val = entry.sgv as f64 / 18.0;
     let delta_mmol = delta / 18.0;
-    
+
     let delta_str = format!("{:+}", delta);
     let delta_mmol_str = format!("{:.1}", delta_mmol);
-    let delta_mmol_formatted = if delta > 0.0 { format!("+{}", delta_mmol_str) } else { delta_mmol_str };
+    let delta_mmol_formatted = if delta > 0.0 {
+        format!("+{}", delta_mmol_str)
+    } else {
+        delta_mmol_str
+    };
 
     let (mgdl_field, mmol_field) = if is_data_old {
         (
@@ -202,22 +215,25 @@ pub async fn bg(
     }
 
     let mbg_res = client.entries().mbg().list().limit(1).await;
-    
+
     if let Ok(mbg_list) = mbg_res {
         if let Some(mbg) = mbg_list.first() {
-             let mbg_time = chrono::DateTime::parse_from_rfc3339(&mbg.date_string)
+            let mbg_time = chrono::DateTime::parse_from_rfc3339(&mbg.date_string)
                 .unwrap_or(now.into())
                 .with_timezone(&chrono::Utc);
-            
+
             let mbg_age = now.signed_duration_since(mbg_time).num_minutes();
-            
+
             if mbg_age <= 30 {
                 let val = mbg.mbg;
                 let val_mmol = val as f64 / 18.0;
                 embed = embed.field(
                     "Fingerprick",
-                    format!("{:.0} mg/dL ({:.1} mmol/L)\n-# {} min ago", val, val_mmol, mbg_age),
-                    false
+                    format!(
+                        "{:.0} mg/dL ({:.1} mmol/L)\n-# {} min ago",
+                        val, val_mmol, mbg_age
+                    ),
+                    false,
                 );
             }
         }
@@ -228,10 +244,12 @@ pub async fn bg(
             .icon_url("attachment://nightscout_icon.png"),
     );
 
-    ctx.send(poise::CreateReply::default()
-        .embed(embed)
-        .attachment(icon_attachment)
-    ).await?;
+    ctx.send(
+        poise::CreateReply::default()
+            .embed(embed)
+            .attachment(icon_attachment),
+    )
+    .await?;
 
     Ok(())
 }

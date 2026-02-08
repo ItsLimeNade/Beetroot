@@ -5,18 +5,18 @@ pub struct UserData {
     // Nightscout data
     pub nightscout_url: Option<String>,
     pub nightscout_token: Option<String>,
-    
+
     // Social settings
     pub allowed_people: Vec<u64>,
     pub blocked_people: Vec<u64>,
     pub is_private: bool,
-    
+
     // User preferences
     pub microbolus_threshold: f32,
     pub display_microbolus: bool,
     pub force_ephemeral: bool,
     pub mbg_expiry_time: u64, // Timestamp in seconds
-    
+
     // Sticker settings
     pub in_range_stickers: Vec<Sticker>,
     pub low_stickers: Vec<Sticker>,
@@ -56,7 +56,7 @@ pub struct CommandData {
     pub average_execution_time: i64, // ms
 }
 
-pub struct UsageData { 
+pub struct UsageData {
     pub total_users: u64,
     pub daily_active_users: u64,
     pub monthly_active_users: u64,

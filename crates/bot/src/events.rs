@@ -1,4 +1,4 @@
-use crate::data::{Data, Error, Context};
+use crate::data::{Context, Data, Error};
 use poise::serenity_prelude as serenity;
 
 /// Centralized error handler.
@@ -10,12 +10,15 @@ pub async fn on_error(error: poise::FrameworkError<'_, Data, Error>) {
         }
         poise::FrameworkError::Command { error, ctx, .. } => {
             tracing::error!("Error in command '{}': {:?}", ctx.command().name, error);
-            
+
             //TODO Make a better error embed later.
-            let _ = ctx.send(poise::CreateReply::default()
-                .content("An unexpected error occurred. Please try again later.")
-                .ephemeral(true)
-            ).await;
+            let _ = ctx
+                .send(
+                    poise::CreateReply::default()
+                        .content("An unexpected error occurred. Please try again later.")
+                        .ephemeral(true),
+                )
+                .await;
         }
         error => {
             if let Err(e) = poise::builtins::on_error(error).await {
@@ -49,6 +52,10 @@ pub async fn post_command(ctx: Context<'_>) {
     //          crate::bot::version_checker::check(ctx).await;
     //     }
     // }
-    
-    tracing::debug!("Executed command {} by {}", ctx.command().name, ctx.author().name);
+
+    tracing::debug!(
+        "Executed command {} by {}",
+        ctx.command().name,
+        ctx.author().name
+    );
 }

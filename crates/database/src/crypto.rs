@@ -1,8 +1,8 @@
 use aes_gcm::{
-    aead::{Aead, AeadCore, KeyInit, OsRng},
     Aes256Gcm, Key, Nonce,
+    aead::{Aead, AeadCore, KeyInit, OsRng},
 };
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use std::sync::OnceLock;
 
 struct TokenCrypto {
@@ -17,7 +17,7 @@ impl TokenCrypto {
         let key_material = format!("beetroot_token_encryption_v1_{}", salt);
         let hash = blake3::hash(key_material.as_bytes());
         let key = Key::<Aes256Gcm>::from_slice(hash.as_bytes());
-        
+
         Self {
             cipher: Aes256Gcm::new(key),
         }
@@ -25,7 +25,9 @@ impl TokenCrypto {
 
     fn encrypt(&self, plaintext: &str) -> anyhow::Result<String> {
         let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
-        let ciphertext = self.cipher.encrypt(&nonce, plaintext.as_bytes())
+        let ciphertext = self
+            .cipher
+            .encrypt(&nonce, plaintext.as_bytes())
             .map_err(|e| anyhow::anyhow!("Encryption failed: {}", e))?;
 
         let mut combined = nonce.to_vec();
@@ -43,7 +45,9 @@ impl TokenCrypto {
         let (nonce_bytes, ciphertext) = combined.split_at(12);
         let nonce = Nonce::from_slice(nonce_bytes);
 
-        let plaintext = self.cipher.decrypt(nonce, ciphertext)
+        let plaintext = self
+            .cipher
+            .decrypt(nonce, ciphertext)
             .map_err(|e| anyhow::anyhow!("Decryption failed: {}", e))?;
 
         Ok(String::from_utf8(plaintext)?)

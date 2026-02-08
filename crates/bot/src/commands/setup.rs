@@ -1,6 +1,6 @@
 use crate::data::{Context, Error};
-use poise::serenity_prelude as serenity;
 use poise::Modal;
+use poise::serenity_prelude as serenity;
 use serenity::{
     ButtonStyle, Colour, CreateActionRow, CreateButton, CreateEmbed, CreateInteractionResponse,
     CreateInteractionResponseMessage,
@@ -20,9 +20,12 @@ struct SetupModal {
 }
 
 /// Configure your Nightscout URL and privacy settings
-#[poise::command(slash_command, install_context = "Guild|User", interaction_context = "Guild|BotDm|PrivateChannel")]
+#[poise::command(
+    slash_command,
+    install_context = "Guild|User",
+    interaction_context = "Guild|BotDm|PrivateChannel"
+)]
 pub async fn setup(ctx: Context<'_>) -> Result<(), Error> {
-
     let app_ctx = match ctx {
         poise::Context::Application(c) => c,
         _ => return Ok(()),
@@ -54,20 +57,19 @@ pub async fn setup(ctx: Context<'_>) -> Result<(), Error> {
     );
 
     let check_result = match client_result {
-        Ok(client) => {
-            client.entries().sgv().list().limit(1).await
-                .map_err(|e| anyhow::anyhow!(e)) 
-        },
+        Ok(client) => client
+            .entries()
+            .sgv()
+            .list()
+            .limit(1)
+            .await
+            .map_err(|e| anyhow::anyhow!(e)),
         Err(_) => Err(anyhow::anyhow!("Invalid URL format")),
     };
 
     match check_result {
         Ok(_) => {
-            show_privacy_selection(
-                ctx,
-                &validated_url,
-                modal_data.nightscout_token,
-            ).await?;
+            show_privacy_selection(ctx, &validated_url, modal_data.nightscout_token).await?;
         }
         Err(e) => {
             let error_embed = CreateEmbed::new()
@@ -78,7 +80,12 @@ pub async fn setup(ctx: Context<'_>) -> Result<(), Error> {
                 ))
                 .color(Colour::RED);
 
-            ctx.send(poise::CreateReply::default().embed(error_embed).ephemeral(true)).await?;
+            ctx.send(
+                poise::CreateReply::default()
+                    .embed(error_embed)
+                    .ephemeral(true),
+            )
+            .await?;
         }
     }
 
@@ -113,15 +120,17 @@ async fn show_privacy_selection(
         ))
         .color(Colour::BLURPLE);
 
-    let reply = ctx.send(
-        poise::CreateReply::default()
-            .embed(embed)
-            .components(vec![buttons])
-            .ephemeral(true)
-    ).await?;
+    let reply = ctx
+        .send(
+            poise::CreateReply::default()
+                .embed(embed)
+                .components(vec![buttons])
+                .ephemeral(true),
+        )
+        .await?;
 
     let msg = reply.message().await?;
-    
+
     if let Some(mci) = serenity::ComponentInteractionCollector::new(ctx.serenity_context())
         .message_id(msg.id)
         .timeout(std::time::Duration::from_secs(60))
@@ -135,12 +144,9 @@ async fn show_privacy_selection(
         };
 
         let database = &ctx.data().database;
-        let update_result = database.update_user_nightscout(
-            ctx.author().id.get(),
-            url,
-            token.as_deref(),
-            is_private
-        ).await;
+        let update_result = database
+            .update_user_nightscout(ctx.author().id.get(), url, token.as_deref(), is_private)
+            .await;
 
         match update_result {
             Ok(_) => {
@@ -157,18 +163,23 @@ async fn show_privacy_selection(
                     .embed(success_embed)
                     .components(vec![]); // Remove buttons
 
-                mci.create_response(ctx.serenity_context(), CreateInteractionResponse::UpdateMessage(response)).await?;
+                mci.create_response(
+                    ctx.serenity_context(),
+                    CreateInteractionResponse::UpdateMessage(response),
+                )
+                .await?;
             }
             Err(e) => {
                 tracing::error!("Failed to save user data: {}", e);
-                    mci.create_response(
+                mci.create_response(
                     ctx.serenity_context(),
                     CreateInteractionResponse::Message(
                         serenity::CreateInteractionResponseMessage::new()
-                        .content("Failed to save data to database. Please try again.")
-                        .ephemeral(true)
-                    )
-                ).await?;
+                            .content("Failed to save data to database. Please try again.")
+                            .ephemeral(true),
+                    ),
+                )
+                .await?;
             }
         }
     } else {
@@ -176,8 +187,15 @@ async fn show_privacy_selection(
             .title("Setup Timed Out")
             .description("You didn't select a privacy option in time. Please run `/setup` again.")
             .color(Colour::RED);
-        
-        reply.edit(ctx, poise::CreateReply::default().embed(timeout_embed).components(vec![])).await?;
+
+        reply
+            .edit(
+                ctx,
+                poise::CreateReply::default()
+                    .embed(timeout_embed)
+                    .components(vec![]),
+            )
+            .await?;
     }
 
     Ok(())
