@@ -15,64 +15,13 @@ pub async fn bg(
     #[description = "Target user"] user: Option<serenity::User>,
 ) -> Result<(), Error> {
     let target_user = user.as_ref().unwrap_or(ctx.author());
-    let target_user_id = target_user.id;
-    let command_user_id = ctx.author().id;
+    let target_id = target_user.id;
 
-    let database = &ctx.data().database;
+    let user_data = get_db_user!(ctx, target_id.get());
 
-    if database
-        .get_user_data(target_user_id.get())
-        .await?
-        .is_none()
-    {
-        ctx.send(
-            poise::CreateReply::default()
-                .content("The specified user hasn't set up their Nightscout data yet.")
-                .ephemeral(true),
-        )
-        .await?;
-        return Ok(());
-    }
+    check_privacy!(ctx, target_id, user_data);
 
-    let user_data = database.get_user_data(target_user_id.get()).await?.unwrap();
-
-    #[allow(clippy::if_same_then_else)]
-    let can_access = if target_user_id == command_user_id {
-        true
-    } else if !user_data.is_private {
-        true
-    } else {
-        user_data.allowed_people.contains(&command_user_id.get())
-    };
-
-    if !can_access {
-        ctx.send(
-            poise::CreateReply::default()
-                .content("This user's blood glucose data is set to private.")
-                .ephemeral(true),
-        )
-        .await?;
-        return Ok(());
-    }
-
-    let base_url = user_data
-        .nightscout_url
-        .as_deref()
-        .context("Nightscout URL missing")?;
-
-    if base_url.trim().is_empty() {
-        ctx.send(
-            poise::CreateReply::default()
-                .content(
-                    "Your Nightscout URL is empty. Please run `/setup` to configure it properly.",
-                )
-                .ephemeral(true),
-        )
-        .await?;
-        return Ok(());
-    }
-
-    let client = NightscoutClient::new(base_url, user_data.nightscout_token.clone())?;
+    let client = get_nightscout_client!(ctx, user_data);
 
     ctx.defer().await?;
 
@@ -94,10 +43,11 @@ pub async fn bg(
     let entries = match entries_result {
         Ok(e) if !e.is_empty() => e,
         _ => {
-            ctx.send(poise::CreateReply::default()
-                .content("Could not fetch blood glucose data from Nightscout. Please check your URL.")
-                .ephemeral(true)
-            ).await?;
+            send_error!(
+                ctx,
+                "Fetch Error",
+                "Could not fetch blood glucose data. Please check your URL."
+            );
             return Ok(());
         }
     };

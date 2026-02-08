@@ -1,3 +1,6 @@
+#[macro_use]
+mod macros;
+
 mod commands;
 mod data;
 mod events;
