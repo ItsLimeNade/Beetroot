@@ -3,7 +3,7 @@ mod crypto;
 pub mod models;
 
 use crate::models::{
-    Analytics, CommandData, ProcessData, Sticker, StickerCategory, UsageData, UserData,
+    Analytics, CommandData, ProcessData, Sticker, UsageData, UserData,
 };
 use anyhow::Result;
 use sqlx::{sqlite::SqliteConnectOptions, SqlitePool};

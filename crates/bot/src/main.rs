@@ -8,6 +8,8 @@ use std::env;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    dotenvy::dotenv().ok(); 
+
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -18,7 +20,9 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("[INIT] Starting Beetroot (Poise Refactor)");
 
     let options = poise::FrameworkOptions {
-        commands: vec![], 
+        commands: vec![
+            commands::bg::bg(), 
+        ],
         
         event_handler: |ctx, event, framework, data| {
             Box::pin(events::event_handler(ctx, event, framework, data))

@@ -18,3 +18,5 @@ Cargo.lock
 # Db stuff
 db.sqlite
 .sqlx
+*.sqlite-shm
+*.sqlite-wal

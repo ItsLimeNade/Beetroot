@@ -4,7 +4,6 @@ use poise::serenity_prelude as serenity;
 use serenity::all::{Colour, CreateAttachment, CreateEmbed, CreateEmbedFooter};
 use cinnamon::client::NightscoutClient;
 use cinnamon::models::properties::PropertyType;
-use cinnamon::models::trends::Trend;
 
 #[poise::command(
     slash_command,
