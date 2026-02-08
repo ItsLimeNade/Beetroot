@@ -1,19 +1,54 @@
-FROM rust:1-bookworm AS builder
+# Builder
+FROM rust:1.76-slim-bookworm as builder
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
-COPY . .
+# Copy manifest files to cache dependencies
+COPY Cargo.toml Cargo.lock ./
+COPY crates/bot/Cargo.toml crates/bot/
+COPY crates/database/Cargo.toml crates/database/
+COPY crates/macros/Cargo.toml crates/macros/
 
+# Create dummy source files to trigger dependency build
+RUN mkdir -p crates/bot/src && echo "fn main() {}" > crates/bot/src/main.rs
+RUN mkdir -p crates/database/src && echo "pub fn dummy() {}" > crates/database/src/lib.rs
+RUN mkdir -p crates/macros/src && echo "pub fn dummy() {}" > crates/macros/src/lib.rs
+
+# Build dependencies
 RUN cargo build --release
 
-FROM debian:bookworm-slim AS runner
+RUN rm -rf crates/bot/src crates/database/src crates/macros/src target/release/deps/bot* target/release/deps/database* target/release/deps/macros*
+
+COPY crates crates
+
+COPY .sqlx .sqlx/
+ENV SQLX_OFFLINE=true
+
+# Build the actual application
+RUN cargo build --release --bin bot
+
+# Runtime
+FROM debian:bookworm-slim
+
 WORKDIR /app
 
-RUN apt-get update && \
-    apt-get install -y ca-certificates libssl-dev && \
-    rm -rf /var/lib/apt/lists/*
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y libssl3 ca-certificates sqlite3 && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /app/target/release/beetroot ./beetroot
+# Copy the binary from the builder stage
+COPY --from=builder /app/target/release/bot /app/bot
 
-COPY --from=builder /app/assets ./assets
+# Create data directory
+RUN mkdir -p /app/data
 
-CMD ["./beetroot"]
+# Copy assets
+COPY assets /app/assets
+
+# Set environment
+ENV DATABASE_URL="sqlite://data/beetroot.db"
+
+# Run the bot
+CMD ["./bot"]

@@ -56,6 +56,31 @@ Beetroot is a Discord bot that helps you share and monitor your Nightscout blood
 3. **Add a token (optional)** - Use `/token` to add authentication if your site requires it
 4. **Start using the bot** - Try `/bg` to see your current reading or `/graph` for trends
 
+## How to run?
+
+1. Using docker:
+```yaml
+version: '3.8'
+
+services:
+  bot:
+    container_name: beetroot_bot
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    volumes:
+      - bot_data:/app/data
+    environment:
+      # Replace these with your actual tokens or use Portainer Secrets
+      - DISCORD_TOKEN=your_discord_token_here
+      - DATABASE_URL=sqlite://data/beetroot.db
+      - RUST_LOG=info
+
+volumes:
+  bot_data:
+```
+
 ## Privacy & Data
 
 - Your Nightscout URL and access tokens are stored securely with encryption

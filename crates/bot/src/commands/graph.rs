@@ -3,9 +3,9 @@ use crate::{check_privacy, fetch_graph_data, get_db_user, get_nightscout_client}
 use bonbon::prelude::*;
 use chrono::{Duration, Utc};
 use image::ImageEncoder;
+use macros::track_analytics;
 use poise::serenity_prelude as serenity;
 use serenity::all::CreateAttachment;
-use macros::track_analytics;
 
 #[poise::command(
     slash_command,

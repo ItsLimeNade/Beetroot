@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT COUNT(DISTINCT user_id) as c FROM command_logs WHERE created_at > ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "c",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "8d89df44e96e395601c919695dcac02eb8b55f2564a24ece9f67b986624347bb"
+}

@@ -188,10 +188,10 @@ fn parse_and_normalize_url(input: &str) -> Result<Url, String> {
         return Err("URL must have a valid domain name".to_string());
     }
 
-    if !url.path().ends_with('/') {
-        if let Ok(mut segments) = url.path_segments_mut() {
-            segments.pop_if_empty().push("");
-        }
+    if !url.path().ends_with('/')
+        && let Ok(mut segments) = url.path_segments_mut()
+    {
+        segments.pop_if_empty().push("");
     }
 
     Ok(url)

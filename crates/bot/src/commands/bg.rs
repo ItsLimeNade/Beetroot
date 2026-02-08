@@ -1,8 +1,8 @@
 use crate::data::{Context, Error};
 use cinnamon::models::properties::PropertyType;
+use macros::track_analytics;
 use poise::serenity_prelude as serenity;
 use serenity::all::{Colour, CreateAttachment, CreateEmbed, CreateEmbedFooter};
-use macros::track_analytics;
 
 #[poise::command(
     slash_command,
@@ -152,40 +152,40 @@ pub async fn bg(
         .field("Trend", entry.direction.as_arrow(), true);
 
     if let Ok(props) = properties_result {
-        if let Some(iob) = props.iob {
-            if iob.iob > 0.0 {
-                embed = embed.field("IOB", format!("{:.2}u", iob.iob), true);
-            }
+        if let Some(iob) = props.iob
+            && iob.iob > 0.0
+        {
+            embed = embed.field("IOB", format!("{:.2}u", iob.iob), true);
         }
-        if let Some(cob) = props.cob {
-            if cob.cob > 0.0 {
-                embed = embed.field("COB", format!("{:.0}g", cob.cob), true);
-            }
+        if let Some(cob) = props.cob
+            && cob.cob > 0.0
+        {
+            embed = embed.field("COB", format!("{:.0}g", cob.cob), true);
         }
     }
 
     let mbg_res = client.entries().mbg().list().limit(1).await;
 
-    if let Ok(mbg_list) = mbg_res {
-        if let Some(mbg) = mbg_list.first() {
-            let mbg_time = chrono::DateTime::parse_from_rfc3339(&mbg.date_string)
-                .unwrap_or(now.into())
-                .with_timezone(&chrono::Utc);
+    if let Ok(mbg_list) = mbg_res
+        && let Some(mbg) = mbg_list.first()
+    {
+        let mbg_time = chrono::DateTime::parse_from_rfc3339(&mbg.date_string)
+            .unwrap_or(now.into())
+            .with_timezone(&chrono::Utc);
 
-            let mbg_age = now.signed_duration_since(mbg_time).num_minutes();
+        let mbg_age = now.signed_duration_since(mbg_time).num_minutes();
 
-            if mbg_age <= 30 {
-                let val = mbg.mbg;
-                let val_mmol = val as f64 / 18.0;
-                embed = embed.field(
-                    "Fingerprick",
-                    format!(
-                        "{:.0} mg/dL ({:.1} mmol/L)\n-# {} min ago",
-                        val, val_mmol, mbg_age
-                    ),
-                    false,
-                );
-            }
+        if mbg_age <= 30 {
+            let val = mbg.mbg;
+            let val_mmol = val as f64 / 18.0;
+            embed = embed.field(
+                "Fingerprick",
+                format!(
+                    "{:.0} mg/dL ({:.1} mmol/L)\n-# {} min ago",
+                    val, val_mmol, mbg_age
+                ),
+                false,
+            );
         }
     }
 

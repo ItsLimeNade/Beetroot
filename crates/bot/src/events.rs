@@ -35,11 +35,8 @@ pub async fn event_handler(
     _framework: poise::FrameworkContext<'_, Data, Error>,
     _data: &Data,
 ) -> Result<(), Error> {
-    match event {
-        serenity::FullEvent::Ready { data_about_bot, .. } => {
-            tracing::info!("[BOT] {} is ready and connected!", data_about_bot.user.name);
-        }
-        _ => {}
+    if let serenity::FullEvent::Ready { data_about_bot, .. } = event {
+        tracing::info!("[BOT] {} is ready and connected!", data_about_bot.user.name);
     }
     Ok(())
 }
