@@ -1,6 +1,4 @@
 use crate::data::{Context, Error};
-use anyhow::Context as AnyhowContext;
-use cinnamon::client::NightscoutClient;
 use cinnamon::models::properties::PropertyType;
 use poise::serenity_prelude as serenity;
 use serenity::all::{Colour, CreateAttachment, CreateEmbed, CreateEmbedFooter};

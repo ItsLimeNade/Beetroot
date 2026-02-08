@@ -1,11 +1,12 @@
 use crate::data::{Context, Error};
+use crate::send_error;
 use poise::Modal;
 use poise::serenity_prelude as serenity;
 use serenity::{
     ButtonStyle, Colour, CreateActionRow, CreateButton, CreateEmbed, CreateInteractionResponse,
     CreateInteractionResponseMessage,
 };
-use url::Url;
+use url::{ParseError, Url};
 
 #[derive(Debug, Modal)]
 #[name = "Nightscout Setup"]
@@ -19,7 +20,7 @@ struct SetupModal {
     nightscout_token: Option<String>,
 }
 
-/// Configure your Nightscout URL and privacy settings
+/// Setup your Nightscout URL and privacy settings
 #[poise::command(
     slash_command,
     install_context = "Guild|User",
@@ -33,68 +34,31 @@ pub async fn setup(ctx: Context<'_>) -> Result<(), Error> {
 
     let modal_data = match poise::execute_modal::<_, _, SetupModal>(app_ctx, None, None).await? {
         Some(data) => data,
-        None => return Ok(()), // User cancelled
+        None => return Ok(()),
     };
 
-    let validated_url = match validate_and_fix_url(&modal_data.nightscout_url) {
-        Ok(url) => url,
+    let url_obj = match parse_and_normalize_url(&modal_data.nightscout_url) {
+        Ok(u) => u,
         Err(e) => {
-            ctx.send(
-                poise::CreateReply::default()
-                    .content(format!("❌ Invalid URL: {}", e))
-                    .ephemeral(true),
-            )
-            .await?;
+            send_error!(ctx, "Invalid URL", e);
             return Ok(());
         }
     };
 
+    let url_str = url_obj.to_string();
+
     ctx.defer_ephemeral().await?;
 
-    let client_result = cinnamon::client::NightscoutClient::new(
-        &validated_url,
-        modal_data.nightscout_token.clone(),
-    );
+    verify_nightscout_connection!(ctx, &url_str, modal_data.nightscout_token);
 
-    let check_result = match client_result {
-        Ok(client) => client
-            .entries()
-            .sgv()
-            .list()
-            .limit(1)
-            .await
-            .map_err(|e| anyhow::anyhow!(e)),
-        Err(_) => Err(anyhow::anyhow!("Invalid URL format")),
-    };
-
-    match check_result {
-        Ok(_) => {
-            show_privacy_selection(ctx, &validated_url, modal_data.nightscout_token).await?;
-        }
-        Err(e) => {
-            let error_embed = CreateEmbed::new()
-                .title("Connection Failed")
-                .description(format!(
-                    "Could not connect to your Nightscout site.\n\n**Error:** `{}`\n\nPlease verify:\n• The URL is correct\n• Your site is online\n• The token is correct (if required)", 
-                    e
-                ))
-                .color(Colour::RED);
-
-            ctx.send(
-                poise::CreateReply::default()
-                    .embed(error_embed)
-                    .ephemeral(true),
-            )
-            .await?;
-        }
-    }
+    show_privacy_selection(ctx, url_str, modal_data.nightscout_token).await?;
 
     Ok(())
 }
 
 async fn show_privacy_selection(
     ctx: Context<'_>,
-    url: &str,
+    url: String,
     token: Option<String>,
 ) -> Result<(), Error> {
     let buttons = CreateActionRow::Buttons(vec![
@@ -107,15 +71,15 @@ async fn show_privacy_selection(
     ]);
 
     let token_text = if token.is_some() {
-        "\n\n🔐 **Access Token:** Will be saved securely (encrypted)"
+        "\n\n🔐 **Access Token:** Securely Encrypted"
     } else {
-        "\n\n🔓 **No Token:** Requests will be made without authentication"
+        "\n\n🔓 **No Token:** Public Access"
     };
 
     let embed = CreateEmbed::new()
         .title("Privacy Settings")
         .description(format!(
-            "Connection successful! Choose who can see your blood glucose data for **{}**:\n\n**Public:** Anyone can use commands to see your data\n**Private:** Only you and people you specifically allow can see your data{}", 
+            "Connection successful! Who can see data from **{}**?\n\n**Public:** Anyone via commands\n**Private:** Only you (and allowed users){}", 
             url, token_text
         ))
         .color(Colour::BLURPLE);
@@ -143,9 +107,10 @@ async fn show_privacy_selection(
             _ => return Ok(()),
         };
 
+        // Database Update
         let database = &ctx.data().database;
         let update_result = database
-            .update_user_nightscout(ctx.author().id.get(), url, token.as_deref(), is_private)
+            .update_user_nightscout(ctx.author().id.get(), &url, token.as_deref(), is_private)
             .await;
 
         match update_result {
@@ -154,28 +119,28 @@ async fn show_privacy_selection(
                 let success_embed = CreateEmbed::new()
                     .title("Setup Complete")
                     .description(format!(
-                        "✅ Your Nightscout has been configured!\n\n**URL:** {}\n**Privacy:** {}",
+                        "✅ Nightscout configured successfully!\n\n**URL:** {}\n**Privacy:** {}",
                         url, privacy_text
                     ))
                     .color(Colour::DARK_GREEN);
 
-                let response = CreateInteractionResponseMessage::new()
-                    .embed(success_embed)
-                    .components(vec![]); // Remove buttons
-
                 mci.create_response(
                     ctx.serenity_context(),
-                    CreateInteractionResponse::UpdateMessage(response),
+                    CreateInteractionResponse::UpdateMessage(
+                        CreateInteractionResponseMessage::new()
+                            .embed(success_embed)
+                            .components(vec![]),
+                    ),
                 )
                 .await?;
             }
             Err(e) => {
-                tracing::error!("Failed to save user data: {}", e);
+                tracing::error!("Database error: {}", e);
                 mci.create_response(
                     ctx.serenity_context(),
                     CreateInteractionResponse::Message(
                         serenity::CreateInteractionResponseMessage::new()
-                            .content("Failed to save data to database. Please try again.")
+                            .content("❌ Database error. Please try again.")
                             .ephemeral(true),
                     ),
                 )
@@ -183,16 +148,16 @@ async fn show_privacy_selection(
             }
         }
     } else {
-        let timeout_embed = CreateEmbed::new()
-            .title("Setup Timed Out")
-            .description("You didn't select a privacy option in time. Please run `/setup` again.")
-            .color(Colour::RED);
-
         reply
             .edit(
                 ctx,
                 poise::CreateReply::default()
-                    .embed(timeout_embed)
+                    .embed(
+                        CreateEmbed::new()
+                            .title("Timed Out")
+                            .description("Setup timed out. Please run `/setup` again.")
+                            .color(Colour::RED),
+                    )
                     .components(vec![]),
             )
             .await?;
@@ -201,31 +166,33 @@ async fn show_privacy_selection(
     Ok(())
 }
 
-fn validate_and_fix_url(input: &str) -> Result<String, String> {
-    let mut url = input.trim().to_string();
-
-    if url.is_empty() {
+fn parse_and_normalize_url(input: &str) -> Result<Url, String> {
+    let input = input.trim();
+    if input.is_empty() {
         return Err("URL cannot be empty".to_string());
     }
 
-    if !url.starts_with("http://") && !url.starts_with("https://") {
-        url = format!("https://{}", url);
+    let mut url = match Url::parse(input) {
+        Ok(u) => u,
+        Err(ParseError::RelativeUrlWithoutBase) => Url::parse(&format!("https://{}", input))
+            .map_err(|_| "Invalid URL format".to_string())?,
+        Err(e) => return Err(format!("Invalid URL: {}", e)),
+    };
+
+    let scheme = url.scheme();
+    if scheme != "http" && scheme != "https" {
+        return Err("URL must start with http:// or https://".to_string());
     }
 
-    if !url.ends_with('/') {
-        url.push('/');
+    if url.host().is_none() {
+        return Err("URL must have a valid domain name".to_string());
     }
 
-    match Url::parse(&url) {
-        Ok(parsed) => {
-            if parsed.host().is_none() {
-                return Err("URL must have a valid domain name".to_string());
-            }
-            if parsed.scheme() != "http" && parsed.scheme() != "https" {
-                return Err("URL must use http or https protocol".to_string());
-            }
-            Ok(url)
+    if !url.path().ends_with('/') {
+        if let Ok(mut segments) = url.path_segments_mut() {
+            segments.pop_if_empty().push("");
         }
-        Err(e) => Err(format!("Invalid URL format: {}", e)),
     }
+
+    Ok(url)
 }

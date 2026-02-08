@@ -103,3 +103,40 @@ macro_rules! get_nightscout_client {
         }
     }};
 }
+
+/// Verifies a Nightscout connection by fetching 1 entry.
+/// If the connection fails, it sends a "Connection Failed" embed and returns early from the calling function.
+#[macro_export]
+macro_rules! verify_nightscout_connection {
+    ($ctx:expr, $url:expr, $token:expr) => {
+        {
+            let client_result = cinnamon::client::NightscoutClient::new(
+                $url,
+                $token.clone(),
+            );
+
+            let check_result = match client_result {
+                Ok(client) => client
+                    .entries()
+                    .sgv()
+                    .list()
+                    .limit(1)
+                    .await
+                    .map_err(|e| anyhow::anyhow!(e)),
+                Err(_) => Err(anyhow::anyhow!("Invalid URL configuration")),
+            };
+
+            if let Err(e) = check_result {
+                $crate::send_error!(
+                    $ctx,
+                    "Connection Failed",
+                    format!(
+                        "Could not connect to Nightscout.\n\n**Error:** `{}`\n\n**Troubleshooting:**\n• Is the URL correct?\n• Is the site online?\n• Is the token valid?",
+                        e
+                    )
+                );
+                return Ok(());
+            }
+        }
+    };
+}
