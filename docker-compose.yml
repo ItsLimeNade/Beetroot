@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  bot:
+    container_name: beetroot_bot
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+    restart: unless-stopped
+    volumes:
+      - bot_data:/app/data
+    environment:
+      - DISCORD_TOKEN=${DISCORD_TOKEN}
+      - DATABASE_URL=sqlite://data/beetroot.db
+      - RUST_LOG=info
+
+volumes:
+  bot_data:
