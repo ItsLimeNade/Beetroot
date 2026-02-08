@@ -15,8 +15,7 @@ COPY crates/macros/Cargo.toml crates/macros/
 # Create dummy source files to trigger dependency build
 RUN mkdir -p crates/bot/src && echo "fn main() {}" > crates/bot/src/main.rs
 RUN mkdir -p crates/database/src && echo "pub fn dummy() {}" > crates/database/src/lib.rs
-RUN mkdir -p crates/macros/src && echo "pub fn dummy() {}" > crates/macros/src/lib.rs
-
+RUN mkdir -p crates/macros/src && echo 'extern crate proc_macro; use proc_macro::TokenStream; #[proc_macro] pub fn dummy(_: TokenStream) -> TokenStream { TokenStream::new() }' > crates/macros/src/lib.rs
 # Build dependencies
 RUN cargo build --release
 

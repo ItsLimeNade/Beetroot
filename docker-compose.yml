@@ -6,8 +6,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      args:
-        CARGO_BUILD_JOBS: "3"
     restart: unless-stopped
     volumes:
       - bot_data:/app/data
