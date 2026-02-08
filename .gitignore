@@ -15,5 +15,6 @@ data.db
 # MSVC Windows builds of rustc generate these, which store debugging information
 *.pdb
 Cargo.lock
+# Db stuff
 db.sqlite
-.claude/
+.sqlx
