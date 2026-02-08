@@ -16,6 +16,8 @@ regex = "1.12.3"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter", "fmt"] }
 anyhow = "1.0.101"
-database = { path = "../database" }
 url = "2.5.8"
 image = "0.25.9"
+# Private Dependencies
+macros = { path = "../macros" }
+database = { path = "../database" }

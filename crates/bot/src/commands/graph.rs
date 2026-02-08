@@ -5,12 +5,14 @@ use chrono::{Duration, Utc};
 use image::ImageEncoder;
 use poise::serenity_prelude as serenity;
 use serenity::all::CreateAttachment;
+use macros::track_analytics;
 
 #[poise::command(
     slash_command,
     install_context = "Guild|User",
     interaction_context = "Guild|BotDm|PrivateChannel"
 )]
+#[track_analytics("graph")]
 pub async fn graph(
     ctx: Context<'_>,
     #[description = "Hours of data to display (3-24)"]

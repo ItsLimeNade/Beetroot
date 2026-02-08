@@ -2,12 +2,14 @@ use crate::data::{Context, Error};
 use cinnamon::models::properties::PropertyType;
 use poise::serenity_prelude as serenity;
 use serenity::all::{Colour, CreateAttachment, CreateEmbed, CreateEmbedFooter};
+use macros::track_analytics;
 
 #[poise::command(
     slash_command,
     install_context = "Guild|User",
     interaction_context = "Guild|BotDm|PrivateChannel"
 )]
+#[track_analytics("bg")]
 pub async fn bg(
     ctx: Context<'_>,
     #[description = "Target user"] user: Option<serenity::User>,
