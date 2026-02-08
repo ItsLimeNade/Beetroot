@@ -27,6 +27,8 @@ COPY crates crates
 COPY .sqlx .sqlx/
 ENV SQLX_OFFLINE=true
 
+ARG CARGO_BUILD_JOBS
+
 # Build the actual application
 RUN cargo build --release --bin bot
 
