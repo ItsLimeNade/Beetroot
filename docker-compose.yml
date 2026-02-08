@@ -6,7 +6,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      args:
     restart: unless-stopped
     volumes:
       - bot_data:/app/data
