@@ -1,4 +1,3 @@
-// crates/database/src/lib.rs
 mod crypto;
 pub mod models;
 
@@ -62,7 +61,6 @@ impl Database {
                 display_name: row.display_name,
             };
 
-            // Manual mapping since category is a String in DB but we used an enum logic
             match row.category.as_str() {
                 "in_range" => in_range.push(sticker),
                 "low" => low.push(sticker),
@@ -71,9 +69,8 @@ impl Database {
             }
         }
 
-        // Fix for the type error: use .as_str() to ensure it's a slice
         let nightscout_token = user.nightscout_token
-            .as_ref() // Use as_ref() to borrow the String inside Option
+            .as_ref()
             .and_then(|t| crypto::decrypt_token(t.as_str()).ok());
             
         let allowed_people: Vec<u64> = serde_json::from_str(&user.allowed_people.unwrap_or_else(|| "[]".into()))?;
@@ -96,7 +93,6 @@ impl Database {
         }))
     }
 
-    // ... (Log functions remain the same) ...
     pub async fn log_command_execution(&self, command: &str, user_id: u64, duration_ms: u64) -> Result<()> {
         let now = current_time() as i64;
         let us = user_id as i64;
@@ -163,6 +159,46 @@ impl Database {
                 bot_version,
             },
         })
+    }
+
+    pub async fn update_user_nightscout(
+        &self,
+        user_id: u64,
+        url: &str,
+        token: Option<&str>,
+        is_private: bool,
+    ) -> Result<()> {
+        let id = user_id as i64;
+        
+        // Encrypt token if present
+        let encrypted_token = if let Some(t) = token {
+            if t.trim().is_empty() {
+                None
+            } else {
+                Some(crypto::encrypt_token(t)?)
+            }
+        } else {
+            None
+        };
+
+        sqlx::query!(
+            r#"
+            INSERT INTO users (discord_id, nightscout_url, nightscout_token, is_private)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(discord_id) DO UPDATE SET
+                nightscout_url = excluded.nightscout_url,
+                nightscout_token = excluded.nightscout_token,
+                is_private = excluded.is_private
+            "#,
+            id,
+            url,
+            encrypted_token,
+            is_private
+        )
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
     }
 }
 

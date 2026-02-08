@@ -22,6 +22,7 @@ async fn main() -> anyhow::Result<()> {
     let options = poise::FrameworkOptions {
         commands: vec![
             commands::bg::bg(), 
+            commands::setup::setup(),
         ],
         
         event_handler: |ctx, event, framework, data| {
