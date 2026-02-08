@@ -1,5 +1,5 @@
 # Builder
-FROM rust:1.76-slim-bookworm as builder
+FROM rust:1-slim-bookworm as builder
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
