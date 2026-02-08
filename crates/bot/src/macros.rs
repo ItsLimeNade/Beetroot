@@ -140,3 +140,50 @@ macro_rules! verify_nightscout_connection {
         }
     };
 }
+
+/// Fetches entries, treatments, and profiles in parallel.
+/// Returns `(entries, treatments, profiles)`.
+/// If entries fail, sends an error and returns early. Treatments/Profiles fail gracefully (empty/None).
+#[macro_export]
+macro_rules! fetch_graph_data {
+    ($ctx:expr, $client:expr, $start:expr, $end:expr) => {{
+        let entries_fut = $client.entries().sgv().list().from($start).limit(5000);
+        let treatments_fut = $client.treatments().list().from($start).limit(5000);
+
+        let profile = $client.profiles();
+        let profiles_fut = profile.get();
+
+        let (entries_res, treatments_res, profiles_res) =
+            tokio::join!(entries_fut, treatments_fut, profiles_fut);
+
+        let entries = match entries_res {
+            Ok(e) => e,
+            Err(e) => {
+                $crate::send_error!(
+                    $ctx,
+                    "Fetch Error",
+                    format!("Failed to retrieve glucose data: {}", e)
+                );
+                return Ok(());
+            }
+        };
+
+        let treatments = match treatments_res {
+            Ok(t) => t,
+            Err(e) => {
+                tracing::warn!("Failed to fetch treatments: {}", e);
+                Vec::new()
+            }
+        };
+
+        let profiles = match profiles_res {
+            Ok(p) => Some(p),
+            Err(e) => {
+                tracing::warn!("Failed to fetch profiles: {}", e);
+                None
+            }
+        };
+
+        (entries, treatments, profiles)
+    }};
+}

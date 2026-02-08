@@ -23,7 +23,11 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("[INIT] Starting Beetroot (Poise Refactor)");
 
     let options = poise::FrameworkOptions {
-        commands: vec![commands::bg::bg(), commands::setup::setup()],
+        commands: vec![
+            commands::bg::bg(),
+            commands::setup::setup(),
+            commands::graph::graph(),
+        ],
 
         event_handler: |ctx, event, framework, data| {
             Box::pin(events::event_handler(ctx, event, framework, data))
