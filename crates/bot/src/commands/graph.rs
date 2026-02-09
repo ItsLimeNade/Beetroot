@@ -39,7 +39,7 @@ pub async fn graph(
     let (entries, treatments, profiles) = fetch_graph_data!(ctx, client, start_time, now);
 
     if entries.is_empty() {
-        crate::send_error!(
+        send_error!(
             ctx,
             "No Data",
             "No glucose entries found for the specified time range."
@@ -66,6 +66,13 @@ pub async fn graph(
         };
 
         GlucoseGraphBuilder::new()
+            .with_treatment_mode(TreatmentDisplayMode::Contextual)
+            .with_scaling(GraphScaling::Dynamic {
+                clamp_min: 40.0,
+                clamp_max: 400.0,
+                default_min: 60.0,
+                default_max: 200.0,
+            })
             .with_layout(layout)
             .with_theme(Theme::dark())
             .with_units(UnitDisplay::Dual {

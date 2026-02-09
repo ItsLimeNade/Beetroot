@@ -25,8 +25,8 @@ pub async fn bg(
 
     ctx.defer().await?;
 
-    let entries_builder = client.entries().sgv();
-    let entries_fut = entries_builder.list().limit(2);
+    let entries_builder = client.sgv();
+    let entries_fut = entries_builder.get().limit(2).send();
 
     let properties_builder = client
         .properties()
@@ -164,7 +164,7 @@ pub async fn bg(
         }
     }
 
-    let mbg_res = client.entries().mbg().list().limit(1).await;
+    let mbg_res = client.mbg().get().limit(1).send().await;
 
     if let Ok(mbg_list) = mbg_res
         && let Some(mbg) = mbg_list.first()

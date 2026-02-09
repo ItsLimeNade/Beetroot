@@ -89,9 +89,16 @@ macro_rules! get_nightscout_client {
             }
         };
 
-        match cinnamon::client::NightscoutClient::new(base_url, $user_data.nightscout_token.clone())
-        {
-            Ok(client) => client,
+        let client_res = cinnamon::client::NightscoutClient::new(base_url);
+
+        match client_res {
+            Ok(client) => {
+                if let Some(token) = &$user_data.nightscout_token {
+                    client.with_secret(token)
+                } else {
+                    client
+                }
+            }
             Err(e) => {
                 $crate::send_error!(
                     $ctx,
@@ -110,23 +117,30 @@ macro_rules! get_nightscout_client {
 macro_rules! verify_nightscout_connection {
     ($ctx:expr, $url:expr, $token:expr) => {
         {
-            let client_result = cinnamon::client::NightscoutClient::new(
-                $url,
-                $token.clone(),
-            );
+            let client_result = cinnamon::client::NightscoutClient::new($url);
 
             let check_result = match client_result {
-                Ok(client) => client
-                    .entries()
-                    .sgv()
-                    .list()
-                    .limit(1)
-                    .await
-                    .map_err(|e| anyhow::anyhow!(e)),
+                Ok(client) => {
+                    let client = if let Some(token) = $token {
+                        client.with_secret(token)
+                    } else {
+                        client
+                    };
+
+                    // UPDATED: .entries().sgv().list() -> .sgv().get()
+                    client
+                        .sgv()
+                        .get()
+                        .limit(1)
+                        .send() // Ensure .send() is called if query builder requires it to execute
+                        .await
+                        .map_err(|e| anyhow::anyhow!(e))
+                },
                 Err(_) => Err(anyhow::anyhow!("Invalid URL configuration")),
             };
 
             if let Err(e) = check_result {
+                // ... error handling remains the same
                 $crate::send_error!(
                     $ctx,
                     "Connection Failed",
@@ -147,8 +161,8 @@ macro_rules! verify_nightscout_connection {
 #[macro_export]
 macro_rules! fetch_graph_data {
     ($ctx:expr, $client:expr, $start:expr, $end:expr) => {{
-        let entries_fut = $client.entries().sgv().list().from($start).limit(5000);
-        let treatments_fut = $client.treatments().list().from($start).limit(5000);
+        let entries_fut = $client.sgv().get().from($start).limit(5000).send();
+        let treatments_fut = $client.treatments().get().from($start).limit(5000).send();
 
         let profile = $client.profiles();
         let profiles_fut = profile.get();

@@ -49,7 +49,7 @@ pub async fn setup(ctx: Context<'_>) -> Result<(), Error> {
 
     ctx.defer_ephemeral().await?;
 
-    verify_nightscout_connection!(ctx, &url_str, modal_data.nightscout_token);
+    verify_nightscout_connection!(ctx, &url_str, modal_data.nightscout_token.clone());
 
     show_privacy_selection(ctx, url_str, modal_data.nightscout_token).await?;
 
