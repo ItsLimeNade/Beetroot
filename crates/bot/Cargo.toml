@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 cinnamon = "1.0.1"
-bonbon = {version = "0.1.1", features = ["cinnamon"]}
+bonbon = {version = "0.1.2", features = ["cinnamon"]}
 poise = {git = "https://github.com/serenity-rs/poise", rev = "932351a"}
 tokio = { version = "1.49.0", features = ["full"] }
 serde = { version = "1.0.228", features = ["derive"] }

@@ -37,8 +37,11 @@ pub async fn bg(
     let profiles_builder = client.profiles();
     let profile_fut = profiles_builder.get();
 
-    let (entries_result, properties_result, profile_result) =
-        tokio::join!(entries_fut, properties_fut, profile_fut);
+    let status_builder = client.status();
+    let status_fut = status_builder.get();
+
+    let (entries_result, properties_result, profile_result, status_result) =
+        tokio::join!(entries_fut, properties_fut, profile_fut, status_fut);
 
     let entries = match entries_result {
         Ok(e) if !e.is_empty() => e,
@@ -102,7 +105,16 @@ pub async fn bg(
         Colour::from_rgb(87, 189, 79)
     };
 
-    let title = format!("{}'s Nightscout", target_user.name);
+    let status = status_result?;
+
+    let title = status.settings.map_or_else(
+        || format!("{}'s Nightscout", target_user.name),
+        |v| {
+            v.custom_title
+                .map_or_else(|| format!("{}'s Nightscout", target_user.name), |s| s)
+        },
+    );
+
     let thumbnail_url = target_user.avatar_url().unwrap_or_default();
 
     let icon_bytes = tokio::fs::read("assets/images/nightscout_icon.png").await?;
