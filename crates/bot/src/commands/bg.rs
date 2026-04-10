@@ -1,4 +1,5 @@
 use crate::data::{Context, Error};
+use crate::utils::duration_parser::parse_ago_duration;
 use cinnamon::models::properties::PropertyType;
 use macros::track_analytics;
 use poise::serenity_prelude as serenity;
@@ -10,9 +11,13 @@ use serenity::all::{Colour, CreateAttachment, CreateEmbed, CreateEmbedFooter};
     interaction_context = "Guild|BotDm|PrivateChannel"
 )]
 #[track_analytics("bg")]
+/// Checks your current blood glucose, IOB and COB.
 pub async fn bg(
     ctx: Context<'_>,
     #[description = "Target user"] user: Option<serenity::User>,
+    #[description = "Look back in time (e.g. '30m', '2h', '1h30m')"]
+    #[rename = "at"]
+    at_str: Option<String>,
 ) -> Result<(), Error> {
     let target_user = user.as_ref().unwrap_or(ctx.author());
     let target_id = target_user.id;
@@ -23,10 +28,75 @@ pub async fn bg(
 
     let client = get_nightscout_client!(ctx, user_data);
 
+    let lookback = if let Some(ref s) = at_str {
+        match parse_ago_duration(s) {
+            Some(d) => Some(d),
+            None => {
+                send_error!(
+                    ctx,
+                    "Invalid Time",
+                    "Could not parse the time. Use formats like `30m`, `2h`, `1h30m`."
+                );
+                return Ok(());
+            }
+        }
+    } else {
+        None
+    };
+
     ctx.defer().await?;
 
-    let entries_builder = client.sgv();
-    let entries_fut = entries_builder.get().limit(2).send();
+    let now = chrono::Utc::now();
+
+    let entries = if let Some(ago) = lookback {
+        let target_time = now - ago;
+        let window = chrono::Duration::minutes(10);
+
+        let result = client
+            .sgv()
+            .get()
+            .from(target_time - window)
+            .to(target_time + window)
+            .limit(50)
+            .send()
+            .await;
+
+        match result {
+            Ok(mut e) if !e.is_empty() => {
+                // Sort by proximity to target_time
+                e.sort_by_key(|entry| {
+                    let entry_time =
+                        chrono::DateTime::from_timestamp_millis(entry.date).unwrap_or(now);
+                    (entry_time - target_time).num_seconds().unsigned_abs()
+                });
+                e
+            }
+            _ => {
+                send_error!(
+                    ctx,
+                    "No Data",
+                    format!(
+                        "No glucose data found around **{}** ago.",
+                        at_str.as_deref().unwrap_or("?")
+                    )
+                );
+                return Ok(());
+            }
+        }
+    } else {
+        let entries_builder = client.sgv();
+        match entries_builder.get().limit(2).send().await {
+            Ok(e) if !e.is_empty() => e,
+            _ => {
+                send_error!(
+                    ctx,
+                    "Fetch Error",
+                    "Could not fetch blood glucose data. Please check your URL."
+                );
+                return Ok(());
+            }
+        }
+    };
 
     let properties_builder = client
         .properties()
@@ -40,20 +110,8 @@ pub async fn bg(
     let status_builder = client.status();
     let status_fut = status_builder.get();
 
-    let (entries_result, properties_result, profile_result, status_result) =
-        tokio::join!(entries_fut, properties_fut, profile_fut, status_fut);
-
-    let entries = match entries_result {
-        Ok(e) if !e.is_empty() => e,
-        _ => {
-            send_error!(
-                ctx,
-                "Fetch Error",
-                "Could not fetch blood glucose data. Please check your URL."
-            );
-            return Ok(());
-        }
-    };
+    let (properties_result, profile_result, status_result) =
+        tokio::join!(properties_fut, profile_fut, status_fut);
 
     let entry = &entries[0];
     let prev_entry = entries.get(1);
@@ -86,7 +144,6 @@ pub async fn bg(
         .unwrap_or_else(|_| chrono::Utc::now().into())
         .with_timezone(&chrono::Utc);
 
-    let now = chrono::Utc::now();
     let duration = now.signed_duration_since(entry_time);
 
     let time_ago = if duration.num_minutes() < 60 {
@@ -176,28 +233,31 @@ pub async fn bg(
         }
     }
 
-    let mbg_res = client.mbg().get().limit(1).send().await;
+    // Only fetch MBG for current readings (not when looking back)
+    if lookback.is_none() {
+        let mbg_res = client.mbg().get().limit(1).send().await;
 
-    if let Ok(mbg_list) = mbg_res
-        && let Some(mbg) = mbg_list.first()
-    {
-        let mbg_time = chrono::DateTime::parse_from_rfc3339(&mbg.date_string)
-            .unwrap_or(now.into())
-            .with_timezone(&chrono::Utc);
+        if let Ok(mbg_list) = mbg_res
+            && let Some(mbg) = mbg_list.first()
+        {
+            let mbg_time = chrono::DateTime::parse_from_rfc3339(&mbg.date_string)
+                .unwrap_or(now.into())
+                .with_timezone(&chrono::Utc);
 
-        let mbg_age = now.signed_duration_since(mbg_time).num_minutes();
+            let mbg_age = now.signed_duration_since(mbg_time).num_minutes();
 
-        if mbg_age <= 30 {
-            let val = mbg.mbg;
-            let val_mmol = val as f64 / 18.0;
-            embed = embed.field(
-                "Fingerprick",
-                format!(
-                    "{:.0} mg/dL ({:.1} mmol/L)\n-# {} min ago",
-                    val, val_mmol, mbg_age
-                ),
-                false,
-            );
+            if mbg_age <= 30 {
+                let val = mbg.mbg;
+                let val_mmol = val as f64 / 18.0;
+                embed = embed.field(
+                    "Fingerprick",
+                    format!(
+                        "{:.0} mg/dL ({:.1} mmol/L)\n-# {} min ago",
+                        val, val_mmol, mbg_age
+                    ),
+                    false,
+                );
+            }
         }
     }
 

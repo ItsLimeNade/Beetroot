@@ -1,5 +1,4 @@
 use crate::data::{Context, Error};
-use crate::send_error;
 use poise::Modal;
 use poise::serenity_prelude as serenity;
 use serenity::{

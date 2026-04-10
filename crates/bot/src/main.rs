@@ -4,6 +4,8 @@ mod macros;
 mod commands;
 mod data;
 mod events;
+mod stickers;
+mod utils;
 
 use anyhow::Context as _;
 use poise::serenity_prelude as serenity;
@@ -27,6 +29,12 @@ async fn main() -> anyhow::Result<()> {
             commands::bg::bg(),
             commands::setup::setup(),
             commands::graph::graph(),
+            commands::a1c::a1c(),
+            // Sticker commands
+            commands::add_sticker::add_sticker(),
+            commands::add_sticker::add_sticker_context(),
+            // Nutrition Commands - Not for now :)
+            // commands::nutrition::nutrition(),
         ],
 
         event_handler: |ctx, event, framework, data| {

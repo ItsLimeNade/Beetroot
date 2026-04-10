@@ -2,6 +2,8 @@ mod crypto;
 pub mod models;
 
 use crate::models::{Analytics, CommandData, ProcessData, Sticker, UsageData, UserData};
+use crate::models::{StickerCategory, StickerRow};
+
 use anyhow::Result;
 use sqlx::{SqlitePool, sqlite::SqliteConnectOptions};
 use std::str::FromStr;
@@ -210,6 +212,148 @@ impl Database {
         .await?;
 
         Ok(())
+    }
+
+    /// Insert a new sticker for a user.
+    pub async fn insert_sticker(
+        &self,
+        user_id: u64,
+        sticker_url: &str,
+        display_name: &str,
+        category: StickerCategory,
+    ) -> Result<()> {
+        let id = user_id as i64;
+        let cat = category.as_db_str();
+
+        sqlx::query!(
+            r#"INSERT INTO stickers (discord_id, sticker_url, display_name, category)
+            VALUES (?, ?, ?, ?)"#,
+            id,
+            sticker_url,
+            display_name,
+            cat,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    /// Delete a sticker by its row ID.
+    pub async fn delete_sticker(&self, sticker_id: i64) -> Result<()> {
+        sqlx::query!(r#"DELETE FROM stickers WHERE id = ?"#, sticker_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// Delete all stickers for a user.
+    pub async fn clear_user_stickers(&self, user_id: u64) -> Result<()> {
+        let id = user_id as i64;
+        sqlx::query!(r#"DELETE FROM stickers WHERE discord_id = ?"#, id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// Count how many stickers a user has in a specific category.
+    pub async fn get_sticker_count_by_category(
+        &self,
+        user_id: u64,
+        category: StickerCategory,
+    ) -> Result<i64> {
+        let id = user_id as i64;
+        let cat = category.as_db_str();
+
+        let row = sqlx::query!(
+            r#"SELECT COUNT(*) as "count: i64" FROM stickers
+            WHERE discord_id = ? AND category = ?"#,
+            id,
+            cat,
+        )
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(row.count)
+    }
+
+    /// Get all stickers for a user as flat StickerRow (with id + category).
+    /// Useful for sticker generation where we need to pick from all categories.
+    pub async fn get_all_user_stickers(&self, user_id: u64) -> Result<Vec<StickerRow>> {
+        let id = user_id as i64;
+
+        let rows = sqlx::query!(
+            r#"SELECT id, sticker_url, display_name, category
+            FROM stickers WHERE discord_id = ?"#,
+            id,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        let stickers = rows
+            .into_iter()
+            .filter_map(|row| {
+                let category = StickerCategory::from_db_str(&row.category)?;
+                Some(StickerRow {
+                    id: row.id,
+                    sticker_url: row.sticker_url,
+                    display_name: row.display_name,
+                    category,
+                })
+            })
+            .collect();
+
+        Ok(stickers)
+    }
+
+    /// Get stickers for a user filtered by category, as flat StickerRow.
+    pub async fn get_user_stickers_by_category(
+        &self,
+        user_id: u64,
+        category: StickerCategory,
+    ) -> Result<Vec<StickerRow>> {
+        let id = user_id as i64;
+        let cat = category.as_db_str();
+
+        let rows = sqlx::query!(
+            r#"SELECT id, sticker_url, display_name, category
+            FROM stickers WHERE discord_id = ? AND category = ?"#,
+            id,
+            cat,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        let stickers = rows
+            .into_iter()
+            .filter_map(|row| {
+                let category = StickerCategory::from_db_str(&row.category)?;
+                Some(StickerRow {
+                    id: row.id,
+                    sticker_url: row.sticker_url,
+                    display_name: row.display_name,
+                    category,
+                })
+            })
+            .collect();
+
+        Ok(stickers)
+    }
+
+    /// Check if a user already has a sticker with the given URL.
+    pub async fn sticker_url_exists(&self, user_id: u64, sticker_url: &str) -> Result<bool> {
+        let id = user_id as i64;
+
+        let row = sqlx::query!(
+            r#"SELECT COUNT(*) as "count: i64" FROM stickers
+            WHERE discord_id = ? AND sticker_url = ?"#,
+            id,
+            sticker_url,
+        )
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(row.count > 0)
     }
 }
 
