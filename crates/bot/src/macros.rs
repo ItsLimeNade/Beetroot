@@ -21,7 +21,7 @@ macro_rules! get_db_user {
     ($ctx:expr, $user_id:expr) => {{
         use poise::serenity_prelude::{Colour, CreateEmbed};
         let db = &$ctx.data().database;
-        match db.get_user_data($user_id).await? {
+        match db.get_user($user_id).await? {
             Some(data) => data,
             None => {
                 let embed = CreateEmbed::new()

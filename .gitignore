@@ -3,8 +3,7 @@ debug/
 target/
 
 # database
-nightscout_db.db
-data.db
+beetroot.db
 
 # environment variables
 .env

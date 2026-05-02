@@ -1,6 +1,6 @@
 pub mod overlay;
 
-use database::models::{StickerCategory, StickerRow};
+use beetroot_core::models::{Sticker, StickerCategory};
 use rand::{Rng, RngExt};
 
 /// Represents a sticker placement on the graph.
@@ -8,7 +8,7 @@ use rand::{Rng, RngExt};
 /// so we can later compute the (x, y) position on the rendered image.
 #[derive(Debug, Clone)]
 pub struct StickerPlacement {
-    pub sticker: StickerRow,
+    pub sticker: Sticker,
     pub entry_index: usize,
 }
 
@@ -63,7 +63,7 @@ impl GlucoseStatus {
 /// * `target_high` - High threshold (e.g. 180.0 mg/dL)
 pub fn generate_sticker_placements(
     sgv_values: &[f32],
-    user_stickers: &[StickerRow],
+    user_stickers: &[Sticker],
     target_low: f32,
     target_high: f32,
 ) -> Vec<StickerPlacement> {
@@ -151,9 +151,9 @@ pub fn generate_sticker_placements(
 
 /// Groups stickers into a HashMap by category for O(1) category lookup.
 fn group_stickers_by_category(
-    stickers: &[StickerRow],
-) -> std::collections::HashMap<StickerCategory, Vec<&StickerRow>> {
-    let mut map: std::collections::HashMap<StickerCategory, Vec<&StickerRow>> =
+    stickers: &[Sticker],
+) -> std::collections::HashMap<StickerCategory, Vec<&Sticker>> {
+    let mut map: std::collections::HashMap<StickerCategory, Vec<&Sticker>> =
         std::collections::HashMap::new();
     for s in stickers {
         map.entry(s.category).or_default().push(s);
@@ -163,10 +163,10 @@ fn group_stickers_by_category(
 
 /// Pick a random sticker from a given category.
 fn pick_random_sticker<'a>(
-    stickers_by_cat: &'a std::collections::HashMap<StickerCategory, Vec<&'a StickerRow>>,
+    stickers_by_cat: &'a std::collections::HashMap<StickerCategory, Vec<&'a Sticker>>,
     category: StickerCategory,
     rng: &mut impl Rng,
-) -> Option<&'a StickerRow> {
+) -> Option<&'a Sticker> {
     let candidates = stickers_by_cat.get(&category)?;
     if candidates.is_empty() {
         return None;
@@ -186,7 +186,7 @@ fn pick_random_sticker<'a>(
 ///   Result: at most 2 identical remain, which is intentional.
 fn deduplicate_placements(
     placements: &mut Vec<StickerPlacement>,
-    stickers_by_cat: &std::collections::HashMap<StickerCategory, Vec<&StickerRow>>,
+    stickers_by_cat: &std::collections::HashMap<StickerCategory, Vec<&Sticker>>,
     rng: &mut impl Rng,
 ) {
     let other_stickers = stickers_by_cat.get(&StickerCategory::Other);
@@ -214,7 +214,7 @@ fn deduplicate_placements(
     }
 
     // Collect modifications to apply after the immutable borrow ends
-    let mut modifications: Vec<(usize, &StickerRow)> = Vec::new();
+    let mut modifications: Vec<(usize, &Sticker)> = Vec::new();
 
     for (url, indices) in &url_to_indices {
         if indices.len() < 2 {

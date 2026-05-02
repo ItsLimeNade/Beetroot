@@ -1,13 +1,12 @@
 use crate::data::{Context, Error};
 use crate::stickers::overlay::validate_image_url;
-use database::models::StickerCategory;
+use beetroot_core::models::StickerCategory;
 use macros::track_analytics;
 use poise::serenity_prelude::{self as serenity, ComponentInteractionCollector};
 use serenity::{
     ButtonStyle, Colour, CreateActionRow, CreateButton, CreateEmbed, CreateInteractionResponse,
     CreateInteractionResponseMessage,
 };
-
 
 /// Add a sticker to your graph by providing an image URL.
 #[poise::command(
@@ -93,7 +92,6 @@ pub async fn add_sticker(
 
     Ok(())
 }
-
 
 #[poise::command(
     context_menu_command = "Add Sticker",
@@ -254,7 +252,6 @@ pub async fn add_sticker_context(
     Ok(())
 }
 
-
 #[derive(Debug, poise::ChoiceParameter)]
 pub enum StickerCategoryChoice {
     #[name = "Low (glucose below target)"]
@@ -287,10 +284,10 @@ fn extract_sticker_from_message(message: &serenity::Message) -> Result<(String, 
         return Ok((url, sticker.name.clone()));
     }
 
-    if let Some(attachment) = message.attachments.first() {
-        if is_image_content_type(attachment.content_type.as_deref()) {
-            return Ok((attachment.url.clone(), attachment.filename.clone()));
-        }
+    if let Some(attachment) = message.attachments.first()
+        && is_image_content_type(attachment.content_type.as_deref())
+    {
+        return Ok((attachment.url.clone(), attachment.filename.clone()));
     }
 
     if let Some(embed) = message.embeds.first() {

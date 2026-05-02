@@ -1,4 +1,4 @@
-use database::Database;
+use beetroot_core::Database;
 
 /// Data struct to share global information across all the bot's codebase.
 pub struct Data {

@@ -54,7 +54,7 @@ async fn main() -> anyhow::Result<()> {
                 tracing::info!("[CMD] Slash commands registered");
 
                 let db_url = env::var("DATABASE_URL").expect("Missing DATABASE_URL");
-                let database = database::Database::new(&db_url).await?;
+                let database = beetroot_core::Database::connect(&db_url).await?;
 
                 Ok(data::Data { database })
             })

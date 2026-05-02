@@ -25,4 +25,4 @@ urlencoding = "2"
 
 # Private Dependencies
 macros = { path = "../macros" }
-database = { path = "../database" }
+beetroot-core = { path = "../core" }

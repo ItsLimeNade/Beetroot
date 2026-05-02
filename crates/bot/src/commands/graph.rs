@@ -96,7 +96,7 @@ pub async fn graph(
         .iter()
         .filter_map(|e| chrono::DateTime::from_timestamp_millis(e.date))
         .collect();
-    
+
     let db = &ctx.data().database;
     let user_stickers = db.get_all_user_stickers(target_id.get()).await?;
 

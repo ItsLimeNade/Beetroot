@@ -162,15 +162,17 @@ pub async fn bg(
         Colour::from_rgb(87, 189, 79)
     };
 
-    let status = status_result?;
-
-    let title = status.settings.map_or_else(
-        || format!("{}'s Nightscout", target_user.name),
-        |v| {
-            v.custom_title
-                .map_or_else(|| format!("{}'s Nightscout", target_user.name), |s| s)
-        },
-    );
+    let title = if let Ok(status) = status_result {
+        status.settings.map_or_else(
+            || format!("{}'s Nightscout", target_user.name),
+            |v| {
+                v.custom_title
+                    .unwrap_or_else(|| format!("{}'s Nightscout", target_user.name))
+            },
+        )
+    } else {
+        format!("{}'s Nightscout", target_user.name)
+    };
 
     let thumbnail_url = target_user.avatar_url().unwrap_or_default();
 
