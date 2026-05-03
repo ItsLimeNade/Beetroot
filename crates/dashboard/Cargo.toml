@@ -1,0 +1,24 @@
+[package]
+name = "beetroot-dashboard"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+beetroot-core = { path = "../core" }
+axum = "0.8"
+tokio = { version = "1", features = ["full"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+serde = { version = "1", features = ["derive"] }
+sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio"] }
+anyhow = "1"
+reqwest = { version = "0.13.3", features = ["json"] }
+rand = "0.10.1"
+hex = "0.4"
+sha2 = "0.11"
+base64 = "0.22"
+maud = "0.27"
+urlencoding = "2"
+dotenvy = "0.15"

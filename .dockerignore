@@ -1,4 +1,4 @@
 target
 .git
 .env
-data.db
+beetroot.db

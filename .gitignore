@@ -3,8 +3,7 @@ debug/
 target/
 
 # database
-nightscout_db.db
-data.db
+beetroot.db
 
 # environment variables
 .env
@@ -14,6 +13,7 @@ data.db
 
 # MSVC Windows builds of rustc generate these, which store debugging information
 *.pdb
-Cargo.lock
+# Db stuff
 db.sqlite
-.claude/
+*.sqlite-shm
+*.sqlite-wal

@@ -1,0 +1,36 @@
+x-build: &build
+  context: .
+  dockerfile: Dockerfile
+
+services:
+  bot:
+    container_name: beetroot_bot
+    build: *build
+    image: beetroot:latest
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: sqlite:///app/data/beetroot.db
+      RUST_LOG: ${RUST_LOG:-info}
+    volumes:
+      - beetroot_data:/app/data
+    command: ["bot"]
+
+  dashboard:
+    container_name: beetroot_dashboard
+    build: *build
+    image: beetroot:latest
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: sqlite:///app/data/beetroot.db
+      DASHBOARD_BIND: 0.0.0.0:3000
+      RUST_LOG: ${RUST_LOG:-info}
+    volumes:
+      - beetroot_data:/app/data
+    ports:
+      - "3000:3000"
+    command: ["beetroot-dashboard"]
+
+volumes:
+  beetroot_data:

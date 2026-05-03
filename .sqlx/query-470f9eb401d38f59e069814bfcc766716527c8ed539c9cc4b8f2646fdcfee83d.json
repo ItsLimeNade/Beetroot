@@ -1,0 +1,74 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT * FROM users WHERE discord_id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "discord_id",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "nightscout_url",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "nightscout_token",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "allowed_people",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "blocked_people",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "is_private",
+        "ordinal": 5,
+        "type_info": "Integer"
+      },
+      {
+        "name": "microbolus_threshold",
+        "ordinal": 6,
+        "type_info": "Float"
+      },
+      {
+        "name": "display_microbolus",
+        "ordinal": 7,
+        "type_info": "Integer"
+      },
+      {
+        "name": "force_ephemeral",
+        "ordinal": 8,
+        "type_info": "Integer"
+      },
+      {
+        "name": "mbg_expiry_time",
+        "ordinal": 9,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "470f9eb401d38f59e069814bfcc766716527c8ed539c9cc4b8f2646fdcfee83d"
+}
