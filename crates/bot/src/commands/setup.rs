@@ -1,4 +1,6 @@
 use crate::data::{Context, Error};
+use crate::utils::emojis;
+use macros::track_analytics;
 use poise::Modal;
 use poise::serenity_prelude as serenity;
 use serenity::{
@@ -25,6 +27,7 @@ struct SetupModal {
     install_context = "Guild|User",
     interaction_context = "Guild|BotDm|PrivateChannel"
 )]
+#[track_analytics("setup")]
 pub async fn setup(ctx: Context<'_>) -> Result<(), Error> {
     let app_ctx = match ctx {
         poise::Context::Application(c) => c,
@@ -70,15 +73,15 @@ async fn show_privacy_selection(
     ]);
 
     let token_text = if token.is_some() {
-        "\n\n🔐 **Access Token:** Securely Encrypted"
+        format!("\n\n{} **Access Token:** Securely Encrypted", emojis::PASSWORD)
     } else {
-        "\n\n🔓 **No Token:** Public Access"
+        format!("\n\n{} **No Token:** Public Access", emojis::LOCK_OPEN)
     };
 
     let embed = CreateEmbed::new()
-        .title("Privacy Settings")
+        .title(format!("{} Privacy Settings", emojis::LOCK_CLOSED))
         .description(format!(
-            "Connection successful! Who can see data from **{}**?\n\n**Public:** Anyone via commands\n**Private:** Only you (and allowed users){}", 
+            "Connection successful! Who can see data from **{}**?\n\n**Public:** Anyone via commands\n**Private:** Only you (and allowed users){}",
             url, token_text
         ))
         .color(Colour::BLURPLE);
@@ -116,10 +119,10 @@ async fn show_privacy_selection(
             Ok(_) => {
                 let privacy_text = if is_private { "Private" } else { "Public" };
                 let success_embed = CreateEmbed::new()
-                    .title("Setup Complete")
+                    .title(format!("{} Setup Complete", emojis::CELEBRATION))
                     .description(format!(
-                        "✅ Nightscout configured successfully!\n\n**URL:** {}\n**Privacy:** {}",
-                        url, privacy_text
+                        "{} Nightscout configured successfully!\n\n**URL:** {}\n**Privacy:** {}",
+                        emojis::WIFI, url, privacy_text
                     ))
                     .color(Colour::DARK_GREEN);
 
@@ -139,7 +142,7 @@ async fn show_privacy_selection(
                     ctx.serenity_context(),
                     CreateInteractionResponse::Message(
                         serenity::CreateInteractionResponseMessage::new()
-                            .content("❌ Database error. Please try again.")
+                            .content(format!("{} Database error. Please try again.", emojis::ERROR))
                             .ephemeral(true),
                     ),
                 )
@@ -153,7 +156,7 @@ async fn show_privacy_selection(
                 poise::CreateReply::default()
                     .embed(
                         CreateEmbed::new()
-                            .title("Timed Out")
+                            .title(format!("{} Timed Out", emojis::SYNC_PROBLEM))
                             .description("Setup timed out. Please run `/setup` again.")
                             .color(Colour::RED),
                     )

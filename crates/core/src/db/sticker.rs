@@ -41,9 +41,7 @@ impl Database {
     /// Delete a sticker but only if it belongs to the given user.
     ///
     /// Returns `Ok(true)` when a row was deleted, `Ok(false)` when the
-    /// sticker doesn't exist or belongs to someone else. The dashboard
-    /// uses this to ensure a user can never remove another user's sticker
-    /// by guessing an ID.
+    /// sticker doesn't exist or belongs to someone else.
     pub async fn delete_user_sticker(&self, discord_id: u64, sticker_id: i64) -> CoreResult<bool> {
         let id = discord_id as i64;
 

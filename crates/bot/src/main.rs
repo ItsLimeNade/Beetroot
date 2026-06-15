@@ -1,10 +1,11 @@
 #[macro_use]
 mod macros;
 
+mod changelog;
 mod commands;
 mod data;
 mod events;
-mod stickers;
+mod tips;
 mod utils;
 
 use anyhow::Context as _;
@@ -29,18 +30,35 @@ async fn main() -> anyhow::Result<()> {
             commands::bg::bg(),
             commands::setup::setup(),
             commands::graph::graph(),
+            commands::tir::tir(),
             commands::a1c::a1c(),
-            // Sticker commands
             commands::add_sticker::add_sticker(),
             commands::add_sticker::add_sticker_context(),
-            // Nutrition Commands - Not for now :)
-            // commands::nutrition::nutrition(),
+            commands::stickers::stickers(),
+            commands::theme::theme(),
+            commands::nutrition::nutrition(),
+            commands::info::info(),
+            commands::changelog::changelog(),
+            commands::settings::settings(),
+            commands::privacy::privacy(),
+            commands::allow::allow(),
+            commands::unallow::unallow(),
+            commands::block::block(),
+            commands::unblock::unblock(),
+            commands::microbolus::microbolus(),
+            commands::ephemeral::ephemeral(),
+            commands::image_mode::image_mode(),
+            commands::fingerprick_expiry::fingerprick_expiry(),
+            commands::url::url(),
+            commands::token::token(),
+            commands::delete_account::delete_account(),
         ],
 
         event_handler: |ctx, event, framework, data| {
             Box::pin(events::event_handler(ctx, event, framework, data))
         },
         on_error: |error| Box::pin(events::on_error(error)),
+        pre_command: |ctx| Box::pin(tips::pre_command_hook(ctx)),
         post_command: |ctx| Box::pin(events::post_command(ctx)),
 
         ..Default::default()

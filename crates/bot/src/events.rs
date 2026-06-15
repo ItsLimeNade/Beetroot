@@ -43,12 +43,7 @@ pub async fn event_handler(
 
 /// Called after every successful command execution.
 pub async fn post_command(ctx: Context<'_>) {
-    // let database = &ctx.data().database;
-    // if let Ok(exists) = database.user_exists(ctx.author().id.get()).await {
-    //     if exists {
-    //          crate::bot::version_checker::check(ctx).await;
-    //     }
-    // }
+    crate::changelog::post_command_hook(ctx).await;
 
     tracing::debug!(
         "Executed command {} by {}",

@@ -12,8 +12,9 @@ pub struct Sticker {
 
 /// Glucose-state category that triggers a sticker.
 ///
-/// Stored in the DB and serialized over the wire as lowercase snake_case
-/// (e.g. `"in_range"`).
+/// Mirrors `bonbon::StickerCategory` (since bonbon 0.3.0). Stored in the DB
+/// and serialized over the wire as lowercase snake_case
+/// (e.g. `"in_range"`, `"fast_rise"`, `"background"`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, sqlx::Type, Serialize, Deserialize)]
 #[sqlx(type_name = "TEXT", rename_all = "snake_case")]
 #[serde(rename_all = "snake_case")]
@@ -21,31 +22,35 @@ pub enum StickerCategory {
     InRange,
     Low,
     High,
-    Other,
+    FastRise,
+    FastDrop,
+    Background,
 }
 
 impl StickerCategory {
-    /// Human-readable name for Discord embeds and the dashboard.
+    /// Human-readable name for Discord embeds.
     pub fn display_name(self) -> &'static str {
         match self {
             Self::InRange => "In Range",
             Self::Low => "Low",
             Self::High => "High",
-            Self::Other => "Any / No Context",
+            Self::FastRise => "Rising",
+            Self::FastDrop => "Dropping",
+            Self::Background => "Any / No Context",
         }
     }
 
     /// Maximum number of stickers a user can have per category.
     pub fn max_count(self) -> i64 {
         match self {
-            Self::Low | Self::InRange | Self::High => 3,
-            Self::Other => 5,
+            Self::Low | Self::InRange | Self::High | Self::FastRise | Self::FastDrop => 3,
+            Self::Background => 5,
         }
     }
 
     /// Whether this category is contextual (tied to a glucose state).
     pub fn is_contextual(self) -> bool {
-        !matches!(self, Self::Other)
+        !matches!(self, Self::Background)
     }
 
     /// Contextual variants only (Low, InRange, High).
@@ -53,9 +58,16 @@ impl StickerCategory {
         &[Self::Low, Self::InRange, Self::High]
     }
 
-    /// All four variants.
+    /// All variants.
     pub fn all_variants() -> &'static [StickerCategory] {
-        &[Self::Low, Self::InRange, Self::High, Self::Other]
+        &[
+            Self::Low,
+            Self::InRange,
+            Self::High,
+            Self::FastRise,
+            Self::FastDrop,
+            Self::Background,
+        ]
     }
 }
 

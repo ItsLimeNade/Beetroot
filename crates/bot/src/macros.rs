@@ -5,7 +5,7 @@ macro_rules! send_error {
         use poise::serenity_prelude::{Colour, CreateEmbed};
 
         let embed = CreateEmbed::new()
-            .title(format!("❌ {}", $title))
+            .title(format!("{} {}", $crate::utils::emojis::ERROR, $title))
             .description($description)
             .color(Colour::RED);
 
@@ -25,7 +25,10 @@ macro_rules! get_db_user {
             Some(data) => data,
             None => {
                 let embed = CreateEmbed::new()
-                    .title("🔍 User Not Found")
+                    .title(format!(
+                        "{} User Not Found",
+                        $crate::utils::emojis::WIFI_OFF
+                    ))
                     .description("This user hasn't set up their Nightscout data yet.")
                     .footer(poise::serenity_prelude::CreateEmbedFooter::new(
                         "They need to run /setup first",
@@ -54,7 +57,10 @@ macro_rules! check_privacy {
 
         if !can_access {
             let embed = CreateEmbed::new()
-                .title("🔒 Access Denied")
+                .title(format!(
+                    "{} Access Denied",
+                    $crate::utils::emojis::LOCK_CLOSED
+                ))
                 .description("This user's profile is set to **Private**.")
                 .footer(poise::serenity_prelude::CreateEmbedFooter::new(
                     "Ask them to add you to their allowed list",
@@ -78,7 +84,10 @@ macro_rules! get_nightscout_client {
             Some(url) if !url.trim().is_empty() => url,
             _ => {
                 let embed = CreateEmbed::new()
-                    .title("⚠️ Configuration Missing")
+                    .title(format!(
+                        "{} Configuration Missing",
+                        $crate::utils::emojis::WARNING
+                    ))
                     .description("Nightscout URL is missing or empty.")
                     .field("How to fix", "Run `/setup` to configure your site.", false)
                     .color(Colour::RED);
@@ -127,12 +136,11 @@ macro_rules! verify_nightscout_connection {
                         client
                     };
 
-                    // UPDATED: .entries().sgv().list() -> .sgv().get()
                     client
                         .sgv()
                         .get()
                         .limit(1)
-                        .send() // Ensure .send() is called if query builder requires it to execute
+                        .send()
                         .await
                         .map_err(|e| anyhow::anyhow!(e))
                 },
@@ -140,7 +148,6 @@ macro_rules! verify_nightscout_connection {
             };
 
             if let Err(e) = check_result {
-                // ... error handling remains the same
                 $crate::send_error!(
                     $ctx,
                     "Connection Failed",

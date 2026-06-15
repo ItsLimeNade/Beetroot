@@ -1,4 +1,5 @@
 use crate::data::{Context, Error};
+use crate::utils::emojis;
 use macros::track_analytics;
 use poise::serenity_prelude as serenity;
 use serenity::all::{Colour, CreateAttachment, CreateEmbed, CreateEmbedFooter};
@@ -18,7 +19,7 @@ pub async fn a1c(ctx: Context<'_>) -> Result<(), Error> {
     let user_data = get_db_user!(ctx, user_id);
     let client = get_nightscout_client!(ctx, user_data);
 
-    ctx.defer().await?;
+    crate::tips::safe_defer(ctx).await?;
 
     let now = chrono::Utc::now();
     let lookback = chrono::Months::new(3);
@@ -78,7 +79,7 @@ pub async fn a1c(ctx: Context<'_>) -> Result<(), Error> {
                             data_gap.num_minutes() as f64 / 1440.0
                         );
                         embed = embed.field(
-                            "⚠️ Incomplete Data",
+                            format!("{} Incomplete Data", emojis::DATE_INVALID),
                             format!(
                                 "Data only goes back {:.0} days instead of ~90. \
                                  This estimate may be less accurate.",
@@ -108,7 +109,7 @@ pub async fn a1c(ctx: Context<'_>) -> Result<(), Error> {
                     embed = embed
                         .color(color)
                         .field(
-                            "Data Range",
+                            format!("{} Data Range", emojis::DATE_VALID),
                             format!(
                                 "<t:{}:D> → <t:{}:D>",
                                 oldest_utc.timestamp(),

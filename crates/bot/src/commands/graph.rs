@@ -1,7 +1,7 @@
 use crate::data::{Context, Error};
-use crate::stickers;
-use crate::stickers::overlay::{GraphCoordParams, overlay_stickers_on_graph};
 use crate::utils::duration_parser::parse_ago_duration;
+use crate::utils::sticker_assets;
+use crate::utils::theme_assets;
 use bonbon::prelude::*;
 use chrono::{Duration, Utc};
 use chrono_tz::Tz;
@@ -24,7 +24,7 @@ pub async fn graph(
     #[max = 24]
     hours: i64,
     #[description = "View another user's graph"] user: Option<serenity::User>,
-    #[description = "Look back in time (e.g. '30m', '2h', '1h30m'). The graph ends at this point"]
+    #[description = "Look back in time (e.g. '30s', '2h', '1d', '1w', '1mo', '1y'). The graph ends at this point"]
     #[rename = "at"]
     at_str: Option<String>,
 ) -> Result<(), Error> {
@@ -37,7 +37,7 @@ pub async fn graph(
 
     let client = get_nightscout_client!(ctx, user_data);
 
-    ctx.defer().await?;
+    crate::tips::safe_defer(ctx).await?;
 
     let lookback = if let Some(ref s) = at_str {
         match parse_ago_duration(s) {
@@ -46,7 +46,7 @@ pub async fn graph(
                 send_error!(
                     ctx,
                     "Invalid Time",
-                    "Could not parse the time. Use formats like `30m`, `2h`, `1h30m`."
+                    "Could not parse the time. Use formats like `30s`, `30m`, `2h`, `1d`, `1w`, `1mo`, `1y`, or combinations like `1h30m`."
                 );
                 return Ok(());
             }
@@ -78,30 +78,34 @@ pub async fn graph(
         return Ok(());
     }
 
-    // Extract targets and timezone from profile
-    let (target_low, target_high, user_tz) = profiles
+    // Extract targets, timezone, and unit preference from profile
+    let (target_low, target_high, user_tz, is_mmol) = profiles
         .as_ref()
         .and_then(|p| p.first())
         .and_then(|p| p.store.get(&p.default_profile_name))
         .map(|store| {
-            let low = store.target_low.first().map(|x| x.value).unwrap_or(80.0);
-            let high = store.target_high.first().map(|x| x.value).unwrap_or(180.0);
+            let low = store.target_low.first().map(|x| x.value).unwrap_or(4.0);
+            let high = store.target_high.first().map(|x| x.value).unwrap_or(10.0);
             let tz: Tz = store.timezone.parse().unwrap_or(chrono_tz::UTC);
-            (low as f32, high as f32, tz)
+            let mmol = store.units.starts_with("mmol");
+            let (low_mg, high_mg) = if mmol {
+                (low * 18.0, high * 18.0)
+            } else {
+                (low, high)
+            };
+            (low_mg as f32, high_mg as f32, tz, mmol)
         })
-        .unwrap_or((80.0, 180.0, chrono_tz::UTC));
-
-    let sgv_values: Vec<f32> = entries.iter().map(|e| e.sgv as f32).collect();
-    let entry_times: Vec<chrono::DateTime<Utc>> = entries
-        .iter()
-        .filter_map(|e| chrono::DateTime::from_timestamp_millis(e.date))
-        .collect();
+        .unwrap_or((72.0, 180.0, chrono_tz::UTC, false));
 
     let db = &ctx.data().database;
+    let theme =
+        theme_assets::resolve_user_theme(db, target_id.get(), user_data.active_theme.as_deref())
+            .await;
     let user_stickers = db.get_all_user_stickers(target_id.get()).await?;
+    let bonbon_stickers = sticker_assets::load_bonbon_stickers(&user_stickers).await;
 
-    let graph_width: u32 = 2550;
-    let graph_height: u32 = 1650;
+    let graph_width: u32 = 1275 * 2;
+    let graph_height: u32 = 825 * 2;
     let has_lookback = lookback.is_some();
     let custom_start = if has_lookback {
         Some(graph_end_time - Duration::hours(duration_hours))
@@ -109,7 +113,7 @@ pub async fn graph(
         None
     };
 
-    let mut graph_image = tokio::task::spawn_blocking(move || {
+    let graph_image = tokio::task::spawn_blocking(move || {
         let layout = LayoutConfig {
             width: graph_width,
             height: graph_height,
@@ -125,9 +129,9 @@ pub async fn graph(
                 default_max: 200.0,
             })
             .with_layout(layout)
-            .with_theme(Theme::dark())
+            .with_theme(theme)
             .with_units(UnitDisplay::Dual {
-                primary: UnitPreference::MgDl,
+                primary: if is_mmol { UnitPreference::MmolL } else { UnitPreference::MgDl },
             })
             .with_targets(target_low, target_high)
             .with_timezone(user_tz)
@@ -140,51 +144,16 @@ pub async fn graph(
             builder = builder.start_at(start);
         }
 
+        if !bonbon_stickers.is_empty() {
+            let stickers = StickerSet::new(bonbon_stickers.len().min(8))
+                .with_stickers(bonbon_stickers)
+                .with_graph_size_ratio(0.22);
+            builder = builder.with_stickers(stickers);
+        }
+
         builder.build().map_err(|e| anyhow::anyhow!(e.to_string()))
     })
     .await??;
-
-    if !user_stickers.is_empty() && !sgv_values.is_empty() {
-        let placements = stickers::generate_sticker_placements(
-            &sgv_values,
-            &user_stickers,
-            target_low,
-            target_high,
-        );
-
-        if !placements.is_empty() {
-            let (y_min, y_max) = compute_dynamic_y_range(&sgv_values, 40.0, 400.0, 60.0, 200.0);
-
-            let graph_end = if has_lookback {
-                graph_end_time
-            } else {
-                entry_times.iter().copied().max().unwrap_or(now)
-            };
-            let graph_start = graph_end - Duration::hours(duration_hours);
-
-            let coord_params = GraphCoordParams {
-                width: graph_width,
-                height: graph_height,
-                start_time: graph_start,
-                end_time: graph_end,
-                y_min,
-                y_max,
-                margin_left: None, // use bonbon defaults
-                margin_right: None,
-                margin_top: None,
-                margin_bottom: None,
-            };
-
-            overlay_stickers_on_graph(
-                &mut graph_image,
-                &placements,
-                &entry_times,
-                &sgv_values,
-                &coord_params,
-            )
-            .await?;
-        }
-    }
 
     let img_buffer = tokio::task::spawn_blocking(move || {
         let mut buffer = Vec::with_capacity(200_000);
@@ -210,31 +179,4 @@ pub async fn graph(
         .await?;
 
     Ok(())
-}
-
-/// Reproduce bonbon's Dynamic Y-axis scaling logic so we can accurately
-/// project glucose values to pixel coordinates for sticker placement.
-///
-/// bonbon's Dynamic scaling:
-/// - default_min / default_max define the normal visible range
-/// - If any entry goes below default_min or above default_max,
-///   the range expands to fit (clamped to clamp_min / clamp_max)
-pub fn compute_dynamic_y_range(
-    sgv_values: &[f32],
-    clamp_min: f32,
-    clamp_max: f32,
-    default_min: f32,
-    default_max: f32,
-) -> (f32, f32) {
-    if sgv_values.is_empty() {
-        return (default_min, default_max);
-    }
-
-    let data_min = sgv_values.iter().cloned().fold(f32::INFINITY, f32::min);
-    let data_max = sgv_values.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
-
-    let y_min = data_min.min(default_min).max(clamp_min);
-    let y_max = data_max.max(default_max).min(clamp_max);
-
-    (y_min, y_max)
 }

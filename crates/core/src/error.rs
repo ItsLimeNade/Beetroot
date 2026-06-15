@@ -14,6 +14,9 @@ pub enum CoreError {
 
     #[error("Serialization error: {0}")]
     Serde(#[from] serde_json::Error),
+
+    #[error("{0}")]
+    Other(String),
 }
 
 pub type CoreResult<T> = Result<T, CoreError>;

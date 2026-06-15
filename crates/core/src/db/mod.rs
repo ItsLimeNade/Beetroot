@@ -1,6 +1,7 @@
 mod analytics;
-mod session;
 mod sticker;
+mod theme;
+mod tips;
 mod user;
 
 pub use user::TokenUpdate;

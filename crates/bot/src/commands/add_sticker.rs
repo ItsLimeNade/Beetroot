@@ -1,5 +1,6 @@
 use crate::data::{Context, Error};
-use crate::stickers::overlay::validate_image_url;
+use crate::utils::emojis;
+use crate::utils::sticker_assets::validate_image_url;
 use beetroot_core::models::StickerCategory;
 use macros::track_analytics;
 use poise::serenity_prelude::{self as serenity, ComponentInteractionCollector};
@@ -26,7 +27,7 @@ pub async fn add_sticker(
     let db = &ctx.data().database;
     let user_id = ctx.author().id.get();
 
-    get_db_user!(ctx, user_id);
+    db.ensure_user_row(user_id).await?;
 
     let category = category_choice.into_model();
 
@@ -55,7 +56,7 @@ pub async fn add_sticker(
         return Ok(());
     }
 
-    ctx.defer_ephemeral().await?;
+    crate::tips::safe_defer_ephemeral(ctx).await?;
 
     if let Err(e) = validate_image_url(&url).await {
         send_error!(
@@ -76,7 +77,7 @@ pub async fn add_sticker(
         .await?;
 
     let embed = CreateEmbed::new()
-        .title("✅ Sticker Added")
+        .title(format!("{} Sticker Added", emojis::STICKER_ADD))
         .description(format!(
             "**{}** added to your **{}** stickers!\n\n\
             It will appear on your next `/graph` when your glucose is {}.",
@@ -98,6 +99,7 @@ pub async fn add_sticker(
     install_context = "Guild|User",
     interaction_context = "Guild|BotDm|PrivateChannel"
 )]
+#[track_analytics("add_sticker_context")]
 pub async fn add_sticker_context(
     ctx: Context<'_>,
     #[description = "Message to extract sticker from"] message: serenity::Message,
@@ -105,7 +107,7 @@ pub async fn add_sticker_context(
     let db = &ctx.data().database;
     let user_id = ctx.author().id.get();
 
-    get_db_user!(ctx, user_id);
+    db.ensure_user_row(user_id).await?;
 
     let (sticker_url, sticker_name) = match extract_sticker_from_message(&message) {
         Ok(result) => result,
@@ -124,7 +126,7 @@ pub async fn add_sticker_context(
         return Ok(());
     }
 
-    let buttons = vec![
+    let row_one = vec![
         CreateButton::new("sticker_cat_low")
             .label(format!("Low ({} max)", StickerCategory::Low.max_count()))
             .style(ButtonStyle::Danger),
@@ -137,19 +139,39 @@ pub async fn add_sticker_context(
         CreateButton::new("sticker_cat_high")
             .label(format!("High ({} max)", StickerCategory::High.max_count()))
             .style(ButtonStyle::Primary),
+    ];
+
+    let row_two = vec![
+        CreateButton::new("sticker_cat_rising")
+            .label(format!(
+                "Rising ({} max)",
+                StickerCategory::FastRise.max_count()
+            ))
+            .style(ButtonStyle::Primary),
+        CreateButton::new("sticker_cat_dropping")
+            .label(format!(
+                "Dropping ({} max)",
+                StickerCategory::FastDrop.max_count()
+            ))
+            .style(ButtonStyle::Primary),
         CreateButton::new("sticker_cat_other")
-            .label(format!("Any ({} max)", StickerCategory::Other.max_count()))
+            .label(format!(
+                "Any ({} max)",
+                StickerCategory::Background.max_count()
+            ))
             .style(ButtonStyle::Secondary),
     ];
 
     let embed = CreateEmbed::new()
-        .title("Select Sticker Category")
+        .title(format!("{} Select Sticker Category", emojis::STICKER_ADD))
         .description(format!(
             "Choose a category for **{}**:\n\n\
-            🔴 **Low** — Appears when glucose is below target\n\
-            🟢 **In Range** — Appears when glucose is in range\n\
-            🟠 **High** — Appears when glucose is above target\n\
-            ⚪ **Any** — Appears regardless of glucose state",
+            **Low** appears when glucose is below target\n\
+            **In Range** appears when glucose is in range\n\
+            **High** appears when glucose is above target\n\
+            **Rising** appears when glucose is trending up\n\
+            **Dropping** appears when glucose is trending down\n\
+            **Any** appears regardless of glucose state",
             sticker_name
         ))
         .thumbnail(&sticker_url)
@@ -159,7 +181,10 @@ pub async fn add_sticker_context(
         .send(
             poise::CreateReply::default()
                 .embed(embed)
-                .components(vec![CreateActionRow::Buttons(buttons)])
+                .components(vec![
+                    CreateActionRow::Buttons(row_one),
+                    CreateActionRow::Buttons(row_two),
+                ])
                 .ephemeral(true),
         )
         .await?;
@@ -174,7 +199,7 @@ pub async fn add_sticker_context(
 
     let Some(interaction) = interaction else {
         let expired_embed = CreateEmbed::new()
-            .title("⏰ Timed Out")
+            .title(format!("{} Timed Out", emojis::SYNC_PROBLEM))
             .description("Category selection expired. Use the command again to add a sticker.")
             .color(Colour::LIGHT_GREY);
 
@@ -193,14 +218,16 @@ pub async fn add_sticker_context(
         "sticker_cat_low" => StickerCategory::Low,
         "sticker_cat_inrange" => StickerCategory::InRange,
         "sticker_cat_high" => StickerCategory::High,
-        "sticker_cat_other" => StickerCategory::Other,
+        "sticker_cat_rising" => StickerCategory::FastRise,
+        "sticker_cat_dropping" => StickerCategory::FastDrop,
+        "sticker_cat_other" => StickerCategory::Background,
         _ => return Ok(()),
     };
 
     let count = db.get_sticker_count_by_category(user_id, category).await?;
     if count >= category.max_count() {
         let embed = CreateEmbed::new()
-            .title("❌ Category Full")
+            .title(format!("{} Category Full", emojis::ERROR))
             .description(format!(
                 "You already have {}/{} **{}** stickers.\n\
                 Use `/stickers` to remove one first.",
@@ -227,7 +254,7 @@ pub async fn add_sticker_context(
         .await?;
 
     let embed = CreateEmbed::new()
-        .title("✅ Sticker Added")
+        .title(format!("{} Sticker Added", emojis::STICKER_ADD))
         .description(format!(
             "**{}** added to your **{}** stickers!\n\n\
             It will appear on your next `/graph` when your glucose is {}.",
@@ -260,6 +287,10 @@ pub enum StickerCategoryChoice {
     InRange,
     #[name = "High (glucose above target)"]
     High,
+    #[name = "Rising (glucose trending up fast)"]
+    Rising,
+    #[name = "Dropping (glucose trending down fast)"]
+    Dropping,
     #[name = "Any / No Context"]
     Other,
 }
@@ -270,7 +301,9 @@ impl StickerCategoryChoice {
             Self::Low => StickerCategory::Low,
             Self::InRange => StickerCategory::InRange,
             Self::High => StickerCategory::High,
-            Self::Other => StickerCategory::Other,
+            Self::Rising => StickerCategory::FastRise,
+            Self::Dropping => StickerCategory::FastDrop,
+            Self::Other => StickerCategory::Background,
         }
     }
 }
@@ -330,6 +363,8 @@ fn category_condition_text(category: StickerCategory) -> &'static str {
         StickerCategory::Low => "below target",
         StickerCategory::InRange => "in range",
         StickerCategory::High => "above target",
-        StickerCategory::Other => "in any state",
+        StickerCategory::FastRise => "trending up fast",
+        StickerCategory::FastDrop => "trending down fast",
+        StickerCategory::Background => "in any state",
     }
 }

@@ -1,26 +1,16 @@
 use crate::crypto;
-use crate::error::CoreResult;
+use crate::error::{CoreError, CoreResult};
 use crate::models::user::{User, UserDecrypted};
 
 use super::Database;
 
-/// What to do with the Nightscout token during a settings update.
-///
-/// The settings form lets the user keep their existing token without
-/// re-entering it, replace it, or remove it entirely. Plain `Option<&str>`
-/// can't express "leave alone" vs "set to NULL", so we use this enum.
 pub enum TokenUpdate<'a> {
     Keep,
     Clear,
-    /// Encrypt this value and store it.
     Set(&'a str),
 }
 
 impl User {
-    /// Decrypt and resolve defaults, producing the in-memory view.
-    ///
-    /// This is where the `Option<>` fields from the raw SQL row get their
-    /// default values applied, matching the `DEFAULT` clauses in the schema.
     fn into_decrypted(self) -> CoreResult<UserDecrypted> {
         let nightscout_token = self
             .nightscout_token
@@ -44,18 +34,15 @@ impl User {
             microbolus_threshold: self.microbolus_threshold.unwrap_or(0.5),
             display_microbolus: self.display_microbolus.unwrap_or(true),
             force_ephemeral: self.force_ephemeral.unwrap_or(false),
-            mbg_expiry_time: self.mbg_expiry_time.unwrap_or(900),
+            mbg_expiry_time: self.mbg_expiry_time.unwrap_or(30),
             last_seen_version: self.last_seen_version,
+            bg_image_mode: self.bg_image_mode.unwrap_or(false),
+            active_theme: self.active_theme,
         })
     }
 }
 
-// Queries
-
 impl Database {
-    /// Fetch a single user by Discord ID, returning the decrypted view.
-    ///
-    /// Returns `Ok(None)` if the user doesn't exist.
     pub async fn get_user(&self, discord_id: u64) -> CoreResult<Option<UserDecrypted>> {
         let id = discord_id as i64;
 
@@ -67,7 +54,6 @@ impl Database {
         row.map(User::into_decrypted).transpose()
     }
 
-    /// Check whether a user row exists.
     pub async fn user_exists(&self, discord_id: u64) -> CoreResult<bool> {
         let id = discord_id as i64;
 
@@ -79,11 +65,6 @@ impl Database {
         Ok(exists.0 > 0)
     }
 
-    /// Insert or update a user's Nightscout configuration.
-    ///
-    /// This is the main "registration" path: if the user doesn't exist yet,
-    /// a new row is created with the given values. If they already exist,
-    /// only the Nightscout fields and `is_private` are overwritten.
     pub async fn update_user_nightscout(
         &self,
         discord_id: u64,
@@ -116,43 +97,23 @@ impl Database {
         Ok(())
     }
 
-    /// Persist all dashboard-managed user settings in one go.
-    ///
-    /// This is intended for the settings page: the user has filled in the
-    /// whole form and we overwrite everything they could change. The token
-    /// is handled separately via [`TokenUpdate`] so an unchanged form field
-    /// doesn't accidentally clear the stored token.
-    pub async fn update_user_settings(
+    pub async fn set_nightscout_url(&self, discord_id: u64, url: &str) -> CoreResult<()> {
+        let id = discord_id as i64;
+        sqlx::query("UPDATE users SET nightscout_url = ? WHERE discord_id = ?")
+            .bind(url)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn set_nightscout_token(
         &self,
         discord_id: u64,
-        nightscout_url: &str,
-        token_update: TokenUpdate<'_>,
-        is_private: bool,
-        microbolus_threshold: f64,
-        display_microbolus: bool,
-        force_ephemeral: bool,
+        update: TokenUpdate<'_>,
     ) -> CoreResult<()> {
         let id = discord_id as i64;
-
-        sqlx::query(
-            "UPDATE users SET
-                nightscout_url = ?,
-                is_private = ?,
-                microbolus_threshold = ?,
-                display_microbolus = ?,
-                force_ephemeral = ?
-             WHERE discord_id = ?",
-        )
-        .bind(nightscout_url)
-        .bind(is_private)
-        .bind(microbolus_threshold)
-        .bind(display_microbolus)
-        .bind(force_ephemeral)
-        .bind(id)
-        .execute(&self.pool)
-        .await?;
-
-        match token_update {
+        match update {
             TokenUpdate::Keep => {}
             TokenUpdate::Clear => {
                 sqlx::query("UPDATE users SET nightscout_token = NULL WHERE discord_id = ?")
@@ -169,31 +130,180 @@ impl Database {
                     .await?;
             }
         }
-
         Ok(())
     }
 
-    /// Mark the current changelog version as seen by this user.
-    ///
-    /// The dashboard reads this to decide whether to show the changelog
-    /// modal on next load.
+    pub async fn set_privacy(&self, discord_id: u64, is_private: bool) -> CoreResult<()> {
+        let id = discord_id as i64;
+        sqlx::query("UPDATE users SET is_private = ? WHERE discord_id = ?")
+            .bind(is_private)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn set_microbolus_threshold(
+        &self,
+        discord_id: u64,
+        threshold: f64,
+    ) -> CoreResult<()> {
+        let id = discord_id as i64;
+        sqlx::query("UPDATE users SET microbolus_threshold = ? WHERE discord_id = ?")
+            .bind(threshold)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn set_display_microbolus(&self, discord_id: u64, value: bool) -> CoreResult<()> {
+        let id = discord_id as i64;
+        sqlx::query("UPDATE users SET display_microbolus = ? WHERE discord_id = ?")
+            .bind(value)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn set_force_ephemeral(&self, discord_id: u64, value: bool) -> CoreResult<()> {
+        let id = discord_id as i64;
+        sqlx::query("UPDATE users SET force_ephemeral = ? WHERE discord_id = ?")
+            .bind(value)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn set_bg_image_mode(&self, discord_id: u64, value: bool) -> CoreResult<()> {
+        let id = discord_id as i64;
+        sqlx::query("UPDATE users SET bg_image_mode = ? WHERE discord_id = ?")
+            .bind(value)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn set_mbg_expiry_time(&self, discord_id: u64, value: i64) -> CoreResult<()> {
+        let id = discord_id as i64;
+        sqlx::query("UPDATE users SET mbg_expiry_time = ? WHERE discord_id = ?")
+            .bind(value)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn add_allowed_user(&self, discord_id: u64, target_id: u64) -> CoreResult<bool> {
+        self.modify_user_list(discord_id, "allowed_people", target_id, true)
+            .await
+    }
+
+    pub async fn remove_allowed_user(&self, discord_id: u64, target_id: u64) -> CoreResult<bool> {
+        self.modify_user_list(discord_id, "allowed_people", target_id, false)
+            .await
+    }
+
+    pub async fn add_blocked_user(&self, discord_id: u64, target_id: u64) -> CoreResult<bool> {
+        self.modify_user_list(discord_id, "blocked_people", target_id, true)
+            .await
+    }
+
+    pub async fn remove_blocked_user(&self, discord_id: u64, target_id: u64) -> CoreResult<bool> {
+        self.modify_user_list(discord_id, "blocked_people", target_id, false)
+            .await
+    }
+
+    async fn modify_user_list(
+        &self,
+        discord_id: u64,
+        column: &str,
+        target_id: u64,
+        add: bool,
+    ) -> CoreResult<bool> {
+        if column != "allowed_people" && column != "blocked_people" {
+            return Err(CoreError::Other(format!("invalid column: {column}")));
+        }
+
+        let id = discord_id as i64;
+
+        let read_sql = format!("SELECT {column} FROM users WHERE discord_id = ?");
+        let row: Option<(Option<String>,)> = sqlx::query_as(&read_sql)
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await?;
+
+        let raw = match row {
+            Some((value,)) => value.unwrap_or_else(|| "[]".to_string()),
+            None => return Ok(false),
+        };
+
+        let mut list: Vec<u64> = serde_json::from_str(&raw).unwrap_or_default();
+        let changed = if add {
+            if list.contains(&target_id) {
+                false
+            } else {
+                list.push(target_id);
+                true
+            }
+        } else {
+            let before = list.len();
+            list.retain(|v| *v != target_id);
+            list.len() != before
+        };
+
+        if changed {
+            let serialized = serde_json::to_string(&list)?;
+            let write_sql = format!("UPDATE users SET {column} = ? WHERE discord_id = ?");
+            sqlx::query(&write_sql)
+                .bind(serialized)
+                .bind(id)
+                .execute(&self.pool)
+                .await?;
+        }
+
+        Ok(changed)
+    }
+
+    pub async fn ensure_user_row(&self, discord_id: u64) -> CoreResult<()> {
+        let id = discord_id as i64;
+        sqlx::query("INSERT OR IGNORE INTO users (discord_id) VALUES (?)")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
     pub async fn update_user_last_seen_version(
         &self,
         discord_id: u64,
         version: &str,
     ) -> CoreResult<()> {
         let id = discord_id as i64;
-
         sqlx::query("UPDATE users SET last_seen_version = ? WHERE discord_id = ?")
             .bind(version)
             .bind(id)
             .execute(&self.pool)
             .await?;
-
         Ok(())
     }
 
-    /// Delete a user and (via CASCADE) all their stickers.
+    pub async fn increment_command_count(&self, discord_id: u64) -> CoreResult<u64> {
+        let id = discord_id as i64;
+
+        let row: Option<(i64,)> = sqlx::query_as(
+            "UPDATE users SET command_count = command_count + 1 WHERE discord_id = ? RETURNING command_count",
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(row.map(|(c,)| c as u64).unwrap_or(0))
+    }
+
     pub async fn delete_user(&self, discord_id: u64) -> CoreResult<()> {
         let id = discord_id as i64;
 
