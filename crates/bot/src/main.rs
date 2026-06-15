@@ -25,6 +25,10 @@ async fn main() -> anyhow::Result<()> {
 
     tracing::info!("[INIT] Starting Beetroot (Poise Refactor)");
 
+    // Fail closed: refuse to boot if token encryption isn't configured with a
+    // real secret, rather than silently deriving a key from public source code.
+    beetroot_core::crypto::init().context("token encryption is not configured")?;
+
     let options = poise::FrameworkOptions {
         commands: vec![
             commands::bg::bg(),
