@@ -20,6 +20,11 @@ pub async fn ephemeral(
 
     let db = &ctx.data().database;
     db.set_force_ephemeral(user_id, enabled).await?;
+    tracing::info!(
+        user = %crate::logging::redact(user_id),
+        enabled,
+        "force_ephemeral updated"
+    );
 
     let label = if enabled { "On" } else { "Off" };
     let body = if enabled {

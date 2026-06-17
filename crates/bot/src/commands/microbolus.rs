@@ -23,6 +23,7 @@ pub async fn microbolus(
     let _ = get_db_user!(ctx, user_id);
 
     if threshold.is_none() && display.is_none() {
+        tracing::debug!(user = %crate::logging::redact(user_id), "microbolus called with no fields");
         send_error!(
             ctx,
             "Nothing to Update",
@@ -37,11 +38,21 @@ pub async fn microbolus(
     if let Some(t) = threshold {
         let clamped = t.clamp(0.0, 50.0);
         db.set_microbolus_threshold(user_id, clamped).await?;
+        tracing::info!(
+            user = %crate::logging::redact(user_id),
+            threshold = clamped,
+            "microbolus threshold updated"
+        );
         lines.push(format!("Threshold set to **{} U**.", clamped));
     }
 
     if let Some(d) = display {
         db.set_display_microbolus(user_id, d).await?;
+        tracing::info!(
+            user = %crate::logging::redact(user_id),
+            display = d,
+            "microbolus display updated"
+        );
         let label = if d { "shown" } else { "hidden" };
         lines.push(format!(
             "Microboluses will be **{}** on your graphs.",

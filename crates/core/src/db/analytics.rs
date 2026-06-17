@@ -26,6 +26,7 @@ impl Database {
         .execute(&self.pool)
         .await?;
 
+        tracing::trace!(command, duration_ms = dur, "logged command execution");
         Ok(())
     }
 

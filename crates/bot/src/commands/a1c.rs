@@ -14,7 +14,7 @@ use tracing::{debug, warn};
 #[track_analytics("a1c")]
 pub async fn a1c(ctx: Context<'_>) -> Result<(), Error> {
     let user_id = ctx.author().id.get();
-    debug!("[a1c] invoked by user_id={}", user_id);
+    debug!(user = %crate::logging::redact(user_id), "computing 3-month A1C estimate");
 
     let user_data = get_db_user!(ctx, user_id);
     let client = get_nightscout_client!(ctx, user_data);
@@ -24,7 +24,7 @@ pub async fn a1c(ctx: Context<'_>) -> Result<(), Error> {
     let now = chrono::Utc::now();
     let lookback = chrono::Months::new(3);
     let ago = now - lookback;
-    debug!("[a1c] querying SGV from={} to={}", ago, now);
+    debug!(from = %ago, to = %now, "querying SGV window");
 
     let result = client.sgv().get().limit(120_000).from(ago).send().await;
 
@@ -44,14 +44,11 @@ pub async fn a1c(ctx: Context<'_>) -> Result<(), Error> {
 
     match result {
         Ok(entries) if !entries.is_empty() => {
-            debug!("[a1c] received {} SGV entries", entries.len());
             debug!(
-                "[a1c] newest entry date_string={:?}",
-                entries.first().map(|e| &e.date_string)
-            );
-            debug!(
-                "[a1c] oldest entry date_string={:?}",
-                entries.last().map(|e| &e.date_string)
+                count = entries.len(),
+                newest = ?entries.first().map(|e| &e.date_string),
+                oldest = ?entries.last().map(|e| &e.date_string),
+                "received SGV entries"
             );
 
             let tolerance = chrono::Duration::days(5);
@@ -64,19 +61,17 @@ pub async fn a1c(ctx: Context<'_>) -> Result<(), Error> {
                     let data_gap = oldest_utc - ago;
 
                     debug!(
-                        "[a1c] oldest_date={} ago={} data_gap={:.2}days tolerance={:.2}days insufficient_data={}",
-                        oldest_utc,
-                        ago,
-                        data_gap.num_minutes() as f64 / 1440.0,
-                        tolerance.num_minutes() as f64 / 1440.0,
-                        data_gap > tolerance,
+                        data_gap_days = data_gap.num_minutes() as f64 / 1440.0,
+                        tolerance_days = tolerance.num_minutes() as f64 / 1440.0,
+                        insufficient = data_gap > tolerance,
+                        "evaluated data coverage"
                     );
 
                     let has_warning = data_gap > tolerance;
                     if has_warning {
                         warn!(
-                            "[a1c] insufficient data coverage ({:.1} days missing) — adding warning field",
-                            data_gap.num_minutes() as f64 / 1440.0
+                            missing_days = data_gap.num_minutes() as f64 / 1440.0,
+                            "insufficient A1C data coverage, adding warning field"
                         );
                         embed = embed.field(
                             format!("{} Incomplete Data", emojis::DATE_INVALID),
@@ -93,12 +88,11 @@ pub async fn a1c(ctx: Context<'_>) -> Result<(), Error> {
                     let a1c = calc_a1c(eag);
 
                     debug!(
-                        "[a1c] entry_count={} eAG={:.1} a1c={:.1}% has_warning={}",
-                        entries.len(),
-                        eag,
-                        a1c,
-                        has_warning,
+                        count = entries.len(),
+                        has_warning, "computed A1C estimate"
                     );
+                    // eAG and A1C are the user's average glucose: medical data.
+                    crate::log_medical!(eag, a1c, "A1C estimate values");
 
                     let color = if has_warning {
                         Colour::from_rgb(235, 47, 47) // red - incomplete data
@@ -121,10 +115,7 @@ pub async fn a1c(ctx: Context<'_>) -> Result<(), Error> {
                         .field("A1C Estimation", format!("{:.1}%", a1c), true);
                 }
                 Err(e) => {
-                    warn!(
-                        "[a1c] failed to parse oldest entry date_string={:?} error={}",
-                        oldest_date_string, e
-                    );
+                    warn!(date_string = ?oldest_date_string, error = %e, "failed to parse oldest entry date");
                     send_error!(
                         ctx,
                         "Error Parsing Time",
@@ -135,18 +126,18 @@ pub async fn a1c(ctx: Context<'_>) -> Result<(), Error> {
             }
         }
         Ok(_) => {
-            debug!("[a1c] query returned 0 entries (empty Vec)");
+            debug!("query returned 0 entries");
             send_error!(ctx, "No Data", "No glucose data found.");
             return Ok(());
         }
         Err(e) => {
-            warn!("[a1c] nightscout SGV request failed: {}", e);
+            warn!(error = %e, "nightscout SGV request failed");
             send_error!(ctx, "No Data", "No glucose data found.");
             return Ok(());
         }
     }
 
-    debug!("[a1c] sending embed");
+    debug!("sending A1C embed");
     ctx.send(
         poise::CreateReply::default()
             .embed(embed)

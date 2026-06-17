@@ -20,6 +20,12 @@ pub async fn unblock(
 
     let db = &ctx.data().database;
     let removed = db.remove_blocked_user(author_id, user.id.get()).await?;
+    tracing::info!(
+        user = %crate::logging::redact(author_id),
+        target = %crate::logging::redact(user.id.get()),
+        changed = removed,
+        "block list: unblocked user"
+    );
 
     let embed = if removed {
         CreateEmbed::new()

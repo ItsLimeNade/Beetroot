@@ -20,6 +20,12 @@ pub async fn unallow(
 
     let db = &ctx.data().database;
     let removed = db.remove_allowed_user(author_id, user.id.get()).await?;
+    tracing::info!(
+        user = %crate::logging::redact(author_id),
+        target = %crate::logging::redact(user.id.get()),
+        changed = removed,
+        "allow list: removed user"
+    );
 
     let embed = if removed {
         CreateEmbed::new()

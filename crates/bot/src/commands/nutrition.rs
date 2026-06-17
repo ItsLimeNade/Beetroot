@@ -517,6 +517,7 @@ pub async fn nutrition(
         send_error!(ctx, "Empty Query", "Please provide a food name to look up.");
         return Ok(());
     }
+    debug!(query, "nutrition lookup requested");
 
     crate::tips::safe_defer(ctx).await?;
 
@@ -525,7 +526,7 @@ pub async fn nutrition(
     let token = match get_access_token(&http).await {
         Ok(t) => t,
         Err(e) => {
-            warn!("[nutrition] failed to get FatSecret token: {}", e);
+            warn!(error = %e, "failed to get FatSecret token");
             send_error!(
                 ctx,
                 "Service Unavailable",
@@ -538,13 +539,13 @@ pub async fn nutrition(
     let foods = match search_foods(&http, &token, query).await {
         Ok(f) => f,
         Err(e) => {
-            warn!("[nutrition] search failed: {}", e);
+            warn!(error = %e, "nutrition search failed");
             send_error!(ctx, "Search Failed", "Failed to reach nutrition service.");
             return Ok(());
         }
     };
 
-    debug!("[nutrition] query={:?} results={}", query, foods.len());
+    debug!(query, results = foods.len(), "nutrition search complete");
 
     if foods.is_empty() {
         send_error!(
@@ -562,10 +563,7 @@ pub async fn nutrition(
         match fetch_detail(&http, &token, &best.food_id).await {
             Ok(d) => Some(d),
             Err(e) => {
-                warn!(
-                    "[nutrition] detail fetch failed for {}: {}",
-                    best.food_id, e
-                );
+                warn!(food_id = %best.food_id, error = %e, "nutrition detail fetch failed");
                 None
             }
         };
@@ -608,7 +606,7 @@ pub async fn nutrition(
                 .log_command_execution("nutrition", __uid, __duration)
                 .await
             {
-                tracing::error!("Analytics Error [nutrition]: {}", e);
+                tracing::error!(error = %e, "failed to log nutrition analytics");
             }
         });
     }
@@ -663,7 +661,7 @@ pub async fn nutrition(
             let token = match get_access_token(&http).await {
                 Ok(t) => t,
                 Err(e) => {
-                    warn!("[nutrition] token refresh failed: {}", e);
+                    warn!(error = %e, "nutrition token refresh failed");
                     let _ = mci
                         .create_response(
                             &serenity_ctx,
@@ -685,7 +683,7 @@ pub async fn nutrition(
                     (embed, true)
                 }
                 Err(e) => {
-                    warn!("[nutrition] detail fetch failed for {}: {}", selected_id, e);
+                    warn!(food_id = %selected_id, error = %e, "nutrition detail fetch failed");
                     let fallback = foods.iter().find(|f| f.food_id == selected_id);
                     let Some(f) = fallback else {
                         let _ = mci

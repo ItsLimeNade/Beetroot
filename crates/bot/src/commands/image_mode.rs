@@ -21,6 +21,11 @@ pub async fn image_mode(
 
     let db = &ctx.data().database;
     db.set_bg_image_mode(user_id, enabled).await?;
+    tracing::info!(
+        user = %crate::logging::redact(user_id),
+        enabled,
+        "bg image mode updated"
+    );
 
     let label = if enabled { "On" } else { "Off" };
     let body = if enabled {

@@ -29,8 +29,12 @@ impl Database {
             .map_err(crate::error::CoreError::Database)?
             .create_if_missing(true);
 
+        tracing::debug!(url = %database_url, "opening sqlite pool");
         let pool = SqlitePool::connect_with(options).await?;
+
+        tracing::debug!("running migrations");
         sqlx::migrate!().run(&pool).await?;
+        tracing::info!("database ready (migrations up to date)");
 
         Ok(Self { pool })
     }

@@ -34,6 +34,12 @@ pub async fn add_sticker(
     // Check category limit
     let count = db.get_sticker_count_by_category(user_id, category).await?;
     if count >= category.max_count() {
+        tracing::debug!(
+            user = %crate::logging::redact(user_id),
+            category = category.display_name(),
+            count,
+            "sticker category full"
+        );
         send_error!(
             ctx,
             "Category Full",
@@ -48,6 +54,7 @@ pub async fn add_sticker(
     }
 
     if db.sticker_url_exists(user_id, &url).await? {
+        tracing::debug!(user = %crate::logging::redact(user_id), "duplicate sticker URL");
         send_error!(
             ctx,
             "Duplicate",
@@ -59,6 +66,7 @@ pub async fn add_sticker(
     crate::tips::safe_defer_ephemeral(ctx).await?;
 
     if let Err(e) = validate_image_url(&url).await {
+        tracing::warn!(error = %e, "sticker image URL validation failed");
         send_error!(
             ctx,
             "Invalid Image",
@@ -75,6 +83,11 @@ pub async fn add_sticker(
 
     db.insert_sticker(user_id, &url, &display_name, category)
         .await?;
+    tracing::info!(
+        user = %crate::logging::redact(user_id),
+        category = category.display_name(),
+        "sticker added"
+    );
 
     let embed = CreateEmbed::new()
         .title(format!("{} Sticker Added", emojis::STICKER_ADD))
@@ -112,6 +125,7 @@ pub async fn add_sticker_context(
     let (sticker_url, sticker_name) = match extract_sticker_from_message(&message) {
         Ok(result) => result,
         Err(e) => {
+            tracing::debug!(error = %e, "no sticker found in message");
             send_error!(ctx, "No Sticker Found", e.to_string());
             return Ok(());
         }
@@ -252,6 +266,11 @@ pub async fn add_sticker_context(
 
     db.insert_sticker(user_id, &sticker_url, &sticker_name, category)
         .await?;
+    tracing::info!(
+        user = %crate::logging::redact(user_id),
+        category = category.display_name(),
+        "sticker added (context menu)"
+    );
 
     let embed = CreateEmbed::new()
         .title(format!("{} Sticker Added", emojis::STICKER_ADD))

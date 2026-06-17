@@ -30,9 +30,12 @@ pub async fn changelog(ctx: Context<'_>) -> Result<(), Error> {
     // for the current version doesn't fire on top of this one.
     let user_id = ctx.author().id.get();
     let db = &ctx.data().database;
-    let _ = db
+    if let Err(e) = db
         .update_user_last_seen_version(user_id, CURRENT_VERSION)
-        .await;
+        .await
+    {
+        tracing::warn!(error = %e, "failed to update last-seen version");
+    }
 
     let total = CHANGELOG.len();
     let mut index = 0usize; // 0 == newest

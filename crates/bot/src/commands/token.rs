@@ -41,6 +41,8 @@ pub async fn token(
     match action {
         TokenAction::Remove => {
             db.set_nightscout_token(user_id, TokenUpdate::Clear).await?;
+            // Never log token values, even with LOG_SENSITIVE: they are credentials.
+            tracing::info!(user = %crate::logging::redact(user_id), "nightscout token cleared");
             let embed = CreateEmbed::new()
                 .title(format!("{} Token Removed", emojis::LOCK_OPEN))
                 .description("Your Nightscout token has been cleared.")
@@ -61,12 +63,15 @@ pub async fn token(
 
             let trimmed = data.token.trim();
             if trimmed.is_empty() {
+                tracing::debug!(user = %crate::logging::redact(user_id), "rejected empty token");
                 send_error!(ctx, "Empty Token", "The new token cannot be empty.");
                 return Ok(());
             }
 
             db.set_nightscout_token(user_id, TokenUpdate::Set(trimmed))
                 .await?;
+            // Log only that it changed, never the token value.
+            tracing::info!(user = %crate::logging::redact(user_id), "nightscout token replaced");
 
             let embed = CreateEmbed::new()
                 .title(format!("{} Token Updated", emojis::PASSWORD))

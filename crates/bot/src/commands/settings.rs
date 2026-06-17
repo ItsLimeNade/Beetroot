@@ -14,6 +14,15 @@ use serenity::all::{Colour, CreateEmbed};
 pub async fn settings(ctx: Context<'_>) -> Result<(), Error> {
     let user_id = ctx.author().id.get();
     let user_data = get_db_user!(ctx, user_id);
+    tracing::debug!(
+        user = %crate::logging::redact(user_id),
+        is_private = user_data.is_private,
+        has_url = user_data.nightscout_url.as_deref().is_some_and(|s| !s.trim().is_empty()),
+        has_token = user_data.nightscout_token.is_some(),
+        allowed = user_data.allowed_people.len(),
+        blocked = user_data.blocked_people.len(),
+        "settings viewed"
+    );
 
     let url_display = user_data
         .nightscout_url

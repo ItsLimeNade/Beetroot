@@ -22,6 +22,7 @@ pub async fn url(
     let parsed = match parse_and_normalize_url(&new_url) {
         Ok(u) => u,
         Err(e) => {
+            tracing::debug!(user = %crate::logging::redact(user_id), reason = %e, "rejected nightscout URL");
             send_error!(ctx, "Invalid URL", e);
             return Ok(());
         }
@@ -34,6 +35,11 @@ pub async fn url(
 
     let db = &ctx.data().database;
     db.set_nightscout_url(user_id, &url_str).await?;
+    tracing::info!(
+        user = %crate::logging::redact(user_id),
+        url = %crate::logging::redact(&url_str),
+        "nightscout URL updated"
+    );
 
     let embed = CreateEmbed::new()
         .title(format!("{} Nightscout URL Updated", emojis::WIFI_ADD))

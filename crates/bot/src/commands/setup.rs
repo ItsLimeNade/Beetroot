@@ -42,6 +42,11 @@ pub async fn setup(ctx: Context<'_>) -> Result<(), Error> {
     let url_obj = match parse_and_normalize_url(&modal_data.nightscout_url) {
         Ok(u) => u,
         Err(e) => {
+            tracing::debug!(
+                user = %crate::logging::redact(ctx.author().id.get()),
+                reason = %e,
+                "rejected nightscout URL during setup"
+            );
             send_error!(ctx, "Invalid URL", e);
             return Ok(());
         }
@@ -51,6 +56,12 @@ pub async fn setup(ctx: Context<'_>) -> Result<(), Error> {
 
     ctx.defer_ephemeral().await?;
 
+    tracing::debug!(
+        user = %crate::logging::redact(ctx.author().id.get()),
+        url = %crate::logging::redact(&url_str),
+        has_token = modal_data.nightscout_token.is_some(),
+        "verifying nightscout connection"
+    );
     verify_nightscout_connection!(ctx, &url_str, modal_data.nightscout_token.clone());
 
     show_privacy_selection(ctx, url_str, modal_data.nightscout_token).await?;
@@ -120,6 +131,12 @@ async fn show_privacy_selection(
 
         match update_result {
             Ok(_) => {
+                tracing::info!(
+                    user = %crate::logging::redact(ctx.author().id.get()),
+                    is_private,
+                    has_token = token.is_some(),
+                    "nightscout setup completed"
+                );
                 let privacy_text = if is_private { "Private" } else { "Public" };
                 let success_embed = CreateEmbed::new()
                     .title(format!("{} Setup Complete", emojis::CELEBRATION))
@@ -142,7 +159,11 @@ async fn show_privacy_selection(
                 .await?;
             }
             Err(e) => {
-                tracing::error!("Database error: {}", e);
+                tracing::error!(
+                    user = %crate::logging::redact(ctx.author().id.get()),
+                    error = %e,
+                    "failed to save nightscout setup"
+                );
                 mci.create_response(
                     ctx.serenity_context(),
                     CreateInteractionResponse::Message(

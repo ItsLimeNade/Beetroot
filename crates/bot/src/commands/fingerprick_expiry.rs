@@ -23,9 +23,17 @@ pub async fn fingerprick_expiry(
     let _ = get_db_user!(ctx, user_id);
 
     let clamped = minutes.clamp(1, 720);
+    if clamped != minutes {
+        tracing::debug!(requested = minutes, clamped, "fingerprick expiry out of range, clamped");
+    }
 
     let db = &ctx.data().database;
     db.set_mbg_expiry_time(user_id, clamped).await?;
+    tracing::info!(
+        user = %crate::logging::redact(user_id),
+        minutes = clamped,
+        "fingerprick expiry updated"
+    );
 
     let embed = CreateEmbed::new()
         .title(format!("{} Fingerprick Expiry Updated", emojis::WATER))

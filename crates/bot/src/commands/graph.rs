@@ -43,6 +43,7 @@ pub async fn graph(
         match parse_ago_duration(s) {
             Some(d) => Some(d),
             None => {
+                tracing::debug!(input = %s, "could not parse 'at' duration");
                 send_error!(
                     ctx,
                     "Invalid Time",
@@ -65,11 +66,24 @@ pub async fn graph(
     };
 
     let start_time = graph_end_time - Duration::hours(duration_hours) - Duration::minutes(15);
+    tracing::debug!(
+        target_user = %crate::logging::redact(target_id.get()),
+        hours = duration_hours,
+        has_lookback = lookback.is_some(),
+        "rendering glucose graph"
+    );
 
     let (entries, treatments, profiles) =
         fetch_graph_data!(ctx, client, start_time, graph_end_time);
+    tracing::debug!(
+        entries = entries.len(),
+        treatments = treatments.len(),
+        has_profiles = profiles.is_some(),
+        "fetched graph data"
+    );
 
     if entries.is_empty() {
+        tracing::debug!("no SGV entries in window");
         send_error!(
             ctx,
             "No Data",
@@ -97,12 +111,16 @@ pub async fn graph(
         })
         .unwrap_or((72.0, 180.0, chrono_tz::UTC, false));
 
+    tracing::debug!(tz = %user_tz, is_mmol, "resolved profile settings");
+    crate::log_medical!(target_low, target_high, is_mmol, "graph target range");
+
     let db = &ctx.data().database;
     let theme =
         theme_assets::resolve_user_theme(db, target_id.get(), user_data.active_theme.as_deref())
             .await;
     let user_stickers = db.get_all_user_stickers(target_id.get()).await?;
     let bonbon_stickers = sticker_assets::load_bonbon_stickers(&user_stickers).await;
+    tracing::debug!(stickers = bonbon_stickers.len(), "assets resolved, rendering image");
 
     let graph_width: u32 = 1275 * 2;
     let graph_height: u32 = 825 * 2;

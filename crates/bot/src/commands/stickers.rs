@@ -26,6 +26,11 @@ pub async fn stickers(ctx: Context<'_>) -> Result<(), Error> {
     let user_id = ctx.author().id.get();
 
     let mut current = db.get_all_user_stickers(user_id).await?;
+    tracing::debug!(
+        user = %crate::logging::redact(user_id),
+        count = current.len(),
+        "stickers management opened"
+    );
 
     if current.is_empty() {
         let embed = empty_embed();
@@ -56,6 +61,11 @@ pub async fn stickers(ctx: Context<'_>) -> Result<(), Error> {
         match interaction.data.custom_id.as_str() {
             "stickers_clear" => {
                 db.clear_user_stickers(user_id).await?;
+                tracing::info!(
+                    user = %crate::logging::redact(user_id),
+                    removed = current.len(),
+                    "cleared all stickers"
+                );
                 current.clear();
                 interaction
                     .create_response(
@@ -84,6 +94,11 @@ pub async fn stickers(ctx: Context<'_>) -> Result<(), Error> {
                 };
 
                 db.delete_user_sticker(user_id, sticker_id).await?;
+                tracing::info!(
+                    user = %crate::logging::redact(user_id),
+                    sticker_id,
+                    "removed sticker"
+                );
                 current.retain(|s| s.id != sticker_id);
 
                 let response = if current.is_empty() {

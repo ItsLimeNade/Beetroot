@@ -66,6 +66,11 @@ pub async fn tir(
 
     let now = Utc::now();
     let start_time = now - Duration::days(period.days());
+    tracing::debug!(
+        target_user = %crate::logging::redact(target_id.get()),
+        period_days = period.days(),
+        "rendering time-in-range card"
+    );
 
     let entries = match client
         .sgv()
@@ -75,8 +80,12 @@ pub async fn tir(
         .send()
         .await
     {
-        Ok(e) => e,
+        Ok(e) => {
+            tracing::debug!(count = e.len(), "fetched SGV entries");
+            e
+        }
         Err(e) => {
+            tracing::warn!(error = %e, "nightscout SGV request failed");
             send_error!(
                 ctx,
                 "Fetch Error",
@@ -87,6 +96,7 @@ pub async fn tir(
     };
 
     if entries.is_empty() {
+        tracing::debug!("no SGV entries in window");
         send_error!(
             ctx,
             "No Data",
@@ -116,6 +126,9 @@ pub async fn tir(
         })
         .unwrap_or((72.0, 180.0, false));
 
+    tracing::debug!(is_mmol, "resolved target range from profile");
+    crate::log_medical!(target_low, target_high, is_mmol, "TIR target range");
+
     let db = &ctx.data().database;
     let theme =
         theme_assets::resolve_user_theme(db, target_id.get(), user_data.active_theme.as_deref())
@@ -123,6 +136,11 @@ pub async fn tir(
 
     let user_stickers = db.get_all_user_stickers(target_id.get()).await?;
     let bonbon_stickers = sticker_assets::load_bonbon_stickers(&user_stickers).await;
+    tracing::debug!(
+        stickers = bonbon_stickers.len(),
+        theme = user_data.active_theme.as_deref().unwrap_or("default"),
+        "assets resolved, rendering image"
+    );
 
     let period_label = period.label().to_string();
 

@@ -29,6 +29,11 @@ pub async fn privacy(
     let is_private = matches!(mode, PrivacyMode::Private);
     let db = &ctx.data().database;
     db.set_privacy(user_id, is_private).await?;
+    tracing::info!(
+        user = %crate::logging::redact(user_id),
+        is_private,
+        "privacy visibility updated"
+    );
 
     let (icon, label, description) = if is_private {
         (

@@ -307,10 +307,13 @@ impl Database {
     pub async fn delete_user(&self, discord_id: u64) -> CoreResult<()> {
         let id = discord_id as i64;
 
-        sqlx::query("DELETE FROM users WHERE discord_id = ?")
+        let result = sqlx::query("DELETE FROM users WHERE discord_id = ?")
             .bind(id)
             .execute(&self.pool)
             .await?;
+
+        // No user id here: core stays PII-free in logs.
+        tracing::debug!(rows = result.rows_affected(), "deleted user row (cascades stickers/themes)");
 
         Ok(())
     }

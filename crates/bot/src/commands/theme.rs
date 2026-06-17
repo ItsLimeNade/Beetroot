@@ -122,6 +122,11 @@ pub async fn set(
     };
 
     db.set_active_theme(user_id, Some(&selector)).await?;
+    tracing::info!(
+        user = %crate::logging::redact(user_id),
+        theme = %selector,
+        "active theme set"
+    );
 
     let embed = CreateEmbed::new()
         .title(format!("{} Theme Applied", emojis::CELEBRATION))
@@ -187,6 +192,12 @@ pub async fn create(
         );
         return Ok(());
     }
+    tracing::info!(
+        user = %crate::logging::redact(user_id),
+        theme = %name,
+        base = base.builtin_name(),
+        "custom theme created"
+    );
 
     let embed = CreateEmbed::new()
         .title(format!("{} Theme Created", emojis::CELEBRATION))
@@ -235,6 +246,12 @@ pub async fn edit(
     };
 
     db.update_theme_data(user_id, name, &updated).await?;
+    tracing::info!(
+        user = %crate::logging::redact(user_id),
+        theme = %name,
+        field = field.key(),
+        "theme field updated"
+    );
 
     let embed = CreateEmbed::new()
         .title(format!("{} Theme Updated", emojis::IMAGE_MODE))
@@ -275,9 +292,16 @@ pub async fn delete(
 
     // If the deleted theme was active, fall back to the default.
     let active = db.get_user(user_id).await?.and_then(|u| u.active_theme);
-    if active.as_deref() == Some(&format!("custom:{}", name)) {
+    let was_active = active.as_deref() == Some(&format!("custom:{}", name));
+    if was_active {
         db.set_active_theme(user_id, None).await?;
     }
+    tracing::info!(
+        user = %crate::logging::redact(user_id),
+        theme = %name,
+        reset_active = was_active,
+        "custom theme deleted"
+    );
 
     let embed = CreateEmbed::new()
         .title(format!("{} Theme Deleted", emojis::REMOVE_USER))
@@ -378,6 +402,11 @@ pub async fn import(
         );
         return Ok(());
     }
+    tracing::info!(
+        user = %crate::logging::redact(user_id),
+        theme = %name,
+        "theme imported from file"
+    );
 
     let embed = CreateEmbed::new()
         .title(format!("{} Theme Imported", emojis::CELEBRATION))
