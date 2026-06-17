@@ -4,6 +4,11 @@ target/
 
 # database
 beetroot.db
+data/
+*.bak-*
+
+# logs (may contain identifiers / medical data when LOG_SENSITIVE is on)
+logs/
 
 # environment variables
 .env
