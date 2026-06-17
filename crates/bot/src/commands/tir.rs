@@ -1,5 +1,4 @@
 use crate::data::{Context, Error};
-use crate::utils::sticker_assets;
 use crate::utils::theme_assets;
 use bonbon::prelude::*;
 use chrono::{Duration, Utc};
@@ -137,10 +136,7 @@ pub async fn tir(
         theme_assets::resolve_user_theme(db, target_id.get(), user_data.active_theme.as_deref())
             .await;
 
-    let user_stickers = db.get_all_user_stickers(target_id.get()).await?;
-    let bonbon_stickers = sticker_assets::load_bonbon_stickers(&user_stickers).await;
     tracing::debug!(
-        stickers = bonbon_stickers.len(),
         theme = user_data.active_theme.as_deref().unwrap_or("default"),
         "assets resolved, rendering image"
     );
@@ -150,7 +146,7 @@ pub async fn tir(
     let tir_image = tokio::task::spawn_blocking(move || {
         let graph_entries: Vec<GraphEntry> = entries.into_iter().map(GraphEntry::from).collect();
 
-        let mut builder = TimeInRangeBuilder::new()
+        let builder = TimeInRangeBuilder::new()
             .with_entries(graph_entries)
             .with_targets(target_low, target_high)
             .with_units(UnitDisplay::Dual {
@@ -164,13 +160,6 @@ pub async fn tir(
             .with_extremes(true)
             .with_theme(theme)
             .with_scale(2.0);
-
-        if !bonbon_stickers.is_empty() {
-            let set = StickerSet::new(bonbon_stickers.len().min(6))
-                .with_stickers(bonbon_stickers)
-                .with_card_alpha(0.4);
-            builder = builder.with_stickers(set);
-        }
 
         builder.build().map_err(|e| anyhow::anyhow!(e.to_string()))
     })

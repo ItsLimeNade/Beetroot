@@ -26,6 +26,13 @@ pub async fn info(ctx: Context<'_>) -> Result<(), Error> {
              toward keeping it running!",
         )
         .field(
+            format!("{} Not medical advice", emojis::WARNING),
+            "**Beetroot is not a medical device and does not give medical advice.** Readings can be \
+             delayed, missing, or wrong. Never make a treatment decision based on Beetroot alone: \
+             confirm with a blood glucose meter and follow your healthcare provider's guidance.",
+            false,
+        )
+        .field(
             format!("{} Support", emojis::KOFI_LOGO),
             "[Ko-fi](https://ko-fi.com/limenade)",
             false,

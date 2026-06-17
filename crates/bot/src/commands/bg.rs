@@ -1,7 +1,6 @@
 use crate::data::{Context, Error};
 use crate::utils::duration_parser::parse_ago_duration;
 use crate::utils::emojis;
-use crate::utils::sticker_assets;
 use crate::utils::theme_assets;
 use bonbon::prelude::*;
 use cinnamon::models::properties::PropertyType;
@@ -264,23 +263,11 @@ pub async fn bg(
             user_data.active_theme.as_deref(),
         )
         .await;
-        let user_stickers = db.get_all_user_stickers(target_id.get()).await?;
-        let bonbon_stickers = sticker_assets::load_bonbon_stickers(&user_stickers).await;
-
         let img_buffer = tokio::task::spawn_blocking(move || {
-            let mut builder = BgCardBuilder::new()
+            let builder = BgCardBuilder::new()
                 .with_data(data)
                 .with_theme(theme)
                 .with_scale(4.0);
-
-            if !bonbon_stickers.is_empty() {
-                let mut set =
-                    StickerSet::new(bonbon_stickers.len().min(6)).with_stickers(bonbon_stickers);
-                if let Some(rate) = current_rate {
-                    set = set.with_current_rate(rate);
-                }
-                builder = builder.with_stickers(set);
-            }
 
             let img = builder
                 .build()
@@ -605,14 +592,14 @@ fn pick_info_pill(
     if sgv_mgdl < 55.0 {
         return Some(make(
             builtin_icons::WARNING,
-            "Treat now",
+            "Severe low, verify reading",
             PillState::AlertLow,
         ));
     }
     if sgv_mgdl > 250.0 {
         return Some(make(
             builtin_icons::WARNING,
-            "Very high",
+            "Very high, verify reading",
             PillState::AlertHigh,
         ));
     }
@@ -620,14 +607,14 @@ fn pick_info_pill(
     if age_min > 30 {
         return Some(make(
             builtin_icons::FINGERPRICK,
-            "Fingerprick",
+            "Confirm with fingerstick",
             PillState::AlertHigh,
         ));
     }
     if age_min > 15 {
         return Some(make(
             builtin_icons::WARNING,
-            "Stale data",
+            "Reading may be outdated",
             PillState::Normal,
         ));
     }
@@ -640,32 +627,40 @@ fn pick_info_pill(
         return Some(match (status, rising) {
             (GlucoseStatus::Low, false) => make(
                 builtin_icons::FAST_DROP,
-                "Falling fast",
+                "Dropping fast, monitor",
                 PillState::AlertLow,
             ),
             (GlucoseStatus::High, true) => make(
                 builtin_icons::FAST_RISE,
-                "Rising fast",
+                "Rising fast, monitor",
                 PillState::AlertHigh,
             ),
             (GlucoseStatus::Low, true) => {
-                make(builtin_icons::FAST_RISE, "Recovering", PillState::Normal)
+                make(builtin_icons::FAST_RISE, "Recovering, keep watch", PillState::Normal)
             }
             (GlucoseStatus::High, false) => {
-                make(builtin_icons::FAST_DROP, "Coming down", PillState::Normal)
+                make(builtin_icons::FAST_DROP, "Coming down, keep watch", PillState::Normal)
             }
             (GlucoseStatus::InRange, true) => {
-                make(builtin_icons::FAST_RISE, "Rising", PillState::AlertHigh)
+                make(builtin_icons::FAST_RISE, "Trending up, monitor", PillState::AlertHigh)
             }
             (GlucoseStatus::InRange, false) => {
-                make(builtin_icons::FAST_DROP, "Falling", PillState::AlertLow)
+                make(builtin_icons::FAST_DROP, "Trending down, watch lows", PillState::AlertLow)
             }
         });
     }
 
     match status {
-        GlucoseStatus::Low => Some(make(builtin_icons::WARNING, "Low", PillState::AlertLow)),
-        GlucoseStatus::High => Some(make(builtin_icons::WARNING, "High", PillState::AlertHigh)),
+        GlucoseStatus::Low => Some(make(
+            builtin_icons::WARNING,
+            "Low, confirm reading",
+            PillState::AlertLow,
+        )),
+        GlucoseStatus::High => Some(make(
+            builtin_icons::WARNING,
+            "High, keep monitoring",
+            PillState::AlertHigh,
+        )),
         GlucoseStatus::InRange => None,
     }
 }

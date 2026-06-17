@@ -146,6 +146,14 @@ async fn show_privacy_selection(
                         url,
                         privacy_text
                     ))
+                    .field(
+                        format!("{} Not medical advice", emojis::WARNING),
+                        "**Beetroot is not a medical device and does not give medical advice.** \
+                         Readings can be delayed or wrong. Always confirm with a blood glucose \
+                         meter and follow your healthcare provider before making any treatment \
+                         decision.",
+                        false,
+                    )
                     .color(Colour::DARK_GREEN);
 
                 mci.create_response(

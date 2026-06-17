@@ -173,7 +173,8 @@ pub async fn graph(
         if !bonbon_stickers.is_empty() {
             let stickers = StickerSet::new(bonbon_stickers.len().min(8))
                 .with_stickers(bonbon_stickers)
-                .with_graph_size_ratio(0.22);
+                .with_graph_size_ratio(0.22)
+                .with_graph_alpha(0.4);
             builder = builder.with_stickers(stickers);
         }
 
