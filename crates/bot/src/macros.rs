@@ -50,12 +50,25 @@ macro_rules! check_privacy {
         use poise::serenity_prelude::{Colour, CreateEmbed};
         let author_id = $ctx.author().id;
 
-        // Logic: Self OR Public OR Allowed
-        let can_access = ($target_id == author_id)
-            || !$user_data.is_private
-            || $user_data.allowed_people.contains(&author_id.get());
+        let is_self = $target_id == author_id;
+        // A block overrides everything except the owner viewing their own data:
+        // a blocked user must not reach a public profile or one they were
+        // previously allowed on.
+        let is_blocked = $user_data.blocked_people.contains(&author_id.get());
+
+        let can_access = is_self
+            || (!is_blocked
+                && (!$user_data.is_private
+                    || $user_data.allowed_people.contains(&author_id.get())));
 
         if !can_access {
+            tracing::debug!(
+                target_user = %$crate::logging::redact($target_id.get()),
+                viewer = %$crate::logging::redact(author_id.get()),
+                blocked = is_blocked,
+                "privacy check denied access"
+            );
+
             let embed = CreateEmbed::new()
                 .title(format!(
                     "{} Access Denied",
