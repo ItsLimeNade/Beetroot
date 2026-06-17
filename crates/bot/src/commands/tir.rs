@@ -92,7 +92,7 @@ pub async fn tir(
             send_error!(
                 ctx,
                 "Fetch Error",
-                format!("Failed to retrieve glucose data: {}", e)
+                "Could not retrieve glucose data. Please try again in a moment."
             );
             return Ok(());
         }

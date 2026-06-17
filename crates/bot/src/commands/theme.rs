@@ -367,10 +367,11 @@ pub async fn import(
     let bytes = match file.download().await {
         Ok(b) => b,
         Err(e) => {
+            tracing::warn!(error = %e, "theme file download failed");
             send_error!(
                 ctx,
                 "Download Failed",
-                format!("Couldn't read the file: {}", e)
+                "Couldn't read the uploaded file. Please try again."
             );
             return Ok(());
         }

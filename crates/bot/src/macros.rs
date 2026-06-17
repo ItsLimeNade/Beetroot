@@ -117,10 +117,11 @@ macro_rules! get_nightscout_client {
         match client_res {
             Ok(client) => client,
             Err(e) => {
+                tracing::warn!(error = %e, "failed to build Nightscout client");
                 $crate::send_error!(
                     $ctx,
                     "Client Error",
-                    format!("Failed to connect to Nightscout:\n`{}`", e)
+                    "Could not connect to Nightscout. Run `/setup` to check your site URL."
                 );
                 return Ok(());
             }
@@ -150,13 +151,11 @@ macro_rules! verify_nightscout_connection {
             };
 
             if let Err(e) = check_result {
+                tracing::warn!(error = %e, "Nightscout connection check failed");
                 $crate::send_error!(
                     $ctx,
                     "Connection Failed",
-                    format!(
-                        "Could not connect to Nightscout.\n\n**Error:** `{}`\n\n**Troubleshooting:**\n• Is the URL correct?\n• Is the site online?\n• Is the token valid?",
-                        e
-                    )
+                    "Could not connect to Nightscout.\n\n**Troubleshooting:**\n• Is the URL correct?\n• Is the site online?\n• Is the token valid?"
                 );
                 return Ok(());
             }
@@ -182,10 +181,11 @@ macro_rules! fetch_graph_data {
         let entries = match entries_res {
             Ok(e) => e,
             Err(e) => {
+                tracing::warn!(error = %e, "failed to fetch glucose entries");
                 $crate::send_error!(
                     $ctx,
                     "Fetch Error",
-                    format!("Failed to retrieve glucose data: {}", e)
+                    "Could not retrieve glucose data. Please try again in a moment."
                 );
                 return Ok(());
             }
