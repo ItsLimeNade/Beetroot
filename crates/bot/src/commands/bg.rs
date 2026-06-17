@@ -30,9 +30,10 @@ pub async fn bg(
 
     let user_data = get_db_user!(ctx, target_id.get());
 
-    println!(
-        "[bg] fired - user={} bg_image_mode={}",
-        target_id, user_data.bg_image_mode
+    tracing::debug!(
+        target_user = %crate::logging::redact(target_id.get()),
+        image_mode = user_data.bg_image_mode,
+        "bg dispatch"
     );
 
     check_privacy!(ctx, target_id, user_data);
@@ -108,15 +109,16 @@ pub async fn bg(
         let profile_fut = profiles_builder.get();
         let (properties_result, profile_result) = tokio::join!(properties_fut, profile_fut);
 
-        println!("[bg/image] ===== RAW DATA DUMP =====");
-        println!(
-            "[bg/image] sparkline entries ({} total):\n{:#?}",
-            sparkline_entries.len(),
-            sparkline_entries
+        tracing::debug!(
+            sparkline_entries = sparkline_entries.len(),
+            "bg/image data fetched"
         );
-        println!("[bg/image] properties:\n{:#?}", properties_result);
-        println!("[bg/image] profiles:\n{:#?}", profile_result);
-        println!("[bg/image] ===========================");
+        crate::log_medical!(
+            sparkline = ?sparkline_entries,
+            properties = ?properties_result,
+            profiles = ?profile_result,
+            "bg/image raw data dump"
+        );
 
         let (target_low, target_high, is_mmol) = if let Ok(profiles) = profile_result {
             if let Some(profile) = profiles.first() {
@@ -380,12 +382,14 @@ pub async fn bg(
     let (properties_result, profile_result, custom_title) =
         tokio::join!(properties_fut, profile_fut, status_fut);
 
-    println!("[bg] ===== RAW DATA DUMP =====");
-    println!("[bg] entries ({} total):\n{:#?}", entries.len(), entries);
-    println!("[bg] properties:\n{:#?}", properties_result);
-    println!("[bg] profiles:\n{:#?}", profile_result);
-    println!("[bg] custom_title:\n{:#?}", custom_title);
-    println!("[bg] ===========================");
+    tracing::debug!(entries = entries.len(), "bg data fetched");
+    crate::log_medical!(
+        entries = ?entries,
+        properties = ?properties_result,
+        profiles = ?profile_result,
+        custom_title = ?custom_title,
+        "bg raw data dump"
+    );
 
     let entry = &entries[0];
     let prev_entry = entries.get(1);
@@ -512,8 +516,7 @@ pub async fn bg(
             client.treatments().get().from(since).limit(10).send()
         );
 
-        println!("[bg] mbg:\n{:#?}", mbg_res);
-        println!("[bg] bgcheck:\n{:#?}", bgcheck_res);
+        crate::log_medical!(mbg = ?mbg_res, bgcheck = ?bgcheck_res, "bg fingerprick lookup");
 
         let from_mbg = mbg_res.ok().and_then(|list| {
             list.into_iter().next().and_then(|mbg| {

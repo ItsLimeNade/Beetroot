@@ -9,7 +9,12 @@ pub async fn on_error(error: poise::FrameworkError<'_, Data, Error>) {
             panic!("Failed to start bot: {:?}", error);
         }
         poise::FrameworkError::Command { error, ctx, .. } => {
-            tracing::error!("Error in command '{}': {:?}", ctx.command().name, error);
+            tracing::error!(
+                cmd = %ctx.command().qualified_name,
+                user = %crate::logging::redact(ctx.author().id.get()),
+                error = ?error,
+                "command failed"
+            );
 
             //TODO Make a better error embed later.
             let _ = ctx
@@ -36,9 +41,24 @@ pub async fn event_handler(
     _data: &Data,
 ) -> Result<(), Error> {
     if let serenity::FullEvent::Ready { data_about_bot, .. } = event {
-        tracing::info!("[BOT] {} is ready and connected!", data_about_bot.user.name);
+        tracing::info!(
+            bot = %data_about_bot.user.name,
+            guilds = data_about_bot.guilds.len(),
+            "gateway ready"
+        );
     }
     Ok(())
+}
+
+/// Called before every command. Logs the invocation, then runs the tip hook.
+pub async fn pre_command(ctx: Context<'_>) {
+    tracing::info!(
+        cmd = %ctx.command().qualified_name,
+        user = %crate::logging::redact(ctx.author().id.get()),
+        "command invoked"
+    );
+
+    crate::tips::pre_command_hook(ctx).await;
 }
 
 /// Called after every successful command execution.
@@ -46,8 +66,8 @@ pub async fn post_command(ctx: Context<'_>) {
     crate::changelog::post_command_hook(ctx).await;
 
     tracing::debug!(
-        "Executed command {} by {}",
-        ctx.command().name,
-        ctx.author().name
+        cmd = %ctx.command().qualified_name,
+        user = %crate::logging::redact(ctx.author().id.get()),
+        "command completed"
     );
 }

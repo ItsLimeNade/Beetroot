@@ -5,6 +5,7 @@ mod changelog;
 mod commands;
 mod data;
 mod events;
+mod logging;
 mod tips;
 mod utils;
 
@@ -16,14 +17,16 @@ use std::env;
 async fn main() -> anyhow::Result<()> {
     dotenvy::dotenv().ok();
 
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("beetroot=debug,info")),
-        )
-        .init();
+    // Keep the appender guards alive for the whole run so file logs are flushed.
+    let _log_guards = logging::init();
 
-    tracing::info!("[INIT] Starting Beetroot (Poise Refactor)");
+    tracing::info!(version = env!("CARGO_PKG_VERSION"), "starting Beetroot");
+    if logging::sensitive() {
+        tracing::warn!(
+            "LOG_SENSITIVE is ON: logs will include Discord identifiers and raw \
+             medical-data dumps. Do NOT enable this on a public/shared deployment."
+        );
+    }
 
     // Fail closed: refuse to boot if token encryption isn't configured with a
     // real secret, rather than silently deriving a key from public source code.
@@ -62,7 +65,7 @@ async fn main() -> anyhow::Result<()> {
             Box::pin(events::event_handler(ctx, event, framework, data))
         },
         on_error: |error| Box::pin(events::on_error(error)),
-        pre_command: |ctx| Box::pin(tips::pre_command_hook(ctx)),
+        pre_command: |ctx| Box::pin(events::pre_command(ctx)),
         post_command: |ctx| Box::pin(events::post_command(ctx)),
 
         ..Default::default()
@@ -73,10 +76,14 @@ async fn main() -> anyhow::Result<()> {
         .setup(|ctx, _ready, framework| {
             Box::pin(async move {
                 poise::builtins::register_globally(ctx, &framework.options().commands).await?;
-                tracing::info!("[CMD] Slash commands registered");
+                tracing::info!(
+                    count = framework.options().commands.len(),
+                    "slash commands registered"
+                );
 
                 let db_url = env::var("DATABASE_URL").expect("Missing DATABASE_URL");
                 let database = beetroot_core::Database::connect(&db_url).await?;
+                tracing::info!("database connected and migrated");
 
                 Ok(data::Data { database })
             })
@@ -91,6 +98,15 @@ async fn main() -> anyhow::Result<()> {
         .framework(framework)
         .await?;
 
-    client.start().await?;
-    Ok(())
+    tracing::info!("connecting to Discord gateway");
+    match client.start().await {
+        Ok(()) => {
+            tracing::info!("client stopped cleanly");
+            Ok(())
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "client stopped with error");
+            Err(e.into())
+        }
+    }
 }

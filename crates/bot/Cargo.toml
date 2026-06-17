@@ -15,7 +15,8 @@ chrono = "0.4.43"
 chrono-tz = "0.10.4"
 regex = "1.12.3"
 tracing = "0.1.44"
-tracing-subscriber = { version = "0.3.22", features = ["env-filter", "fmt"] }
+tracing-subscriber = { version = "0.3.22", features = ["env-filter", "fmt", "json"] }
+tracing-appender = "0.2"
 anyhow = "1.0.101"
 url = "2.5.8"
 image = "0.25.9"
