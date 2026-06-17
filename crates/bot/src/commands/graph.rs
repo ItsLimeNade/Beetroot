@@ -127,6 +127,22 @@ pub async fn graph(
     let bonbon_stickers = sticker_assets::load_bonbon_stickers(&user_stickers).await;
     tracing::debug!(stickers = bonbon_stickers.len(), "assets resolved, rendering image");
 
+    // The data owner's graph preferences.
+    let treatment_mode = if user_data.treatment_mode == "timeline" {
+        TreatmentDisplayMode::Timeline
+    } else {
+        TreatmentDisplayMode::Contextual
+    };
+    let sticker_count = user_data
+        .graph_sticker_count
+        .clamp(0, crate::commands::graph_stickers::MAX_GRAPH_STICKERS)
+        as usize;
+    tracing::debug!(
+        unique_stickers = bonbon_stickers.len(),
+        sticker_count,
+        "graph render prefs resolved"
+    );
+
     let graph_width: u32 = 1275 * 2;
     let graph_height: u32 = 825 * 2;
     let has_lookback = lookback.is_some();
@@ -144,13 +160,14 @@ pub async fn graph(
         };
 
         let mut builder = GlucoseGraphBuilder::new()
-            .with_treatment_mode(TreatmentDisplayMode::Contextual)
+            .with_treatment_mode(treatment_mode)
             .with_scaling(GraphScaling::Dynamic {
                 clamp_min: 40.0,
                 clamp_max: 400.0,
                 default_min: 60.0,
                 default_max: 200.0,
             })
+            .with_trace(false)
             .with_layout(layout)
             .with_theme(theme)
             .with_units(UnitDisplay::Dual {
@@ -171,8 +188,8 @@ pub async fn graph(
             builder = builder.start_at(start);
         }
 
-        if !bonbon_stickers.is_empty() {
-            let stickers = StickerSet::new(bonbon_stickers.len().min(8))
+        if !bonbon_stickers.is_empty() && sticker_count > 0 {
+            let stickers = StickerSet::new(sticker_count)
                 .with_stickers(bonbon_stickers)
                 .with_graph_size_ratio(0.22)
                 .with_graph_alpha(0.4);

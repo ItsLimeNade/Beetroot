@@ -46,6 +46,12 @@ pub async fn settings(ctx: Context<'_>) -> Result<(), Error> {
     let allowed = format_user_list(&user_data.allowed_people);
     let blocked = format_user_list(&user_data.blocked_people);
 
+    let treatment_display = if user_data.treatment_mode == "timeline" {
+        "Timeline"
+    } else {
+        "Contextual"
+    };
+
     let embed = CreateEmbed::new()
         .title(format!("{} Your Settings", emojis::nutrition()))
         .color(Colour::from_rgb(87, 189, 79))
@@ -93,6 +99,16 @@ pub async fn settings(ctx: Context<'_>) -> Result<(), Error> {
         .field(
             format!("{} Fingerprick Expiry", emojis::date_valid()),
             format!("{} min", user_data.mbg_expiry_time),
+            true,
+        )
+        .field(
+            format!("{} Treatment Display", emojis::micro_bolus()),
+            treatment_display,
+            true,
+        )
+        .field(
+            format!("{} Graph Stickers", emojis::sticker_add()),
+            user_data.graph_sticker_count.to_string(),
             true,
         );
 

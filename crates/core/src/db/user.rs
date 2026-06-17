@@ -38,6 +38,10 @@ impl User {
             last_seen_version: self.last_seen_version,
             bg_image_mode: self.bg_image_mode.unwrap_or(false),
             active_theme: self.active_theme,
+            treatment_mode: self
+                .treatment_mode
+                .unwrap_or_else(|| "contextual".to_string()),
+            graph_sticker_count: self.graph_sticker_count.unwrap_or(8),
         })
     }
 }
@@ -191,6 +195,28 @@ impl Database {
         let id = discord_id as i64;
         sqlx::query("UPDATE users SET mbg_expiry_time = ? WHERE discord_id = ?")
             .bind(value)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// Set how treatments are drawn on `/graph` (`"contextual"` or `"timeline"`).
+    pub async fn set_treatment_mode(&self, discord_id: u64, mode: &str) -> CoreResult<()> {
+        let id = discord_id as i64;
+        sqlx::query("UPDATE users SET treatment_mode = ? WHERE discord_id = ?")
+            .bind(mode)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// Set how many stickers `/graph` scatters on the chart (0 to 30).
+    pub async fn set_graph_sticker_count(&self, discord_id: u64, count: i64) -> CoreResult<()> {
+        let id = discord_id as i64;
+        sqlx::query("UPDATE users SET graph_sticker_count = ? WHERE discord_id = ?")
+            .bind(count)
             .bind(id)
             .execute(&self.pool)
             .await?;

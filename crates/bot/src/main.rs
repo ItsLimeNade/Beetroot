@@ -56,6 +56,8 @@ async fn main() -> anyhow::Result<()> {
             commands::ephemeral::ephemeral(),
             commands::image_mode::image_mode(),
             commands::fingerprick_expiry::fingerprick_expiry(),
+            commands::treatment_mode::treatment_mode(),
+            commands::graph_stickers::graph_stickers(),
             commands::url::url(),
             commands::token::token(),
             commands::delete_account::delete_account(),

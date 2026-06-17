@@ -15,6 +15,8 @@ pub struct User {
     pub last_seen_version: Option<String>,
     pub bg_image_mode: Option<bool>,
     pub active_theme: Option<String>,
+    pub treatment_mode: Option<String>,
+    pub graph_sticker_count: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -32,4 +34,6 @@ pub struct UserDecrypted {
     pub last_seen_version: Option<String>,
     pub bg_image_mode: bool,
     pub active_theme: Option<String>,
+    pub treatment_mode: String,
+    pub graph_sticker_count: i64,
 }

@@ -17,6 +17,10 @@ v1.0.0-pre2 | ...one giant leap for diabetics
 - Added `/stickers` to view and remove the stickers on your graphs
 - Added image mode for `/bg` (a clean card image instead of an embed)
 - Added an `at` option to `/bg` and `/graph` to look back in time (e.g. `2h`, `1d`, `1w`, `1h30m`)
+- Added `/treatment-mode` to choose how carbs and insulin are drawn on `/graph` (Contextual or Timeline)
+- Added `/graph-stickers` to choose how many stickers appear on your graph (up to 30)
+- `/bg` cards now show a short, actionable hint (like "verify reading" or "monitor") instead of just restating your status
+- Stickers now appear only on `/graph`; the `/bg` card and `/tir` are kept clean
 - Added `/delete-account` to wipe all of your stored data
 - Added `/info` with source code, credits and support links
 - Added an in-bot changelog that shows what's new since your last use
@@ -33,3 +37,7 @@ v1.0.0-pre2 | ...one giant leap for diabetics
 - The bot now reports one consistent version (1.0.0) everywhere, instead of the version, the changelog and the config disagreeing
 - The Docker image now runs as a non-root user, and leftover web-dashboard config and database tables were removed
 - Polish: unexpected errors now show a proper embed instead of plain text, `/bg` no longer shows a broken thumbnail for users without an avatar, and an unused internal sticker-delete path was removed
+- Added a clear "not medical advice" disclaimer to `/info` and `/setup`
+- Added per-user cooldowns to `/graph`, `/tir` and `/a1c` so heavy renders and large queries can't be spammed
+- The bot now shuts down cleanly on stop, an extreme `at` value can no longer crash a command, and account-list updates are now atomic
+- Custom emojis now resolve from whichever bot application is running (with an `EMOJI_SET` fallback), so one build works for both beta and production
