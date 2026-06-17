@@ -17,15 +17,18 @@ FROM debian:bookworm-slim AS runtime
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates \
- && rm -rf /var/lib/apt/lists/*
+ && rm -rf /var/lib/apt/lists/* \
+ && useradd --system --user-group --create-home beetroot
 
 WORKDIR /app
 
 COPY --from=builder /usr/local/bin/bot /usr/local/bin/bot
 COPY assets /app/assets
 
-RUN mkdir -p /app/data
+RUN mkdir -p /app/data && chown -R beetroot:beetroot /app
 
 ENV DATABASE_URL="sqlite:///app/data/beetroot.db"
+
+USER beetroot
 
 CMD ["bot"]

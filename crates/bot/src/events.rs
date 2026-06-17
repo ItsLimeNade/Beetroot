@@ -16,14 +16,11 @@ pub async fn on_error(error: poise::FrameworkError<'_, Data, Error>) {
                 "command failed"
             );
 
-            //TODO Make a better error embed later.
-            let _ = ctx
-                .send(
-                    poise::CreateReply::default()
-                        .content("An unexpected error occurred. Please try again later.")
-                        .ephemeral(true),
-                )
-                .await;
+            send_error!(
+                ctx,
+                "Something Went Wrong",
+                "An unexpected error occurred. Please try again later."
+            );
         }
         error => {
             if let Err(e) = poise::builtins::on_error(error).await {

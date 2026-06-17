@@ -29,3 +29,6 @@ v1.0.0-pre2 | ...one giant leap for diabetics
 - Connection and fetch errors now show a generic message instead of the raw backend error, so internal hostnames and IPs are no longer leaked to users
 - Every outbound request now has a connect and request timeout, so a slow or hostile site can no longer hang the bot, and oversized sticker images are rejected before decoding to stop them eating memory
 - `/delete-account` now also wipes your command history and tip records, not just your profile and stickers, so nothing tied to your Discord ID remains.
+- The bot now reports one consistent version (1.0.0) everywhere, instead of the version, the changelog and the config disagreeing
+- The Docker image now runs as a non-root user, and leftover web-dashboard config and database tables were removed
+- Polish: unexpected errors now show a proper embed instead of plain text, `/bg` no longer shows a broken thumbnail for users without an avatar, and an unused internal sticker-delete path was removed

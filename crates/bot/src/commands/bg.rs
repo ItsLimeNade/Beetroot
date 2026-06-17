@@ -451,15 +451,13 @@ pub async fn bg(
 
     let title = custom_title.unwrap_or_else(|| format!("{}'s Nightscout", target_user.name));
 
-    let thumbnail_url = target_user.avatar_url().unwrap_or_default();
-
     let icon_bytes = tokio::fs::read("assets/images/nightscout_icon.png").await?;
     let icon_attachment = CreateAttachment::bytes(icon_bytes, "nightscout_icon.png");
 
-    let mut embed = CreateEmbed::new()
-        .thumbnail(thumbnail_url)
-        .title(title)
-        .color(color);
+    let mut embed = CreateEmbed::new().title(title).color(color);
+    if let Some(avatar_url) = target_user.avatar_url() {
+        embed = embed.thumbnail(avatar_url);
+    }
 
     let is_data_old = duration.num_minutes() > 15;
     if is_data_old {

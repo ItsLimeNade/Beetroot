@@ -28,16 +28,6 @@ impl Database {
         Ok(())
     }
 
-    /// Delete a sticker by its row ID.
-    pub async fn delete_sticker(&self, sticker_id: i64) -> CoreResult<()> {
-        sqlx::query("DELETE FROM stickers WHERE id = ?")
-            .bind(sticker_id)
-            .execute(&self.pool)
-            .await?;
-
-        Ok(())
-    }
-
     /// Delete a sticker but only if it belongs to the given user.
     ///
     /// Returns `Ok(true)` when a row was deleted, `Ok(false)` when the

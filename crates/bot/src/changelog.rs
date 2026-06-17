@@ -2,7 +2,7 @@ use crate::data::{Context, Error};
 use crate::utils::emojis;
 use poise::serenity_prelude::{Colour, CreateEmbed};
 
-pub const CURRENT_VERSION: &str = "1.2.0";
+pub const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub struct ChangelogEntry {
     pub version: &'static str,
@@ -10,31 +10,19 @@ pub struct ChangelogEntry {
     pub changes: &'static [&'static str],
 }
 
-pub const CHANGELOG: &[ChangelogEntry] = &[
-    ChangelogEntry {
-        version: "1.2.0",
-        date: "2026-06-15",
-        changes: &[
-            "Added `/tir` a Time in Range card over the last 7, 14, 30 or 90 days.",
-            "Added `/theme` to build, import and apply custom color themes to your graphs.",
-            "Your active theme now styles `/graph`, `/tir` and image-mode `/bg`.",
-            "Added `/stickers` to view and remove the stickers on your graphs.",
-            "Upgraded the rendering engine to bonbon 0.4.",
-        ],
-    },
-    ChangelogEntry {
-        version: "1.1.0",
-        date: "2026-05-27",
-        changes: &[
-            "Removed the bundled web dashboard. A new standalone site is coming.",
-            "Added `/settings` plus dedicated commands for every preference.",
-            "All command responses now use the custom Beetroot emoji set.",
-            "Added an in-bot tip system that hints at unused features.",
-            "Default fingerprick expiry lowered to 30 minutes.",
-            "Added `/delete-account` to wipe your stored data on request.",
-        ],
-    },
-];
+pub const CHANGELOG: &[ChangelogEntry] = &[ChangelogEntry {
+    version: CURRENT_VERSION,
+    date: "2026-06-17",
+    changes: &[
+        "Track your glucose with `/bg`, with an optional clean image card.",
+        "See trends with `/graph` and `/tir`, a Time in Range card over 7, 14, 30 or 90 days.",
+        "Estimate your `/a1c` from recent readings.",
+        "Personalize your graphs with `/theme` color themes and your own stickers.",
+        "Look up calories, carbs and macros for any food with `/nutrition`.",
+        "Stay private: allow lists, `/block`, and `/ephemeral` keep your data yours.",
+        "Manage everything with `/settings`, `/stickers` and `/delete-account`.",
+    ],
+}];
 
 pub async fn post_command_hook(ctx: Context<'_>) {
     if let Err(e) = try_send_changelog(ctx).await {
