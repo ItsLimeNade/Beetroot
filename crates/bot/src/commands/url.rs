@@ -1,9 +1,9 @@
 use crate::data::{Context, Error};
 use crate::utils::emojis;
+use crate::utils::net::parse_and_normalize_url;
 use macros::track_analytics;
 use poise::serenity_prelude as serenity;
 use serenity::all::{Colour, CreateEmbed};
-use url::{ParseError, Url};
 
 /// Update only your Nightscout URL without re-running /setup.
 #[poise::command(
@@ -44,35 +44,4 @@ pub async fn url(
         .await?;
 
     Ok(())
-}
-
-fn parse_and_normalize_url(input: &str) -> Result<Url, String> {
-    let input = input.trim();
-    if input.is_empty() {
-        return Err("URL cannot be empty".to_string());
-    }
-
-    let mut url = match Url::parse(input) {
-        Ok(u) => u,
-        Err(ParseError::RelativeUrlWithoutBase) => Url::parse(&format!("https://{}", input))
-            .map_err(|_| "Invalid URL format".to_string())?,
-        Err(e) => return Err(format!("Invalid URL: {}", e)),
-    };
-
-    let scheme = url.scheme();
-    if scheme != "http" && scheme != "https" {
-        return Err("URL must start with http:// or https://".to_string());
-    }
-
-    if url.host().is_none() {
-        return Err("URL must have a valid domain name".to_string());
-    }
-
-    if !url.path().ends_with('/')
-        && let Ok(mut segments) = url.path_segments_mut()
-    {
-        segments.pop_if_empty().push("");
-    }
-
-    Ok(url)
 }

@@ -98,16 +98,13 @@ macro_rules! get_nightscout_client {
             }
         };
 
-        let client_res = cinnamon::client::NightscoutClient::new(base_url);
+        let client_res = $crate::utils::net::nightscout_client(
+            base_url,
+            $user_data.nightscout_token.as_deref(),
+        );
 
         match client_res {
-            Ok(client) => {
-                if let Some(token) = &$user_data.nightscout_token {
-                    client.with_secret(token)
-                } else {
-                    client
-                }
-            }
+            Ok(client) => client,
             Err(e) => {
                 $crate::send_error!(
                     $ctx,
@@ -126,16 +123,10 @@ macro_rules! get_nightscout_client {
 macro_rules! verify_nightscout_connection {
     ($ctx:expr, $url:expr, $token:expr) => {
         {
-            let client_result = cinnamon::client::NightscoutClient::new($url);
+            let client_result = $crate::utils::net::nightscout_client($url, $token.as_deref());
 
             let check_result = match client_result {
                 Ok(client) => {
-                    let client = if let Some(token) = $token {
-                        client.with_secret(token)
-                    } else {
-                        client
-                    };
-
                     client
                         .sgv()
                         .get()
@@ -144,7 +135,7 @@ macro_rules! verify_nightscout_connection {
                         .await
                         .map_err(|e| anyhow::anyhow!(e))
                 },
-                Err(_) => Err(anyhow::anyhow!("Invalid URL configuration")),
+                Err(e) => Err(anyhow::anyhow!(e)),
             };
 
             if let Err(e) = check_result {

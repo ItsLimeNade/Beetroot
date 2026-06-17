@@ -63,7 +63,10 @@ pub async fn load_bonbon_stickers(db_stickers: &[DbSticker]) -> Vec<BonbonSticke
 }
 
 async fn download_bytes(url: &str) -> Result<Vec<u8>> {
-    let response = reqwest::get(url).await?;
+    let parsed = url::Url::parse(url).map_err(|e| anyhow!("invalid sticker URL: {e}"))?;
+    crate::utils::net::check_public_url(&parsed).map_err(|e| anyhow!(e))?;
+
+    let response = crate::utils::net::guarded_client().get(parsed).send().await?;
     if !response.status().is_success() {
         return Err(anyhow!("HTTP {} when downloading sticker", response.status()));
     }
@@ -90,17 +93,16 @@ async fn download_bytes(url: &str) -> Result<Vec<u8>> {
 /// Validate that a URL points to a valid image. Used by `/add-sticker`
 /// before inserting into the DB.
 pub async fn validate_image_url(url: &str) -> Result<()> {
-    if !url.starts_with("http://") && !url.starts_with("https://") {
-        return Err(anyhow!("URL must start with http:// or https://"));
-    }
+    let parsed = url::Url::parse(url).map_err(|e| anyhow!("invalid URL: {e}"))?;
+    crate::utils::net::check_public_url(&parsed).map_err(|e| anyhow!(e))?;
 
-    let client = reqwest::Client::new();
+    let client = crate::utils::net::guarded_client();
 
-    let response = match client.head(url).send().await {
+    let response = match client.head(parsed.clone()).send().await {
         Ok(r) if r.status().is_success() => r,
         _ => {
             client
-                .get(url)
+                .get(parsed)
                 .header("Range", "bytes=0-1023")
                 .send()
                 .await?
