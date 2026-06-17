@@ -530,7 +530,7 @@ pub async fn nutrition(
 
     crate::tips::safe_defer_with(ctx, reply_ephemeral).await?;
 
-    let http = reqwest::Client::new();
+    let http = crate::utils::net::shared_client().clone();
 
     let token = match get_access_token(&http).await {
         Ok(t) => t,

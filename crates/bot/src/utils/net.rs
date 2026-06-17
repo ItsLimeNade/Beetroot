@@ -122,6 +122,21 @@ pub fn guarded_client() -> &'static reqwest::Client {
     })
 }
 
+/// Shared client for our own hard-coded endpoints
+/// Carries the same timeouts as [`guarded_client`] but keeps reqwest's default
+/// DNS and redirects, since the targets are not user-supplied. Cloning shares the
+/// connection pool, so callers should reuse this instead of building their own.
+pub fn shared_client() -> &'static reqwest::Client {
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .connect_timeout(CONNECT_TIMEOUT)
+            .timeout(REQUEST_TIMEOUT)
+            .build()
+            .expect("failed to build shared HTTP client")
+    })
+}
+
 /// Reject a URL whose scheme is not http(s) or whose host is an IP literal in an
 /// internal/reserved range. Host names are intentionally allowed through here
 /// and screened at connect time by [`SsrfResolver`].

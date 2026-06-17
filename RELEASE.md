@@ -27,3 +27,4 @@ v1.0.0-pre2 | ...one giant leap for diabetics
 - `/block` is now actually enforced. A blocked user can no longer read your data, even on a public profile or if they were on your allowed list
 - `force_ephemeral` is now honored. With it on, `/bg`, `/graph`, `/tir`, `/a1c` and `/nutrition` reply only to you instead of broadcasting your glucose to the channel
 - Connection and fetch errors now show a generic message instead of the raw backend error, so internal hostnames and IPs are no longer leaked to users
+- Every outbound request now has a connect and request timeout, so a slow or hostile site can no longer hang the bot, and oversized sticker images are rejected before decoding to stop them eating memory

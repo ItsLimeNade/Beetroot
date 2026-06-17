@@ -6,6 +6,11 @@ use std::collections::HashMap;
 /// Maximum allowed sticker size (10 MiB).
 const MAX_STICKER_BYTES: usize = 10 * 1024 * 1024;
 
+/// Maximum decoded sticker dimension on either axis. The byte cap bounds the
+/// download but not the pixels it expands to, so a tiny highly-compressible
+/// image could still blow up memory when decoded; this rejects such bombs.
+const MAX_STICKER_DIMENSION: u32 = 4096;
+
 /// Convert our DB enum to bonbon's enum.
 pub fn to_bonbon_category(cat: beetroot_core::models::StickerCategory) -> BonbonCategory {
     use beetroot_core::models::StickerCategory as C;
@@ -91,6 +96,18 @@ async fn download_bytes(url: &str) -> Result<Vec<u8>> {
     if bytes.len() > MAX_STICKER_BYTES {
         return Err(anyhow!("Sticker image too large ({} bytes)", bytes.len()));
     }
+
+    let (width, height) = image::ImageReader::new(std::io::Cursor::new(&bytes))
+        .with_guessed_format()
+        .map_err(|e| anyhow!("could not read sticker image: {e}"))?
+        .into_dimensions()
+        .map_err(|e| anyhow!("invalid sticker image: {e}"))?;
+    if width > MAX_STICKER_DIMENSION || height > MAX_STICKER_DIMENSION {
+        return Err(anyhow!(
+            "sticker dimensions too large ({width}x{height}, max {MAX_STICKER_DIMENSION})"
+        ));
+    }
+
     Ok(bytes.to_vec())
 }
 
