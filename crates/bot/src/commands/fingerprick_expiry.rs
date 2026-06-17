@@ -24,7 +24,11 @@ pub async fn fingerprick_expiry(
 
     let clamped = minutes.clamp(1, 720);
     if clamped != minutes {
-        tracing::debug!(requested = minutes, clamped, "fingerprick expiry out of range, clamped");
+        tracing::debug!(
+            requested = minutes,
+            clamped,
+            "fingerprick expiry out of range, clamped"
+        );
     }
 
     let db = &ctx.data().database;

@@ -25,14 +25,23 @@ static SENSITIVE: OnceLock<bool> = OnceLock::new();
 struct PlainFields(DefaultFields);
 
 impl<'writer> FormatFields<'writer> for PlainFields {
-    fn format_fields<R: RecordFields>(&self, writer: Writer<'writer>, fields: R) -> std::fmt::Result {
+    fn format_fields<R: RecordFields>(
+        &self,
+        writer: Writer<'writer>,
+        fields: R,
+    ) -> std::fmt::Result {
         self.0.format_fields(writer, fields)
     }
 }
 
 /// Parse a boolean-ish env var. Returns `None` if unset or unrecognized.
 fn env_flag(name: &str) -> Option<bool> {
-    match std::env::var(name).ok()?.trim().to_ascii_lowercase().as_str() {
+    match std::env::var(name)
+        .ok()?
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
         "1" | "true" | "yes" | "on" => Some(true),
         "0" | "false" | "no" | "off" | "" => Some(false),
         _ => None,
@@ -73,8 +82,8 @@ pub fn redact<T: std::fmt::Display>(value: T) -> Redacted<T> {
 pub fn init() -> Vec<WorkerGuard> {
     let mut guards = Vec::new();
 
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(DEFAULT_DIRECTIVES));
+    let filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(DEFAULT_DIRECTIVES));
 
     let format = std::env::var("LOG_FORMAT")
         .map(|s| s.trim().to_ascii_lowercase())
@@ -102,7 +111,10 @@ pub fn init() -> Vec<WorkerGuard> {
                 let (writer, guard) = tracing_appender::non_blocking(appender);
                 guards.push(guard);
                 // File logs are never colored; mirror the console format otherwise.
-                let base = fmt::layer().with_ansi(false).with_target(true).with_writer(writer);
+                let base = fmt::layer()
+                    .with_ansi(false)
+                    .with_target(true)
+                    .with_writer(writer);
                 Some(if format == "json" {
                     base.json().boxed()
                 } else {

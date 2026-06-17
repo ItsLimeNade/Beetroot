@@ -125,7 +125,10 @@ pub async fn graph(
             .await;
     let user_stickers = db.get_all_user_stickers(target_id.get()).await?;
     let bonbon_stickers = sticker_assets::load_bonbon_stickers(&user_stickers).await;
-    tracing::debug!(stickers = bonbon_stickers.len(), "assets resolved, rendering image");
+    tracing::debug!(
+        stickers = bonbon_stickers.len(),
+        "assets resolved, rendering image"
+    );
 
     // The data owner's graph preferences.
     let treatment_mode = if user_data.treatment_mode == "timeline" {

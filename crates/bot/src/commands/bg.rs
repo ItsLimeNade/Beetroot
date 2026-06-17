@@ -449,7 +449,11 @@ pub async fn bg(
     let is_data_old = duration.num_minutes() > 15;
     if is_data_old {
         embed = embed.field(
-            format!("{} Warning {}", emojis::date_invalid(), emojis::date_invalid()),
+            format!(
+                "{} Warning {}",
+                emojis::date_invalid(),
+                emojis::date_invalid()
+            ),
             format!("Data is {}min old!", duration.num_minutes()),
             false,
         );
@@ -643,18 +647,26 @@ fn pick_info_pill(
                 "Rising fast, monitor",
                 PillState::AlertHigh,
             ),
-            (GlucoseStatus::Low, true) => {
-                make(builtin_icons::FAST_RISE, "Recovering, keep watch", PillState::Normal)
-            }
-            (GlucoseStatus::High, false) => {
-                make(builtin_icons::FAST_DROP, "Coming down, keep watch", PillState::Normal)
-            }
-            (GlucoseStatus::InRange, true) => {
-                make(builtin_icons::FAST_RISE, "Trending up, monitor", PillState::AlertHigh)
-            }
-            (GlucoseStatus::InRange, false) => {
-                make(builtin_icons::FAST_DROP, "Trending down, watch lows", PillState::AlertLow)
-            }
+            (GlucoseStatus::Low, true) => make(
+                builtin_icons::FAST_RISE,
+                "Recovering, keep watch",
+                PillState::Normal,
+            ),
+            (GlucoseStatus::High, false) => make(
+                builtin_icons::FAST_DROP,
+                "Coming down, keep watch",
+                PillState::Normal,
+            ),
+            (GlucoseStatus::InRange, true) => make(
+                builtin_icons::FAST_RISE,
+                "Trending up, monitor",
+                PillState::AlertHigh,
+            ),
+            (GlucoseStatus::InRange, false) => make(
+                builtin_icons::FAST_DROP,
+                "Trending down, watch lows",
+                PillState::AlertLow,
+            ),
         });
     }
 

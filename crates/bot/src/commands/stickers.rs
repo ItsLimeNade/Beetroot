@@ -74,7 +74,10 @@ pub async fn stickers(ctx: Context<'_>) -> Result<(), Error> {
                             CreateInteractionResponseMessage::new()
                                 .embed(
                                     CreateEmbed::new()
-                                        .title(format!("{} Stickers Cleared", emojis::remove_user()))
+                                        .title(format!(
+                                            "{} Stickers Cleared",
+                                            emojis::remove_user()
+                                        ))
                                         .description("All of your stickers have been removed.")
                                         .color(Colour::DARK_RED),
                                 )

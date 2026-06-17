@@ -89,10 +89,7 @@ pub async fn a1c(ctx: Context<'_>) -> Result<(), Error> {
                     let eag = calc_eag(&entries);
                     let a1c = calc_a1c(eag);
 
-                    debug!(
-                        count = entries.len(),
-                        has_warning, "computed A1C estimate"
-                    );
+                    debug!(count = entries.len(), has_warning, "computed A1C estimate");
                     // eAG and A1C are the user's average glucose: medical data.
                     crate::log_medical!(eag, a1c, "A1C estimate values");
 

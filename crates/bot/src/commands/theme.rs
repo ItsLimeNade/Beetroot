@@ -70,7 +70,11 @@ pub async fn list(ctx: Context<'_>) -> Result<(), Error> {
     let embed = CreateEmbed::new()
         .title(format!("{} Themes", emojis::image_mode()))
         .color(Colour::from_rgb(87, 189, 79))
-        .field(format!("{} Active", emojis::celebration()), active_display, false)
+        .field(
+            format!("{} Active", emojis::celebration()),
+            active_display,
+            false,
+        )
         .field(format!("{} Builtin", emojis::image_mode()), builtins, false)
         .field(
             format!(
