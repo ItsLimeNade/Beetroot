@@ -310,9 +310,9 @@ dependencies = [
 
 [[package]]
 name = "bonbon"
-version = "0.4.1"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "01fda908857eb0c9fa6994a8f38e5ad9bbf2aa4ea6d055dd4f8564ada16af39b"
+checksum = "4dc4c2229f042575101c1125a45df37aed4227778a02c5d7249850049d223239"
 dependencies = [
  "ab_glyph",
  "chrono",
