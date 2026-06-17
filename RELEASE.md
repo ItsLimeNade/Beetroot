@@ -7,7 +7,7 @@ v1.0.0-pre2 | ...one giant leap for diabetics
 - Added custom emojis for prettier results
 - Moved the sticker generation to the bonbon library
 - Removed all dashboard code
-- Added back all setting commands
+- Added settings commands: `/settings` plus dedicated `/privacy`, `/allow`, `/block`, `/ephemeral`, `/image-mode`, `/microbolus` and `/fingerprick-expiry`
 - Updated duration parser
 - Added tips
 - Added `/theme` to create, edit, import and apply custom color themes to your graphs
@@ -16,6 +16,7 @@ v1.0.0-pre2 | ...one giant leap for diabetics
 - Added `/nutrition` to look up calories, carbs and macros for any food
 - Added `/stickers` to view and remove the stickers on your graphs
 - Added image mode for `/bg` (a clean card image instead of an embed)
+- Added an `at` option to `/bg` and `/graph` to look back in time (e.g. `2h`, `1d`, `1w`, `1h30m`)
 - Added `/delete-account` to wipe all of your stored data
 - Added `/info` with source code, credits and support links
 - Added an in-bot changelog that shows what's new since your last use

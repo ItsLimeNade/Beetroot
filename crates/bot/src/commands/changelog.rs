@@ -114,6 +114,14 @@ fn build_page(index: usize, total: usize) -> CreateEmbed {
         .title(format!("{} Changelog", emojis::CELEBRATION))
         .color(Colour::from_rgb(87, 189, 79))
         .field(format!("v{} ({})", entry.version, entry.date), body, false)
+        .field(
+            "Full changelog",
+            format!(
+                "[Read the full release notes on GitHub]({})",
+                crate::changelog::RELEASES_URL
+            ),
+            false,
+        )
         .footer(CreateEmbedFooter::new(format!(
             "Release {} of {}{}",
             index + 1,

@@ -4,6 +4,8 @@ use poise::serenity_prelude::{Colour, CreateEmbed};
 
 pub const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
+pub const RELEASES_URL: &str = "https://github.com/itslimenade/Beetroot/releases/latest";
+
 pub struct ChangelogEntry {
     pub version: &'static str,
     pub date: &'static str,
@@ -16,11 +18,12 @@ pub const CHANGELOG: &[ChangelogEntry] = &[ChangelogEntry {
     changes: &[
         "Track your glucose with `/bg`, with an optional clean image card.",
         "See trends with `/graph` and `/tir`, a Time in Range card over 7, 14, 30 or 90 days.",
+        "Look back in time with the new `at` option on `/bg` and `/graph` (e.g. `2h`, `1d`, `1w`, `1h30m`).",
         "Estimate your `/a1c` from recent readings.",
         "Personalize your graphs with `/theme` color themes and your own stickers.",
         "Look up calories, carbs and macros for any food with `/nutrition`.",
-        "Stay private: allow lists, `/block`, and `/ephemeral` keep your data yours.",
-        "Manage everything with `/settings`, `/stickers` and `/delete-account`.",
+        "Tune everything from `/settings`, plus dedicated commands: `/privacy`, `/allow`, `/block`, `/ephemeral`, `/image-mode`, `/microbolus` and `/fingerprick-expiry`.",
+        "Manage your account with `/stickers` and `/delete-account`.",
     ],
 }];
 
@@ -83,5 +86,9 @@ fn build_embed(entries: &[&ChangelogEntry]) -> CreateEmbed {
         embed = embed.field(format!("v{} ({})", entry.version, entry.date), body, false);
     }
 
-    embed
+    embed.field(
+        "Full changelog",
+        format!("[Read the full release notes on GitHub]({RELEASES_URL})"),
+        false,
+    )
 }
