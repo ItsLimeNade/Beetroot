@@ -98,10 +98,8 @@ macro_rules! get_nightscout_client {
             }
         };
 
-        let client_res = $crate::utils::net::nightscout_client(
-            base_url,
-            $user_data.nightscout_token.as_deref(),
-        );
+        let client_res =
+            $crate::utils::net::nightscout_client(base_url, $user_data.nightscout_token.as_deref());
 
         match client_res {
             Ok(client) => client,

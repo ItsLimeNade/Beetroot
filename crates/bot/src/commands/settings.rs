@@ -50,11 +50,7 @@ pub async fn settings(ctx: Context<'_>) -> Result<(), Error> {
             token_display,
             true,
         )
-        .field(
-            format!("{} Privacy", privacy_icon),
-            privacy_display,
-            true,
-        )
+        .field(format!("{} Privacy", privacy_icon), privacy_display, true)
         .field(
             format!("{} Allowed Users", emojis::ADD_USER),
             allowed,

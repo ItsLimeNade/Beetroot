@@ -85,9 +85,7 @@ pub fn theme_to_json(theme: &Theme) -> String {
 /// Parse stored JSON into a bonbon `Theme`.
 pub fn json_to_theme(data: &str) -> Result<Theme> {
     serde_json::from_str::<Theme>(data).map_err(|e| {
-        anyhow!(
-            "Theme data is not valid. Each of the 14 fields must be a hex color string. ({e})"
-        )
+        anyhow!("Theme data is not valid. Each of the 14 fields must be a hex color string. ({e})")
     })
 }
 

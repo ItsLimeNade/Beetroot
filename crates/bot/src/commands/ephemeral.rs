@@ -28,7 +28,11 @@ pub async fn ephemeral(
         "Responses will be visible to everyone in the channel."
     };
 
-    let icon = if enabled { emojis::LOCK_CLOSED } else { emojis::LOCK_OPEN };
+    let icon = if enabled {
+        emojis::LOCK_CLOSED
+    } else {
+        emojis::LOCK_OPEN
+    };
     let embed = CreateEmbed::new()
         .title(format!("{} Ephemeral Mode", icon))
         .description(format!("**{}**\n{}", label, body))

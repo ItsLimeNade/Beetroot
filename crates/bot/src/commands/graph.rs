@@ -131,7 +131,11 @@ pub async fn graph(
             .with_layout(layout)
             .with_theme(theme)
             .with_units(UnitDisplay::Dual {
-                primary: if is_mmol { UnitPreference::MmolL } else { UnitPreference::MgDl },
+                primary: if is_mmol {
+                    UnitPreference::MmolL
+                } else {
+                    UnitPreference::MgDl
+                },
             })
             .with_targets(target_low, target_high)
             .with_timezone(user_tz)

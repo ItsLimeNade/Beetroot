@@ -146,10 +146,7 @@ mod tests {
     fn test_compound() {
         let expected = Duration::days(365) + Duration::days(60) + Duration::days(3);
         assert_eq!(parse_ago_duration("1y2mo3d"), Some(expected));
-        assert_eq!(
-            parse_ago_duration("1y, 2mo, 3d"),
-            Some(expected)
-        );
+        assert_eq!(parse_ago_duration("1y, 2mo, 3d"), Some(expected));
     }
 
     #[test]

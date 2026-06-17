@@ -6,22 +6,16 @@ use super::Database;
 impl Database {
     /// Insert a new custom theme. Returns `Ok(true)` when the row was created,
     /// `Ok(false)` when the user already has a theme with that name.
-    pub async fn insert_theme(
-        &self,
-        discord_id: u64,
-        name: &str,
-        data: &str,
-    ) -> CoreResult<bool> {
+    pub async fn insert_theme(&self, discord_id: u64, name: &str, data: &str) -> CoreResult<bool> {
         let id = discord_id as i64;
 
-        let result = sqlx::query(
-            "INSERT OR IGNORE INTO themes (discord_id, name, data) VALUES (?, ?, ?)",
-        )
-        .bind(id)
-        .bind(name)
-        .bind(data)
-        .execute(&self.pool)
-        .await?;
+        let result =
+            sqlx::query("INSERT OR IGNORE INTO themes (discord_id, name, data) VALUES (?, ?, ?)")
+                .bind(id)
+                .bind(name)
+                .bind(data)
+                .execute(&self.pool)
+                .await?;
 
         Ok(result.rows_affected() > 0)
     }
@@ -84,11 +78,10 @@ impl Database {
     pub async fn count_user_themes(&self, discord_id: u64) -> CoreResult<i64> {
         let id = discord_id as i64;
 
-        let (count,): (i64,) =
-            sqlx::query_as("SELECT COUNT(*) FROM themes WHERE discord_id = ?")
-                .bind(id)
-                .fetch_one(&self.pool)
-                .await?;
+        let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM themes WHERE discord_id = ?")
+            .bind(id)
+            .fetch_one(&self.pool)
+            .await?;
 
         Ok(count)
     }
@@ -107,11 +100,7 @@ impl Database {
     }
 
     /// Set (or clear, with `None`) the user's active theme selector.
-    pub async fn set_active_theme(
-        &self,
-        discord_id: u64,
-        value: Option<&str>,
-    ) -> CoreResult<()> {
+    pub async fn set_active_theme(&self, discord_id: u64, value: Option<&str>) -> CoreResult<()> {
         let id = discord_id as i64;
         sqlx::query("UPDATE users SET active_theme = ? WHERE discord_id = ?")
             .bind(value)
@@ -155,7 +144,11 @@ mod tests {
         assert_eq!(row.data, "{\"a\":1}");
 
         // update
-        assert!(db.update_theme_data(uid, "mine", "{\"b\":2}").await.unwrap());
+        assert!(
+            db.update_theme_data(uid, "mine", "{\"b\":2}")
+                .await
+                .unwrap()
+        );
         let row = db.get_theme_by_name(uid, "mine").await.unwrap().unwrap();
         assert_eq!(row.data, "{\"b\":2}");
 

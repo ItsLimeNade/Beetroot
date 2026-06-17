@@ -45,11 +45,12 @@ pub async fn stickers(ctx: Context<'_>) -> Result<(), Error> {
 
     let msg = reply_handle.message().await?;
 
-    let mut collector = serenity::ComponentInteractionCollector::new(ctx.serenity_context().shard.clone())
-        .message_id(msg.id)
-        .author_id(ctx.author().id)
-        .timeout(Duration::from_secs(120))
-        .stream();
+    let mut collector =
+        serenity::ComponentInteractionCollector::new(ctx.serenity_context().shard.clone())
+            .message_id(msg.id)
+            .author_id(ctx.author().id)
+            .timeout(Duration::from_secs(120))
+            .stream();
 
     while let Some(interaction) = collector.next().await {
         match interaction.data.custom_id.as_str() {
@@ -151,7 +152,10 @@ fn build_embed(stickers: &[Sticker]) -> CreateEmbed {
     }
 
     for category in StickerCategory::all_variants() {
-        let in_cat: Vec<&Sticker> = stickers.iter().filter(|s| s.category == *category).collect();
+        let in_cat: Vec<&Sticker> = stickers
+            .iter()
+            .filter(|s| s.category == *category)
+            .collect();
         if in_cat.is_empty() {
             continue;
         }

@@ -73,7 +73,11 @@ pub async fn list(ctx: Context<'_>) -> Result<(), Error> {
         .field("Active", active_display, false)
         .field("Builtin", builtins, false)
         .field(
-            format!("Your themes ({}/{})", custom_rows.len(), MAX_THEMES_PER_USER),
+            format!(
+                "Your themes ({}/{})",
+                custom_rows.len(),
+                MAX_THEMES_PER_USER
+            ),
             custom,
             false,
         )
@@ -339,7 +343,11 @@ pub async fn import(
     let bytes = match file.download().await {
         Ok(b) => b,
         Err(e) => {
-            send_error!(ctx, "Download Failed", format!("Couldn't read the file: {}", e));
+            send_error!(
+                ctx,
+                "Download Failed",
+                format!("Couldn't read the file: {}", e)
+            );
             return Ok(());
         }
     };

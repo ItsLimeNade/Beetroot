@@ -161,7 +161,6 @@ where
     }
 }
 
-
 fn parse_num(s: Option<&str>) -> Option<f64> {
     s.and_then(|x| x.parse::<f64>().ok())
 }
@@ -385,21 +384,30 @@ fn build_full_embed(food: &DetailFood) -> CreateEmbed {
             true,
         );
 
-    if parse_num(s.saturated_fat.as_deref()).filter(|n| *n > 0.0).is_some() {
+    if parse_num(s.saturated_fat.as_deref())
+        .filter(|n| *n > 0.0)
+        .is_some()
+    {
         e = e.field(
             format!("{} Sat. Fat", emojis::FAT),
             fmt_g(s.saturated_fat.as_deref()),
             true,
         );
     }
-    if parse_num(s.sodium.as_deref()).filter(|n| *n > 0.0).is_some() {
+    if parse_num(s.sodium.as_deref())
+        .filter(|n| *n > 0.0)
+        .is_some()
+    {
         e = e.field(
             format!("{} Sodium", emojis::SALT),
             fmt_mg(s.sodium.as_deref()),
             true,
         );
     }
-    if parse_num(s.cholesterol.as_deref()).filter(|n| *n > 0.0).is_some() {
+    if parse_num(s.cholesterol.as_deref())
+        .filter(|n| *n > 0.0)
+        .is_some()
+    {
         e = e.field(
             format!("{} Cholesterol", emojis::FAT),
             fmt_mg(s.cholesterol.as_deref()),
@@ -461,8 +469,8 @@ fn build_alternatives_menu(
                 Some(b) => truncate(&format!("{} - {}", f.food_name, b), 100),
                 None => truncate(&f.food_name, 100),
             };
-            let mut opt =
-                CreateSelectMenuOption::new(label, &f.food_id).description(truncate(&f.food_description, 100));
+            let mut opt = CreateSelectMenuOption::new(label, &f.food_id)
+                .description(truncate(&f.food_description, 100));
             if f.food_id == current_id {
                 opt = opt.default_selection(true);
             }
@@ -492,7 +500,6 @@ fn build_components(
     }
     rows
 }
-
 
 /// Look up basic nutrition info for a food (powered by FatSecret).
 #[poise::command(
@@ -555,7 +562,10 @@ pub async fn nutrition(
         match fetch_detail(&http, &token, &best.food_id).await {
             Ok(d) => Some(d),
             Err(e) => {
-                warn!("[nutrition] detail fetch failed for {}: {}", best.food_id, e);
+                warn!(
+                    "[nutrition] detail fetch failed for {}: {}",
+                    best.food_id, e
+                );
                 None
             }
         };
@@ -572,7 +582,13 @@ pub async fn nutrition(
         Some(d) => build_mode_embed(d, current_mode),
         None => build_search_fallback_embed(&best),
     };
-    let initial_components = build_components(&base, current_mode, current_detail.is_some(), &foods, &current_id);
+    let initial_components = build_components(
+        &base,
+        current_mode,
+        current_detail.is_some(),
+        &foods,
+        &current_id,
+    );
     let has_components = !initial_components.is_empty();
 
     let reply = ctx
@@ -588,7 +604,10 @@ pub async fn nutrition(
         let __db = ctx.data().database.clone();
         let __uid = ctx.author().id.get();
         tokio::spawn(async move {
-            if let Err(e) = __db.log_command_execution("nutrition", __uid, __duration).await {
+            if let Err(e) = __db
+                .log_command_execution("nutrition", __uid, __duration)
+                .await
+            {
                 tracing::error!("Analytics Error [nutrition]: {}", e);
             }
         });
@@ -620,8 +639,7 @@ pub async fn nutrition(
                 DisplayMode::Full
             };
             let new_embed = build_mode_embed(detail, current_mode);
-            let new_components =
-                build_components(&base, current_mode, true, &foods, &current_id);
+            let new_components = build_components(&base, current_mode, true, &foods, &current_id);
 
             let _ = mci
                 .create_response(
@@ -635,9 +653,7 @@ pub async fn nutrition(
                 .await;
         } else if cid == id_select {
             let selected_id = match &mci.data.kind {
-                ComponentInteractionDataKind::StringSelect { values } => {
-                    values.first().cloned()
-                }
+                ComponentInteractionDataKind::StringSelect { values } => values.first().cloned(),
                 _ => None,
             };
             let Some(selected_id) = selected_id else {

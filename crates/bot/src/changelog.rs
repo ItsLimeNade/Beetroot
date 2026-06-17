@@ -62,7 +62,8 @@ async fn try_send_changelog(ctx: Context<'_>) -> Result<(), Error> {
     };
 
     if new_entries.is_empty() {
-        db.update_user_last_seen_version(user_id, CURRENT_VERSION).await?;
+        db.update_user_last_seen_version(user_id, CURRENT_VERSION)
+            .await?;
         return Ok(());
     }
 
@@ -70,7 +71,8 @@ async fn try_send_changelog(ctx: Context<'_>) -> Result<(), Error> {
     ctx.send(poise::CreateReply::default().embed(embed).ephemeral(true))
         .await?;
 
-    db.update_user_last_seen_version(user_id, CURRENT_VERSION).await?;
+    db.update_user_last_seen_version(user_id, CURRENT_VERSION)
+        .await?;
     Ok(())
 }
 

@@ -65,7 +65,8 @@ pub async fn token(
                 return Ok(());
             }
 
-            db.set_nightscout_token(user_id, TokenUpdate::Set(trimmed)).await?;
+            db.set_nightscout_token(user_id, TokenUpdate::Set(trimmed))
+                .await?;
 
             let embed = CreateEmbed::new()
                 .title(format!("{} Token Updated", emojis::PASSWORD))

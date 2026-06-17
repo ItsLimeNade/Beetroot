@@ -7,9 +7,7 @@ use std::collections::HashMap;
 const MAX_STICKER_BYTES: usize = 10 * 1024 * 1024;
 
 /// Convert our DB enum to bonbon's enum.
-pub fn to_bonbon_category(
-    cat: beetroot_core::models::StickerCategory,
-) -> BonbonCategory {
+pub fn to_bonbon_category(cat: beetroot_core::models::StickerCategory) -> BonbonCategory {
     use beetroot_core::models::StickerCategory as C;
     match cat {
         C::InRange => BonbonCategory::InRange,
@@ -66,9 +64,15 @@ async fn download_bytes(url: &str) -> Result<Vec<u8>> {
     let parsed = url::Url::parse(url).map_err(|e| anyhow!("invalid sticker URL: {e}"))?;
     crate::utils::net::check_public_url(&parsed).map_err(|e| anyhow!(e))?;
 
-    let response = crate::utils::net::guarded_client().get(parsed).send().await?;
+    let response = crate::utils::net::guarded_client()
+        .get(parsed)
+        .send()
+        .await?;
     if !response.status().is_success() {
-        return Err(anyhow!("HTTP {} when downloading sticker", response.status()));
+        return Err(anyhow!(
+            "HTTP {} when downloading sticker",
+            response.status()
+        ));
     }
 
     let content_type = response

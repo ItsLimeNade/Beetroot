@@ -126,7 +126,10 @@ async fn try_send_tip(ctx: Context<'_>) -> Result<(), Error> {
     }
 
     let seen = db.get_seen_tip_ids(user_id).await?;
-    let unseen: Vec<&Tip> = TIPS.iter().filter(|t| !seen.iter().any(|s| s == t.id)).collect();
+    let unseen: Vec<&Tip> = TIPS
+        .iter()
+        .filter(|t| !seen.iter().any(|s| s == t.id))
+        .collect();
     if unseen.is_empty() {
         return Ok(());
     }
@@ -166,4 +169,3 @@ pub async fn safe_defer_ephemeral(ctx: Context<'_>) -> Result<(), Error> {
     ctx.defer_ephemeral().await?;
     Ok(())
 }
-

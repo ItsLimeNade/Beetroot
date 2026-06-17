@@ -90,7 +90,10 @@ pub async fn tir(
         send_error!(
             ctx,
             "No Data",
-            format!("No glucose entries found in the {}.", period.label().to_lowercase())
+            format!(
+                "No glucose entries found in the {}.",
+                period.label().to_lowercase()
+            )
         );
         return Ok(());
     }
@@ -114,7 +117,9 @@ pub async fn tir(
         .unwrap_or((72.0, 180.0, false));
 
     let db = &ctx.data().database;
-    let theme = theme_assets::resolve_user_theme(db, target_id.get(), user_data.active_theme.as_deref()).await;
+    let theme =
+        theme_assets::resolve_user_theme(db, target_id.get(), user_data.active_theme.as_deref())
+            .await;
 
     let user_stickers = db.get_all_user_stickers(target_id.get()).await?;
     let bonbon_stickers = sticker_assets::load_bonbon_stickers(&user_stickers).await;

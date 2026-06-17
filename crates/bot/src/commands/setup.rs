@@ -1,9 +1,9 @@
 use crate::data::{Context, Error};
 use crate::utils::emojis;
+use crate::utils::net::parse_and_normalize_url;
 use macros::track_analytics;
 use poise::Modal;
 use poise::serenity_prelude as serenity;
-use crate::utils::net::parse_and_normalize_url;
 use serenity::{
     ButtonStyle, Colour, CreateActionRow, CreateButton, CreateEmbed, CreateInteractionResponse,
     CreateInteractionResponseMessage,
@@ -73,7 +73,10 @@ async fn show_privacy_selection(
     ]);
 
     let token_text = if token.is_some() {
-        format!("\n\n{} **Access Token:** Securely Encrypted", emojis::PASSWORD)
+        format!(
+            "\n\n{} **Access Token:** Securely Encrypted",
+            emojis::PASSWORD
+        )
     } else {
         format!("\n\n{} **No Token:** Public Access", emojis::LOCK_OPEN)
     };
@@ -122,7 +125,9 @@ async fn show_privacy_selection(
                     .title(format!("{} Setup Complete", emojis::CELEBRATION))
                     .description(format!(
                         "{} Nightscout configured successfully!\n\n**URL:** {}\n**Privacy:** {}",
-                        emojis::WIFI, url, privacy_text
+                        emojis::WIFI,
+                        url,
+                        privacy_text
                     ))
                     .color(Colour::DARK_GREEN);
 
@@ -142,7 +147,10 @@ async fn show_privacy_selection(
                     ctx.serenity_context(),
                     CreateInteractionResponse::Message(
                         serenity::CreateInteractionResponseMessage::new()
-                            .content(format!("{} Database error. Please try again.", emojis::ERROR))
+                            .content(format!(
+                                "{} Database error. Please try again.",
+                                emojis::ERROR
+                            ))
                             .ephemeral(true),
                     ),
                 )

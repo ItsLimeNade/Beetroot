@@ -30,7 +30,10 @@ pub async fn bg(
 
     let user_data = get_db_user!(ctx, target_id.get());
 
-    println!("[bg] fired - user={} bg_image_mode={}", target_id, user_data.bg_image_mode);
+    println!(
+        "[bg] fired - user={} bg_image_mode={}",
+        target_id, user_data.bg_image_mode
+    );
 
     check_privacy!(ctx, target_id, user_data);
 
@@ -106,7 +109,11 @@ pub async fn bg(
         let (properties_result, profile_result) = tokio::join!(properties_fut, profile_fut);
 
         println!("[bg/image] ===== RAW DATA DUMP =====");
-        println!("[bg/image] sparkline entries ({} total):\n{:#?}", sparkline_entries.len(), sparkline_entries);
+        println!(
+            "[bg/image] sparkline entries ({} total):\n{:#?}",
+            sparkline_entries.len(),
+            sparkline_entries
+        );
         println!("[bg/image] properties:\n{:#?}", properties_result);
         println!("[bg/image] profiles:\n{:#?}", profile_result);
         println!("[bg/image] ===========================");
@@ -142,9 +149,7 @@ pub async fn bg(
         } else {
             None
         };
-        let delta = prev
-            .map(|p| entry.sgv as f64 - p.sgv as f64)
-            .unwrap_or(0.0);
+        let delta = prev.map(|p| entry.sgv as f64 - p.sgv as f64).unwrap_or(0.0);
 
         let entry_time = chrono::DateTime::parse_from_rfc3339(&entry.date_string)
             .unwrap_or_else(|_| now.into())
@@ -196,15 +201,26 @@ pub async fn bg(
                 } else {
                     GlucoseStatus::InRange
                 };
-                let sgv = if is_mmol { e.sgv as f32 / 18.0 } else { e.sgv as f32 };
+                let sgv = if is_mmol {
+                    e.sgv as f32 / 18.0
+                } else {
+                    e.sgv as f32
+                };
                 SparklinePoint { t, sgv, status }
             })
             .collect();
 
-        let display_sgv = if is_mmol { entry.sgv as f32 / 18.0 } else { entry.sgv as f32 };
+        let display_sgv = if is_mmol {
+            entry.sgv as f32 / 18.0
+        } else {
+            entry.sgv as f32
+        };
         let display_delta = if is_mmol { delta / 18.0 } else { delta };
         let (unit_str, delta_str) = if is_mmol {
-            ("mmol/L".to_string(), format!("{:+.1} mmol/L", display_delta))
+            (
+                "mmol/L".to_string(),
+                format!("{:+.1} mmol/L", display_delta),
+            )
         } else {
             ("mg/dL".to_string(), format!("{:+.0} mg/dL", display_delta))
         };
@@ -253,8 +269,8 @@ pub async fn bg(
                 .with_scale(4.0);
 
             if !bonbon_stickers.is_empty() {
-                let mut set = StickerSet::new(bonbon_stickers.len().min(6))
-                    .with_stickers(bonbon_stickers);
+                let mut set =
+                    StickerSet::new(bonbon_stickers.len().min(6)).with_stickers(bonbon_stickers);
                 if let Some(rate) = current_rate {
                     set = set.with_current_rate(rate);
                 }
@@ -282,8 +298,7 @@ pub async fn bg(
         .await??;
 
         ctx.send(
-            poise::CreateReply::default()
-                .attachment(CreateAttachment::bytes(img_buffer, "bg.png")),
+            poise::CreateReply::default().attachment(CreateAttachment::bytes(img_buffer, "bg.png")),
         )
         .await?;
 
@@ -503,19 +518,32 @@ pub async fn bg(
         let from_mbg = mbg_res.ok().and_then(|list| {
             list.into_iter().next().and_then(|mbg| {
                 let t = chrono::DateTime::parse_from_rfc3339(&mbg.date_string).ok()?;
-                let age = now.signed_duration_since(t.with_timezone(&chrono::Utc)).num_minutes();
-                if age <= expiry_mins { Some((mbg.mbg as f64, age)) } else { None }
+                let age = now
+                    .signed_duration_since(t.with_timezone(&chrono::Utc))
+                    .num_minutes();
+                if age <= expiry_mins {
+                    Some((mbg.mbg as f64, age))
+                } else {
+                    None
+                }
             })
         });
 
         let from_bgcheck = bgcheck_res.ok().and_then(|treatments| {
-            treatments.into_iter()
+            treatments
+                .into_iter()
                 .filter(|t| t.event_type == "BG Check")
                 .filter_map(|t| {
                     let glucose = t.glucose?;
                     let dt = chrono::DateTime::parse_from_rfc3339(&t.created_at).ok()?;
-                    let age = now.signed_duration_since(dt.with_timezone(&chrono::Utc)).num_minutes();
-                    if age <= expiry_mins { Some((glucose, age)) } else { None }
+                    let age = now
+                        .signed_duration_since(dt.with_timezone(&chrono::Utc))
+                        .num_minutes();
+                    if age <= expiry_mins {
+                        Some((glucose, age))
+                    } else {
+                        None
+                    }
                 })
                 .min_by_key(|(_, age)| *age)
         });
@@ -529,7 +557,10 @@ pub async fn bg(
             let val_mmol = val / 18.0;
             embed = embed.field(
                 "Fingerprick",
-                format!("{:.0} mg/dL ({:.1} mmol/L)\n-# {} min ago", val, val_mmol, age),
+                format!(
+                    "{:.0} mg/dL ({:.1} mmol/L)\n-# {} min ago",
+                    val, val_mmol, age
+                ),
                 false,
             );
         }
@@ -565,7 +596,11 @@ fn pick_info_pill(
     };
 
     if sgv_mgdl < 55.0 {
-        return Some(make(builtin_icons::WARNING, "Treat now", PillState::AlertLow));
+        return Some(make(
+            builtin_icons::WARNING,
+            "Treat now",
+            PillState::AlertLow,
+        ));
     }
     if sgv_mgdl > 250.0 {
         return Some(make(
@@ -583,7 +618,11 @@ fn pick_info_pill(
         ));
     }
     if age_min > 15 {
-        return Some(make(builtin_icons::WARNING, "Stale data", PillState::Normal));
+        return Some(make(
+            builtin_icons::WARNING,
+            "Stale data",
+            PillState::Normal,
+        ));
     }
 
     const FAST_THRESHOLD: f32 = 2.0;
@@ -597,9 +636,11 @@ fn pick_info_pill(
                 "Falling fast",
                 PillState::AlertLow,
             ),
-            (GlucoseStatus::High, true) => {
-                make(builtin_icons::FAST_RISE, "Rising fast", PillState::AlertHigh)
-            }
+            (GlucoseStatus::High, true) => make(
+                builtin_icons::FAST_RISE,
+                "Rising fast",
+                PillState::AlertHigh,
+            ),
             (GlucoseStatus::Low, true) => {
                 make(builtin_icons::FAST_RISE, "Recovering", PillState::Normal)
             }

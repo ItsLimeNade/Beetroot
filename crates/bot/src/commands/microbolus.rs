@@ -43,11 +43,17 @@ pub async fn microbolus(
     if let Some(d) = display {
         db.set_display_microbolus(user_id, d).await?;
         let label = if d { "shown" } else { "hidden" };
-        lines.push(format!("Microboluses will be **{}** on your graphs.", label));
+        lines.push(format!(
+            "Microboluses will be **{}** on your graphs.",
+            label
+        ));
     }
 
     let embed = CreateEmbed::new()
-        .title(format!("{} Microbolus Settings Updated", emojis::MICRO_BOLUS))
+        .title(format!(
+            "{} Microbolus Settings Updated",
+            emojis::MICRO_BOLUS
+        ))
         .description(lines.join("\n"))
         .color(Colour::DARK_GREEN);
 

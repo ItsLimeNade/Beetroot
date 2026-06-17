@@ -23,7 +23,11 @@ pub async fn allow(
         return Ok(());
     }
     if user.bot {
-        send_error!(ctx, "Invalid Target", "Bots cannot be added to your allow list.");
+        send_error!(
+            ctx,
+            "Invalid Target",
+            "Bots cannot be added to your allow list."
+        );
         return Ok(());
     }
 
@@ -38,7 +42,10 @@ pub async fn allow(
     } else {
         CreateEmbed::new()
             .title(format!("{} No Change", emojis::WARNING))
-            .description(format!("<@{}> was already on your allow list.", user.id.get()))
+            .description(format!(
+                "<@{}> was already on your allow list.",
+                user.id.get()
+            ))
             .color(Colour::ORANGE)
     };
 

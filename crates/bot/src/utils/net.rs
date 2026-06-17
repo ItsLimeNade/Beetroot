@@ -25,7 +25,7 @@ fn is_blocked_ipv4(ip: Ipv4Addr) -> bool {
         || (o[0] == 100 && (o[1] & 0xc0) == 64)        // 100.64.0.0/10 CGNAT
         || (o[0] == 192 && o[1] == 0 && o[2] == 0)     // 192.0.0.0/24 IETF
         || (o[0] == 198 && (o[1] & 0xfe) == 18)        // 198.18.0.0/15 benchmarking
-        || o[0] >= 224                                 // 224/4 multicast + 240/4 reserved
+        || o[0] >= 224 // 224/4 multicast + 240/4 reserved
 }
 
 /// True if an IPv6 address must never be the target of an outbound fetch.
@@ -42,7 +42,7 @@ fn is_blocked_ipv6(ip: Ipv6Addr) -> bool {
         || ip.is_multicast()                     // ff00::/8
         || (seg[0] & 0xfe00) == 0xfc00           // fc00::/7 unique-local
         || (seg[0] & 0xffc0) == 0xfe80           // fe80::/10 link-local
-        || (seg[0] == 0x2001 && seg[1] == 0x0db8)// 2001:db8::/32 documentation
+        || (seg[0] == 0x2001 && seg[1] == 0x0db8) // 2001:db8::/32 documentation
 }
 
 /// True if `ip` is loopback / private / link-local / reserved and so off limits.
@@ -128,17 +128,21 @@ pub fn guarded_client() -> &'static reqwest::Client {
 pub fn check_public_url(url: &Url) -> Result<(), String> {
     match url.scheme() {
         "http" | "https" => {}
-        other => return Err(format!("URL scheme '{other}' is not allowed; use http or https")),
+        other => {
+            return Err(format!(
+                "URL scheme '{other}' is not allowed; use http or https"
+            ));
+        }
     }
 
     match url.host() {
         None => Err("URL must have a host".to_string()),
-        Some(url::Host::Ipv4(ip)) if is_blocked_ipv4(ip) => {
-            Err("That address points to an internal/reserved network and is not allowed.".to_string())
-        }
-        Some(url::Host::Ipv6(ip)) if is_blocked_ipv6(ip) => {
-            Err("That address points to an internal/reserved network and is not allowed.".to_string())
-        }
+        Some(url::Host::Ipv4(ip)) if is_blocked_ipv4(ip) => Err(
+            "That address points to an internal/reserved network and is not allowed.".to_string(),
+        ),
+        Some(url::Host::Ipv6(ip)) if is_blocked_ipv6(ip) => Err(
+            "That address points to an internal/reserved network and is not allowed.".to_string(),
+        ),
         Some(_) => Ok(()),
     }
 }
@@ -156,8 +160,10 @@ pub fn parse_and_normalize_url(input: &str) -> Result<Url, String> {
 
     let mut url = match Url::parse(input) {
         Ok(u) => u,
-        Err(url::ParseError::RelativeUrlWithoutBase) => Url::parse(&format!("https://{}", input))
-            .map_err(|_| "Invalid URL format".to_string())?,
+        Err(url::ParseError::RelativeUrlWithoutBase) => {
+            Url::parse(&format!("https://{}", input))
+                .map_err(|_| "Invalid URL format".to_string())?
+        }
         Err(e) => return Err(format!("Invalid URL: {}", e)),
     };
 
@@ -231,7 +237,12 @@ mod tests {
 
     #[test]
     fn allows_public() {
-        for ip in ["8.8.8.8", "1.1.1.1", "93.184.216.34", "2606:4700:4700::1111"] {
+        for ip in [
+            "8.8.8.8",
+            "1.1.1.1",
+            "93.184.216.34",
+            "2606:4700:4700::1111",
+        ] {
             assert!(!blocked(ip), "expected {ip} to be allowed");
         }
     }
@@ -262,6 +273,9 @@ mod tests {
         // resolver must surface an error instead of any address to connect to.
         let name: Name = "localhost".parse().unwrap();
         let result = SsrfResolver.resolve(name).await;
-        assert!(result.is_err(), "localhost should not be resolvable for outbound fetches");
+        assert!(
+            result.is_err(),
+            "localhost should not be resolvable for outbound fetches"
+        );
     }
 }

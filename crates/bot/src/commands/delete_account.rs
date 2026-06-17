@@ -20,7 +20,11 @@ pub async fn delete_account(ctx: Context<'_>) -> Result<(), Error> {
     let db = &ctx.data().database;
 
     if !db.user_exists(user_id).await? {
-        send_error!(ctx, "Nothing to Delete", "You do not have a stored account.");
+        send_error!(
+            ctx,
+            "Nothing to Delete",
+            "You do not have a stored account."
+        );
         return Ok(());
     }
 
