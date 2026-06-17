@@ -230,10 +230,12 @@ impl Database {
 
         let id = discord_id as i64;
 
+        let mut tx = self.pool.begin().await?;
+
         let read_sql = format!("SELECT {column} FROM users WHERE discord_id = ?");
         let row: Option<(Option<String>,)> = sqlx::query_as(&read_sql)
             .bind(id)
-            .fetch_optional(&self.pool)
+            .fetch_optional(&mut *tx)
             .await?;
 
         let raw = match row {
@@ -261,9 +263,11 @@ impl Database {
             sqlx::query(&write_sql)
                 .bind(serialized)
                 .bind(id)
-                .execute(&self.pool)
+                .execute(&mut *tx)
                 .await?;
         }
+
+        tx.commit().await?;
 
         Ok(changed)
     }

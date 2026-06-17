@@ -29,7 +29,7 @@ pub async fn a1c(ctx: Context<'_>) -> Result<(), Error> {
 
     let result = client.sgv().get().limit(120_000).from(ago).send().await;
 
-    let icon_bytes = std::fs::read("assets/images/nightscout_icon.png")?;
+    let icon_bytes = tokio::fs::read("assets/images/nightscout_icon.png").await?;
     let icon_attachment = CreateAttachment::bytes(icon_bytes, "nightscout_icon.png");
 
     let mut embed = CreateEmbed::new()

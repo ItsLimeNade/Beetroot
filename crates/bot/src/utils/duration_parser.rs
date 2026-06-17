@@ -8,6 +8,8 @@ const WEEK: i64 = 7 * DAY;
 const MONTH: i64 = 30 * DAY;
 const YEAR: i64 = 365 * DAY;
 
+const MAX_AGO_SECONDS: i64 = 10 * YEAR;
+
 /// Parse a human readable duration string into a chrono::Duration.
 ///
 /// Accepts a sequence of `<number><unit>` pairs. Whitespace, commas and `and`
@@ -63,7 +65,7 @@ pub fn parse_ago_duration(input: &str) -> Option<Duration> {
         total_seconds = total_seconds.checked_add(delta)?;
     }
 
-    if total_seconds <= 0 {
+    if total_seconds <= 0 || total_seconds > MAX_AGO_SECONDS {
         return None;
     }
 
@@ -163,5 +165,12 @@ mod tests {
         assert_eq!(parse_ago_duration("0m"), None);
         assert_eq!(parse_ago_duration("5x"), None);
         assert_eq!(parse_ago_duration("m"), None);
+    }
+
+    #[test]
+    fn test_rejects_oversized() {
+        assert_eq!(parse_ago_duration("1000000y"), None);
+        assert_eq!(parse_ago_duration("11y"), None);
+        assert_eq!(parse_ago_duration("10y"), Some(Duration::days(3650)));
     }
 }

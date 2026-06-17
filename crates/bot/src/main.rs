@@ -81,7 +81,7 @@ async fn main() -> anyhow::Result<()> {
                     "slash commands registered"
                 );
 
-                let db_url = env::var("DATABASE_URL").expect("Missing DATABASE_URL");
+                let db_url = env::var("DATABASE_URL").context("Missing DATABASE_URL")?;
                 let database = beetroot_core::Database::connect(&db_url).await?;
                 tracing::info!("database connected and migrated");
 
@@ -98,6 +98,15 @@ async fn main() -> anyhow::Result<()> {
         .framework(framework)
         .await?;
 
+    // Shut the gateway down cleanly on Ctrl-C / SIGTERM (e.g. `docker stop`) so
+    // `client.start()` returns and the log-appender guards flush on the way out.
+    let shard_manager = client.shard_manager.clone();
+    tokio::spawn(async move {
+        shutdown_signal().await;
+        tracing::info!("shutdown signal received; stopping gateway");
+        shard_manager.shutdown_all().await;
+    });
+
     tracing::info!("connecting to Discord gateway");
     match client.start().await {
         Ok(()) => {
@@ -108,5 +117,34 @@ async fn main() -> anyhow::Result<()> {
             tracing::error!(error = %e, "client stopped with error");
             Err(e.into())
         }
+    }
+}
+
+/// Resolves when the process is asked to stop: Ctrl-C on any platform, plus
+/// SIGTERM on Unix (the signal `docker stop` and most orchestrators send).
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        let _ = tokio::signal::ctrl_c().await;
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut sig) => {
+                sig.recv().await;
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "could not install SIGTERM handler");
+                std::future::pending::<()>().await;
+            }
+        }
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
     }
 }
