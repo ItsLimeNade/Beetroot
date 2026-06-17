@@ -22,6 +22,21 @@ pub async fn on_error(error: poise::FrameworkError<'_, Data, Error>) {
                 "An unexpected error occurred. Please try again later."
             );
         }
+        poise::FrameworkError::CooldownHit {
+            remaining_cooldown,
+            ctx,
+            ..
+        } => {
+            let secs = remaining_cooldown.as_secs().max(1);
+            send_error!(
+                ctx,
+                "Slow Down",
+                format!(
+                    "That command is on cooldown. Try again in {secs} second{}.",
+                    if secs == 1 { "" } else { "s" }
+                )
+            );
+        }
         error => {
             if let Err(e) = poise::builtins::on_error(error).await {
                 tracing::error!("Error while handling error: {}", e);

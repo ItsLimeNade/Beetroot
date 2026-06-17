@@ -13,7 +13,8 @@ use serenity::all::CreateAttachment;
 #[poise::command(
     slash_command,
     install_context = "Guild|User",
-    interaction_context = "Guild|BotDm|PrivateChannel"
+    interaction_context = "Guild|BotDm|PrivateChannel",
+    user_cooldown = 8
 )]
 #[track_analytics("graph")]
 /// Displays a graph of your blood glucose containing boluses and carb intake.
