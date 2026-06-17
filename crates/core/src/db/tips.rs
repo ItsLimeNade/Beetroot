@@ -29,13 +29,4 @@ impl Database {
         .await?;
         Ok(())
     }
-
-    pub async fn clear_seen_tips(&self, discord_id: u64) -> CoreResult<()> {
-        let id = discord_id as i64;
-        sqlx::query("DELETE FROM seen_tips WHERE discord_id = ?")
-            .bind(id)
-            .execute(&self.pool)
-            .await?;
-        Ok(())
-    }
 }

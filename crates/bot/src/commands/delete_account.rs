@@ -81,9 +81,6 @@ pub async fn delete_account(ctx: Context<'_>) -> Result<(), Error> {
         "delete_confirm" => {
             tracing::info!(user = %crate::logging::redact(user_id), "deleting account (confirmed)");
             db.delete_user(user_id).await?;
-            if let Err(e) = db.clear_seen_tips(user_id).await {
-                tracing::warn!(error = %e, "failed to clear seen tips during account deletion");
-            }
             tracing::info!(user = %crate::logging::redact(user_id), "account deleted");
             let done = CreateEmbed::new()
                 .title(format!("{} Account Deleted", emojis::REMOVE_USER))

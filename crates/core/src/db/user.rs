@@ -304,16 +304,38 @@ impl Database {
         Ok(row.map(|(c,)| c as u64).unwrap_or(0))
     }
 
+    /// Erase every trace of a user. The `users` row cascades to stickers and
+    /// themes via FK, but `command_logs` and `seen_tips` key on the Discord id
+    /// without a foreign key, so they must be cleared explicitly or a "deleted"
+    /// user's id lingers in analytics. Done in one transaction so deletion is
+    /// all-or-nothing.
     pub async fn delete_user(&self, discord_id: u64) -> CoreResult<()> {
         let id = discord_id as i64;
 
+        let mut tx = self.pool.begin().await?;
+
         let result = sqlx::query("DELETE FROM users WHERE discord_id = ?")
             .bind(id)
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await?;
 
+        sqlx::query("DELETE FROM command_logs WHERE user_id = ?")
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+
+        sqlx::query("DELETE FROM seen_tips WHERE discord_id = ?")
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+
+        tx.commit().await?;
+
         // No user id here: core stays PII-free in logs.
-        tracing::debug!(rows = result.rows_affected(), "deleted user row (cascades stickers/themes)");
+        tracing::debug!(
+            rows = result.rows_affected(),
+            "deleted user (cascades stickers/themes; purged command_logs + seen_tips)"
+        );
 
         Ok(())
     }
