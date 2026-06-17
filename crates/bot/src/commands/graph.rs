@@ -35,9 +35,13 @@ pub async fn graph(
 
     check_privacy!(ctx, target_id, user_data);
 
+    // Honor the data owner's force_ephemeral preference: a private user's glucose
+    // is never broadcast publicly, even when someone else views it.
+    let reply_ephemeral = user_data.force_ephemeral;
+
     let client = get_nightscout_client!(ctx, user_data);
 
-    crate::tips::safe_defer(ctx).await?;
+    crate::tips::safe_defer_with(ctx, reply_ephemeral).await?;
 
     let lookback = if let Some(ref s) = at_str {
         match parse_ago_duration(s) {
@@ -197,8 +201,12 @@ pub async fn graph(
 
     let attachment = CreateAttachment::bytes(img_buffer, "graph.png");
 
-    ctx.send(poise::CreateReply::default().attachment(attachment))
-        .await?;
+    ctx.send(
+        poise::CreateReply::default()
+            .attachment(attachment)
+            .ephemeral(reply_ephemeral),
+    )
+    .await?;
 
     Ok(())
 }

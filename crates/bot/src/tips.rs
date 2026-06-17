@@ -169,3 +169,16 @@ pub async fn safe_defer_ephemeral(ctx: Context<'_>) -> Result<(), Error> {
     ctx.defer_ephemeral().await?;
     Ok(())
 }
+
+/// Defer ephemerally or publicly depending on `ephemeral`.
+///
+/// A Discord followup inherits the visibility of its defer, so the deferral and
+/// the final reply must agree. Data commands pass the user's `force_ephemeral`
+/// preference here and to `.ephemeral(...)` on the reply.
+pub async fn safe_defer_with(ctx: Context<'_>, ephemeral: bool) -> Result<(), Error> {
+    if ephemeral {
+        safe_defer_ephemeral(ctx).await
+    } else {
+        safe_defer(ctx).await
+    }
+}

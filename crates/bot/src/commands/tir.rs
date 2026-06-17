@@ -60,9 +60,12 @@ pub async fn tir(
 
     check_privacy!(ctx, target_id, user_data);
 
+    // Honor the data owner's force_ephemeral preference (see graph.rs).
+    let reply_ephemeral = user_data.force_ephemeral;
+
     let client = get_nightscout_client!(ctx, user_data);
 
-    crate::tips::safe_defer(ctx).await?;
+    crate::tips::safe_defer_with(ctx, reply_ephemeral).await?;
 
     let now = Utc::now();
     let start_time = now - Duration::days(period.days());
@@ -193,8 +196,12 @@ pub async fn tir(
 
     let attachment = CreateAttachment::bytes(img_buffer, "tir.png");
 
-    ctx.send(poise::CreateReply::default().attachment(attachment))
-        .await?;
+    ctx.send(
+        poise::CreateReply::default()
+            .attachment(attachment)
+            .ephemeral(reply_ephemeral),
+    )
+    .await?;
 
     Ok(())
 }

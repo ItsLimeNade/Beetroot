@@ -519,7 +519,16 @@ pub async fn nutrition(
     }
     debug!(query, "nutrition lookup requested");
 
-    crate::tips::safe_defer(ctx).await?;
+    // Honor force_ephemeral if the user has an account; looking up food does not
+    // require one, so default to a public reply when there is no row.
+    let reply_ephemeral = ctx
+        .data()
+        .database
+        .get_user(ctx.author().id.get())
+        .await?
+        .is_some_and(|u| u.force_ephemeral);
+
+    crate::tips::safe_defer_with(ctx, reply_ephemeral).await?;
 
     let http = reqwest::Client::new();
 
@@ -593,7 +602,8 @@ pub async fn nutrition(
         .send(
             poise::CreateReply::default()
                 .embed(initial_embed)
-                .components(initial_components),
+                .components(initial_components)
+                .ephemeral(reply_ephemeral),
         )
         .await?;
 

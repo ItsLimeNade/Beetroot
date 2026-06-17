@@ -38,6 +38,9 @@ pub async fn bg(
 
     check_privacy!(ctx, target_id, user_data);
 
+    // Honor the data owner's force_ephemeral preference (see graph.rs).
+    let reply_ephemeral = user_data.force_ephemeral;
+
     let client = get_nightscout_client!(ctx, user_data);
 
     let lookback = if let Some(ref s) = at_str {
@@ -56,7 +59,7 @@ pub async fn bg(
         None
     };
 
-    crate::tips::safe_defer(ctx).await?;
+    crate::tips::safe_defer_with(ctx, reply_ephemeral).await?;
 
     let now = chrono::Utc::now();
 
@@ -300,7 +303,9 @@ pub async fn bg(
         .await??;
 
         ctx.send(
-            poise::CreateReply::default().attachment(CreateAttachment::bytes(img_buffer, "bg.png")),
+            poise::CreateReply::default()
+                .attachment(CreateAttachment::bytes(img_buffer, "bg.png"))
+                .ephemeral(reply_ephemeral),
         )
         .await?;
 
@@ -577,7 +582,8 @@ pub async fn bg(
     ctx.send(
         poise::CreateReply::default()
             .embed(embed)
-            .attachment(icon_attachment),
+            .attachment(icon_attachment)
+            .ephemeral(reply_ephemeral),
     )
     .await?;
 

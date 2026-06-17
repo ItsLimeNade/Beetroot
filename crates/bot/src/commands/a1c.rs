@@ -17,9 +17,10 @@ pub async fn a1c(ctx: Context<'_>) -> Result<(), Error> {
     debug!(user = %crate::logging::redact(user_id), "computing 3-month A1C estimate");
 
     let user_data = get_db_user!(ctx, user_id);
+    let reply_ephemeral = user_data.force_ephemeral;
     let client = get_nightscout_client!(ctx, user_data);
 
-    crate::tips::safe_defer(ctx).await?;
+    crate::tips::safe_defer_with(ctx, reply_ephemeral).await?;
 
     let now = chrono::Utc::now();
     let lookback = chrono::Months::new(3);
@@ -141,7 +142,8 @@ pub async fn a1c(ctx: Context<'_>) -> Result<(), Error> {
     ctx.send(
         poise::CreateReply::default()
             .embed(embed)
-            .attachment(icon_attachment),
+            .attachment(icon_attachment)
+            .ephemeral(reply_ephemeral),
     )
     .await?;
 
