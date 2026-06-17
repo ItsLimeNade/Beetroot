@@ -16,14 +16,15 @@ pub const CHANGELOG: &[ChangelogEntry] = &[ChangelogEntry {
     version: CURRENT_VERSION,
     date: "2026-06-17",
     changes: &[
-        "Track your glucose with `/bg`, with an optional clean image card.",
-        "See trends with `/graph` and `/tir`, a Time in Range card over 7, 14, 30 or 90 days.",
+        "Enable image mode for `/bg` with the `/image-mode` command",
+        "See your time in range and A1C with the `/tir` and `/a1c` commands",
         "Look back in time with the new `at` option on `/bg` and `/graph` (e.g. `2h`, `1d`, `1w`, `1h30m`).",
-        "Estimate your `/a1c` from recent readings.",
         "Personalize your graphs with `/theme` color themes and your own stickers.",
-        "Look up calories, carbs and macros for any food with `/nutrition`.",
-        "Tune everything from `/settings`, plus dedicated commands: `/privacy`, `/allow`, `/block`, `/ephemeral`, `/image-mode`, `/microbolus` and `/fingerprick-expiry`.",
+        "Look up carbs, calories and macros for any food with `/nutrition`.",
+        "Tune everything from `/settings`, plus dedicated commands: `/privacy`, `/allow`, `/block`, `/ephemeral`, `/image-mode`, `/microbolus` and `/fingerprick-expiry` etc...",
         "Manage your account with `/stickers` and `/delete-account`.",
+        "Lots of security improvements",
+        "Plenty of bug fixes, notably the MBG reading as a *LO* value."
     ],
 }];
 

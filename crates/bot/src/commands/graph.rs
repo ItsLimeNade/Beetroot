@@ -20,8 +20,8 @@ use serenity::all::CreateAttachment;
 /// Displays a graph of your blood glucose containing boluses and carb intake.
 pub async fn graph(
     ctx: Context<'_>,
-    #[description = "Hours of data to display (3-24)"]
-    #[min = 3]
+    #[description = "Hours of data to display (2-24)"]
+    #[min = 2]
     #[max = 24]
     hours: i64,
     #[description = "View another user's graph"] user: Option<serenity::User>,
@@ -195,7 +195,7 @@ pub async fn graph(
             let stickers = StickerSet::new(sticker_count)
                 .with_stickers(bonbon_stickers)
                 .with_graph_size_ratio(0.22)
-                .with_graph_alpha(0.4);
+                .with_graph_alpha(0.5);
             builder = builder.with_stickers(stickers);
         }
 
