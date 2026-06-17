@@ -38,60 +38,60 @@ pub async fn settings(ctx: Context<'_>) -> Result<(), Error> {
     };
 
     let (privacy_icon, privacy_display) = if user_data.is_private {
-        (emojis::LOCK_CLOSED, "Private")
+        (emojis::lock_closed(), "Private")
     } else {
-        (emojis::LOCK_OPEN, "Public")
+        (emojis::lock_open(), "Public")
     };
 
     let allowed = format_user_list(&user_data.allowed_people);
     let blocked = format_user_list(&user_data.blocked_people);
 
     let embed = CreateEmbed::new()
-        .title(format!("{} Your Settings", emojis::NUTRITION))
+        .title(format!("{} Your Settings", emojis::nutrition()))
         .color(Colour::from_rgb(87, 189, 79))
         .field(
-            format!("{} Nightscout URL", emojis::WIFI),
+            format!("{} Nightscout URL", emojis::wifi()),
             format!("`{}`", url_display),
             false,
         )
         .field(
-            format!("{} Nightscout Token", emojis::PASSWORD),
+            format!("{} Nightscout Token", emojis::password()),
             token_display,
             true,
         )
         .field(format!("{} Privacy", privacy_icon), privacy_display, true)
         .field(
-            format!("{} Allowed Users", emojis::ADD_USER),
+            format!("{} Allowed Users", emojis::add_user()),
             allowed,
             false,
         )
         .field(
-            format!("{} Blocked Users", emojis::WIFI_LOCKED),
+            format!("{} Blocked Users", emojis::wifi_locked()),
             blocked,
             false,
         )
         .field(
-            format!("{} Microbolus Threshold", emojis::MICRO_BOLUS),
+            format!("{} Microbolus Threshold", emojis::micro_bolus()),
             format!("{} U", user_data.microbolus_threshold),
             true,
         )
         .field(
-            format!("{} Display Microbolus", emojis::MICRO_BOLUS),
+            format!("{} Display Microbolus", emojis::micro_bolus()),
             bool_label(user_data.display_microbolus),
             true,
         )
         .field(
-            format!("{} Force Ephemeral", emojis::LOCK_CLOSED),
+            format!("{} Force Ephemeral", emojis::lock_closed()),
             bool_label(user_data.force_ephemeral),
             true,
         )
         .field(
-            format!("{} BG Image Mode", emojis::IMAGE_MODE),
+            format!("{} BG Image Mode", emojis::image_mode()),
             bool_label(user_data.bg_image_mode),
             true,
         )
         .field(
-            format!("{} Fingerprick Expiry", emojis::DATE_VALID),
+            format!("{} Fingerprick Expiry", emojis::date_valid()),
             format!("{} min", user_data.mbg_expiry_time),
             true,
         );

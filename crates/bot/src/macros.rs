@@ -5,7 +5,7 @@ macro_rules! send_error {
         use poise::serenity_prelude::{Colour, CreateEmbed};
 
         let embed = CreateEmbed::new()
-            .title(format!("{} {}", $crate::utils::emojis::ERROR, $title))
+            .title(format!("{} {}", $crate::utils::emojis::error(), $title))
             .description($description)
             .color(Colour::RED);
 
@@ -27,7 +27,7 @@ macro_rules! get_db_user {
                 let embed = CreateEmbed::new()
                     .title(format!(
                         "{} User Not Found",
-                        $crate::utils::emojis::WIFI_OFF
+                        $crate::utils::emojis::wifi_off()
                     ))
                     .description("This user hasn't set up their Nightscout data yet.")
                     .footer(poise::serenity_prelude::CreateEmbedFooter::new(
@@ -72,7 +72,7 @@ macro_rules! check_privacy {
             let embed = CreateEmbed::new()
                 .title(format!(
                     "{} Access Denied",
-                    $crate::utils::emojis::LOCK_CLOSED
+                    $crate::utils::emojis::lock_closed()
                 ))
                 .description("This user's profile is set to **Private**.")
                 .footer(poise::serenity_prelude::CreateEmbedFooter::new(
@@ -99,7 +99,7 @@ macro_rules! get_nightscout_client {
                 let embed = CreateEmbed::new()
                     .title(format!(
                         "{} Configuration Missing",
-                        $crate::utils::emojis::WARNING
+                        $crate::utils::emojis::warning()
                     ))
                     .description("Nightscout URL is missing or empty.")
                     .field("How to fix", "Run `/setup` to configure your site.", false)

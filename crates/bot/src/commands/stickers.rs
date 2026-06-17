@@ -74,7 +74,7 @@ pub async fn stickers(ctx: Context<'_>) -> Result<(), Error> {
                             CreateInteractionResponseMessage::new()
                                 .embed(
                                     CreateEmbed::new()
-                                        .title(format!("{} Stickers Cleared", emojis::REMOVE_USER))
+                                        .title(format!("{} Stickers Cleared", emojis::remove_user()))
                                         .description("All of your stickers have been removed.")
                                         .color(Colour::DARK_RED),
                                 )
@@ -142,7 +142,7 @@ pub async fn stickers(ctx: Context<'_>) -> Result<(), Error> {
 
 fn empty_embed() -> CreateEmbed {
     CreateEmbed::new()
-        .title(format!("{} Your Stickers", emojis::STICKER_ADD))
+        .title(format!("{} Your Stickers", emojis::sticker_add()))
         .description(
             "You don't have any stickers yet.\n\n\
              Add some with `/add-sticker` or by right-clicking a message → Apps → **Add Sticker**.",
@@ -153,7 +153,7 @@ fn empty_embed() -> CreateEmbed {
 /// Build the summary embed grouping stickers by category.
 fn build_embed(stickers: &[Sticker]) -> CreateEmbed {
     let mut embed = CreateEmbed::new()
-        .title(format!("{} Your Stickers", emojis::STICKER_ADD))
+        .title(format!("{} Your Stickers", emojis::sticker_add()))
         .description(format!(
             "You have **{}** sticker{}. Use the menu below to remove one.",
             stickers.len(),

@@ -37,13 +37,13 @@ pub async fn privacy(
 
     let (icon, label, description) = if is_private {
         (
-            emojis::LOCK_CLOSED,
+            emojis::lock_closed(),
             "Private",
             "Only you and users on your allow list can view your data.",
         )
     } else {
         (
-            emojis::LOCK_OPEN,
+            emojis::lock_open(),
             "Public",
             "Anyone can view your data via the bot.",
         )

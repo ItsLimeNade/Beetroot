@@ -29,7 +29,7 @@ pub async fn unallow(
 
     let embed = if removed {
         CreateEmbed::new()
-            .title(format!("{} User Removed", emojis::REMOVE_USER))
+            .title(format!("{} User Removed", emojis::remove_user()))
             .description(format!(
                 "<@{}> can no longer view your private data.",
                 user.id.get()
@@ -37,7 +37,7 @@ pub async fn unallow(
             .color(Colour::DARK_GREEN)
     } else {
         CreateEmbed::new()
-            .title(format!("{} No Change", emojis::WARNING))
+            .title(format!("{} No Change", emojis::warning()))
             .description(format!("<@{}> was not on your allow list.", user.id.get()))
             .color(Colour::ORANGE)
     };

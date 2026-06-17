@@ -449,7 +449,7 @@ pub async fn bg(
     let is_data_old = duration.num_minutes() > 15;
     if is_data_old {
         embed = embed.field(
-            format!("{} Warning {}", emojis::DATE_INVALID, emojis::DATE_INVALID),
+            format!("{} Warning {}", emojis::date_invalid(), emojis::date_invalid()),
             format!("Data is {}min old!", duration.num_minutes()),
             false,
         );
@@ -488,12 +488,20 @@ pub async fn bg(
         if let Some(iob) = props.iob
             && iob.iob > 0.0
         {
-            embed = embed.field("IOB", format!("{:.2}u", iob.iob), true);
+            embed = embed.field(
+                format!("{} IOB", emojis::micro_bolus()),
+                format!("{:.2}u", iob.iob),
+                true,
+            );
         }
         if let Some(cob) = props.cob
             && cob.cob > 0.0
         {
-            embed = embed.field("COB", format!("{:.0}g", cob.cob), true);
+            embed = embed.field(
+                format!("{} COB", emojis::carbs()),
+                format!("{:.0}g", cob.cob),
+                true,
+            );
         }
     }
 

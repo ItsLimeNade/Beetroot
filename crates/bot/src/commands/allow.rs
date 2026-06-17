@@ -42,12 +42,12 @@ pub async fn allow(
 
     let embed = if added {
         CreateEmbed::new()
-            .title(format!("{} User Allowed", emojis::ADD_USER))
+            .title(format!("{} User Allowed", emojis::add_user()))
             .description(format!("<@{}> can now view your data.", user.id.get()))
             .color(Colour::DARK_GREEN)
     } else {
         CreateEmbed::new()
-            .title(format!("{} No Change", emojis::WARNING))
+            .title(format!("{} No Change", emojis::warning()))
             .description(format!(
                 "<@{}> was already on your allow list.",
                 user.id.get()

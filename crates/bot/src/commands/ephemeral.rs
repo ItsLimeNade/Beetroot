@@ -34,9 +34,9 @@ pub async fn ephemeral(
     };
 
     let icon = if enabled {
-        emojis::LOCK_CLOSED
+        emojis::lock_closed()
     } else {
-        emojis::LOCK_OPEN
+        emojis::lock_open()
     };
     let embed = CreateEmbed::new()
         .title(format!("{} Ephemeral Mode", icon))

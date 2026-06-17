@@ -86,14 +86,14 @@ async fn show_privacy_selection(
     let token_text = if token.is_some() {
         format!(
             "\n\n{} **Access Token:** Securely Encrypted",
-            emojis::PASSWORD
+            emojis::password()
         )
     } else {
-        format!("\n\n{} **No Token:** Public Access", emojis::LOCK_OPEN)
+        format!("\n\n{} **No Token:** Public Access", emojis::lock_open())
     };
 
     let embed = CreateEmbed::new()
-        .title(format!("{} Privacy Settings", emojis::LOCK_CLOSED))
+        .title(format!("{} Privacy Settings", emojis::lock_closed()))
         .description(format!(
             "Connection successful! Who can see data from **{}**?\n\n**Public:** Anyone via commands\n**Private:** Only you (and allowed users){}",
             url, token_text
@@ -139,15 +139,15 @@ async fn show_privacy_selection(
                 );
                 let privacy_text = if is_private { "Private" } else { "Public" };
                 let success_embed = CreateEmbed::new()
-                    .title(format!("{} Setup Complete", emojis::CELEBRATION))
+                    .title(format!("{} Setup Complete", emojis::celebration()))
                     .description(format!(
                         "{} Nightscout configured successfully!\n\n**URL:** {}\n**Privacy:** {}",
-                        emojis::WIFI,
+                        emojis::wifi(),
                         url,
                         privacy_text
                     ))
                     .field(
-                        format!("{} Not medical advice", emojis::WARNING),
+                        format!("{} Not medical advice", emojis::warning()),
                         "**Beetroot is not a medical device and does not give medical advice.** \
                          Readings can be delayed or wrong. Always confirm with a blood glucose \
                          meter and follow your healthcare provider before making any treatment \
@@ -178,7 +178,7 @@ async fn show_privacy_selection(
                         serenity::CreateInteractionResponseMessage::new()
                             .content(format!(
                                 "{} Database error. Please try again.",
-                                emojis::ERROR
+                                emojis::error()
                             ))
                             .ephemeral(true),
                     ),
@@ -193,7 +193,7 @@ async fn show_privacy_selection(
                 poise::CreateReply::default()
                     .embed(
                         CreateEmbed::new()
-                            .title(format!("{} Timed Out", emojis::SYNC_PROBLEM))
+                            .title(format!("{} Timed Out", emojis::sync_problem()))
                             .description("Setup timed out. Please run `/setup` again.")
                             .color(Colour::RED),
                     )

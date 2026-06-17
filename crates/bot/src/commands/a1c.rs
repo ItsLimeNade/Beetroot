@@ -34,7 +34,7 @@ pub async fn a1c(ctx: Context<'_>) -> Result<(), Error> {
     let icon_attachment = CreateAttachment::bytes(icon_bytes, "nightscout_icon.png");
 
     let mut embed = CreateEmbed::new()
-        .title("Estimated A1C")
+        .title(format!("{} Estimated A1C", emojis::sugar()))
         .description(
             "Based on your average glucose over the past 3 months.\n\
              *This does not replace an actual A1C blood test.*",
@@ -76,7 +76,7 @@ pub async fn a1c(ctx: Context<'_>) -> Result<(), Error> {
                             "insufficient A1C data coverage, adding warning field"
                         );
                         embed = embed.field(
-                            format!("{} Incomplete Data", emojis::DATE_INVALID),
+                            format!("{} Incomplete Data", emojis::date_invalid()),
                             format!(
                                 "Data only goes back {:.0} days instead of ~90. \
                                  This estimate may be less accurate.",
@@ -105,7 +105,7 @@ pub async fn a1c(ctx: Context<'_>) -> Result<(), Error> {
                     embed = embed
                         .color(color)
                         .field(
-                            format!("{} Data Range", emojis::DATE_VALID),
+                            format!("{} Data Range", emojis::date_valid()),
                             format!(
                                 "<t:{}:D> → <t:{}:D>",
                                 oldest_utc.timestamp(),

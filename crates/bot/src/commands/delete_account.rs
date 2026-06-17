@@ -38,7 +38,7 @@ pub async fn delete_account(ctx: Context<'_>) -> Result<(), Error> {
     ]);
 
     let warning = CreateEmbed::new()
-        .title(format!("{} Delete Account", emojis::WARNING))
+        .title(format!("{} Delete Account", emojis::warning()))
         .description(
             "This will permanently remove your Nightscout configuration, settings, and all of your stickers.\n\nThis action cannot be undone.",
         )
@@ -63,7 +63,7 @@ pub async fn delete_account(ctx: Context<'_>) -> Result<(), Error> {
 
     let Some(mci) = interaction else {
         let timed_out = CreateEmbed::new()
-            .title(format!("{} Timed Out", emojis::SYNC_PROBLEM))
+            .title(format!("{} Timed Out", emojis::sync_problem()))
             .description("Confirmation expired. Run the command again if you still want to delete your account.")
             .color(Colour::LIGHT_GREY);
         reply
@@ -83,7 +83,7 @@ pub async fn delete_account(ctx: Context<'_>) -> Result<(), Error> {
             db.delete_user(user_id).await?;
             tracing::info!(user = %crate::logging::redact(user_id), "account deleted");
             let done = CreateEmbed::new()
-                .title(format!("{} Account Deleted", emojis::REMOVE_USER))
+                .title(format!("{} Account Deleted", emojis::remove_user()))
                 .description("Your data has been removed. Run /setup any time to start again.")
                 .color(Colour::DARK_GREEN);
             mci.create_response(
@@ -98,7 +98,7 @@ pub async fn delete_account(ctx: Context<'_>) -> Result<(), Error> {
         }
         _ => {
             let cancelled = CreateEmbed::new()
-                .title(format!("{} Cancelled", emojis::WIFI))
+                .title(format!("{} Cancelled", emojis::wifi()))
                 .description("Your account is untouched.")
                 .color(Colour::LIGHT_GREY);
             mci.create_response(

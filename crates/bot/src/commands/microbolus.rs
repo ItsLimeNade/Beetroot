@@ -63,7 +63,7 @@ pub async fn microbolus(
     let embed = CreateEmbed::new()
         .title(format!(
             "{} Microbolus Settings Updated",
-            emojis::MICRO_BOLUS
+            emojis::micro_bolus()
         ))
         .description(lines.join("\n"))
         .color(Colour::DARK_GREEN);

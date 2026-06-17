@@ -38,7 +38,7 @@ pub async fn block(
 
     let embed = if added {
         CreateEmbed::new()
-            .title(format!("{} User Blocked", emojis::WIFI_LOCKED))
+            .title(format!("{} User Blocked", emojis::wifi_locked()))
             .description(format!(
                 "<@{}> can no longer interact with your data.",
                 user.id.get()
@@ -46,7 +46,7 @@ pub async fn block(
             .color(Colour::DARK_GREEN)
     } else {
         CreateEmbed::new()
-            .title(format!("{} No Change", emojis::WARNING))
+            .title(format!("{} No Change", emojis::warning()))
             .description(format!("<@{}> was already blocked.", user.id.get()))
             .color(Colour::ORANGE)
     };

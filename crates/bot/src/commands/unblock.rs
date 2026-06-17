@@ -29,12 +29,12 @@ pub async fn unblock(
 
     let embed = if removed {
         CreateEmbed::new()
-            .title(format!("{} User Unblocked", emojis::WIFI))
+            .title(format!("{} User Unblocked", emojis::wifi()))
             .description(format!("<@{}> is no longer blocked.", user.id.get()))
             .color(Colour::DARK_GREEN)
     } else {
         CreateEmbed::new()
-            .title(format!("{} No Change", emojis::WARNING))
+            .title(format!("{} No Change", emojis::warning()))
             .description(format!("<@{}> was not on your block list.", user.id.get()))
             .color(Colour::ORANGE)
     };

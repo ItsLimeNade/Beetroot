@@ -69,7 +69,7 @@ async fn try_send_changelog(ctx: Context<'_>) -> Result<(), Error> {
 
 fn build_embed(entries: &[&ChangelogEntry]) -> CreateEmbed {
     let mut embed = CreateEmbed::new()
-        .title(format!("{} What's New", emojis::CELEBRATION))
+        .title(format!("{} What's New", emojis::celebration()))
         .description(format!(
             "Beetroot has been updated to **{}**. Here's what's changed since you last used it:",
             CURRENT_VERSION

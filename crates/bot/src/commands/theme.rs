@@ -36,7 +36,7 @@ pub async fn list(ctx: Context<'_>) -> Result<(), Error> {
 
     let mark = |selector: &str| {
         if active == Some(selector) {
-            format!(" {} **(active)**", emojis::CELEBRATION)
+            format!(" {} **(active)**", emojis::celebration())
         } else {
             String::new()
         }
@@ -68,13 +68,14 @@ pub async fn list(ctx: Context<'_>) -> Result<(), Error> {
     };
 
     let embed = CreateEmbed::new()
-        .title(format!("{} Themes", emojis::IMAGE_MODE))
+        .title(format!("{} Themes", emojis::image_mode()))
         .color(Colour::from_rgb(87, 189, 79))
-        .field("Active", active_display, false)
-        .field("Builtin", builtins, false)
+        .field(format!("{} Active", emojis::celebration()), active_display, false)
+        .field(format!("{} Builtin", emojis::image_mode()), builtins, false)
         .field(
             format!(
-                "Your themes ({}/{})",
+                "{} Your themes ({}/{})",
+                emojis::image_mode(),
                 custom_rows.len(),
                 MAX_THEMES_PER_USER
             ),
@@ -129,7 +130,7 @@ pub async fn set(
     );
 
     let embed = CreateEmbed::new()
-        .title(format!("{} Theme Applied", emojis::CELEBRATION))
+        .title(format!("{} Theme Applied", emojis::celebration()))
         .description(format!(
             "**{}** is now your active theme. It'll show up on your next `/graph`, `/tir` and image-mode `/bg`.",
             name
@@ -200,7 +201,7 @@ pub async fn create(
     );
 
     let embed = CreateEmbed::new()
-        .title(format!("{} Theme Created", emojis::CELEBRATION))
+        .title(format!("{} Theme Created", emojis::celebration()))
         .description(format!(
             "**{}** was created from `{}`.\n\nTweak colors with `/theme edit name:{} field:… color:#rrggbb`, preview with `/theme view`, then apply with `/theme set`.",
             name,
@@ -254,7 +255,7 @@ pub async fn edit(
     );
 
     let embed = CreateEmbed::new()
-        .title(format!("{} Theme Updated", emojis::IMAGE_MODE))
+        .title(format!("{} Theme Updated", emojis::image_mode()))
         .description(format!(
             "Set **{}** to `{}` on `{}`.\n\nPreview it with `/theme view name:{}`.",
             theme_assets::field_label(field.key()),
@@ -304,7 +305,7 @@ pub async fn delete(
     );
 
     let embed = CreateEmbed::new()
-        .title(format!("{} Theme Deleted", emojis::REMOVE_USER))
+        .title(format!("{} Theme Deleted", emojis::remove_user()))
         .description(format!("Removed your theme `{}`.", name))
         .color(Colour::DARK_RED);
 
@@ -410,7 +411,7 @@ pub async fn import(
     );
 
     let embed = CreateEmbed::new()
-        .title(format!("{} Theme Imported", emojis::CELEBRATION))
+        .title(format!("{} Theme Imported", emojis::celebration()))
         .description(format!(
             "Imported **{}**. Preview it with `/theme view name:{}` and apply with `/theme set`.",
             name, name
@@ -472,7 +473,7 @@ pub async fn view(
     let attachment = CreateAttachment::bytes(img_buffer, "theme.png");
 
     let embed = CreateEmbed::new()
-        .title(format!("{} Theme: {}", emojis::IMAGE_MODE, name))
+        .title(format!("{} Theme: {}", emojis::image_mode(), name))
         .description(legend)
         .color(rgba_to_colour(theme.glucose_in_range))
         .image("attachment://theme.png");

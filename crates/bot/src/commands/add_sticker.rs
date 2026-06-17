@@ -90,7 +90,7 @@ pub async fn add_sticker(
     );
 
     let embed = CreateEmbed::new()
-        .title(format!("{} Sticker Added", emojis::STICKER_ADD))
+        .title(format!("{} Sticker Added", emojis::sticker_add()))
         .description(format!(
             "**{}** added to your **{}** stickers!\n\n\
             It will appear on your next `/graph` when your glucose is {}.",
@@ -177,7 +177,7 @@ pub async fn add_sticker_context(
     ];
 
     let embed = CreateEmbed::new()
-        .title(format!("{} Select Sticker Category", emojis::STICKER_ADD))
+        .title(format!("{} Select Sticker Category", emojis::sticker_add()))
         .description(format!(
             "Choose a category for **{}**:\n\n\
             **Low** appears when glucose is below target\n\
@@ -213,7 +213,7 @@ pub async fn add_sticker_context(
 
     let Some(interaction) = interaction else {
         let expired_embed = CreateEmbed::new()
-            .title(format!("{} Timed Out", emojis::SYNC_PROBLEM))
+            .title(format!("{} Timed Out", emojis::sync_problem()))
             .description("Category selection expired. Use the command again to add a sticker.")
             .color(Colour::LIGHT_GREY);
 
@@ -241,7 +241,7 @@ pub async fn add_sticker_context(
     let count = db.get_sticker_count_by_category(user_id, category).await?;
     if count >= category.max_count() {
         let embed = CreateEmbed::new()
-            .title(format!("{} Category Full", emojis::ERROR))
+            .title(format!("{} Category Full", emojis::error()))
             .description(format!(
                 "You already have {}/{} **{}** stickers.\n\
                 Use `/stickers` to remove one first.",
@@ -273,7 +273,7 @@ pub async fn add_sticker_context(
     );
 
     let embed = CreateEmbed::new()
-        .title(format!("{} Sticker Added", emojis::STICKER_ADD))
+        .title(format!("{} Sticker Added", emojis::sticker_add()))
         .description(format!(
             "**{}** added to your **{}** stickers!\n\n\
             It will appear on your next `/graph` when your glucose is {}.",

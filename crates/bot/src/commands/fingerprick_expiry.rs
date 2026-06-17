@@ -36,7 +36,7 @@ pub async fn fingerprick_expiry(
     );
 
     let embed = CreateEmbed::new()
-        .title(format!("{} Fingerprick Expiry Updated", emojis::WATER))
+        .title(format!("{} Fingerprick Expiry Updated", emojis::water()))
         .description(format!(
             "Fingerprick readings will be shown for **{} minutes** after they are recorded.",
             clamped

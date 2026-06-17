@@ -35,7 +35,7 @@ pub async fn image_mode(
     };
 
     let embed = CreateEmbed::new()
-        .title(format!("{} BG Image Mode", emojis::IMAGE_MODE))
+        .title(format!("{} BG Image Mode", emojis::image_mode()))
         .description(format!("**{}**\n{}", label, body))
         .color(Colour::DARK_GREEN);
 

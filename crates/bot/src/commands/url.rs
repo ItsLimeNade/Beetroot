@@ -42,7 +42,7 @@ pub async fn url(
     );
 
     let embed = CreateEmbed::new()
-        .title(format!("{} Nightscout URL Updated", emojis::WIFI_ADD))
+        .title(format!("{} Nightscout URL Updated", emojis::wifi_add()))
         .description(format!("Your Nightscout URL is now:\n`{}`", url_str))
         .color(Colour::DARK_GREEN);
 

@@ -111,7 +111,7 @@ fn build_page(index: usize, total: usize) -> CreateEmbed {
     let latest_tag = if index == 0 { " • Latest" } else { "" };
 
     CreateEmbed::new()
-        .title(format!("{} Changelog", emojis::CELEBRATION))
+        .title(format!("{} Changelog", emojis::celebration()))
         .color(Colour::from_rgb(87, 189, 79))
         .field(format!("v{} ({})", entry.version, entry.date), body, false)
         .field(

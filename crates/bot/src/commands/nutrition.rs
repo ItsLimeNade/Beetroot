@@ -199,8 +199,8 @@ fn truncate(s: &str, max: usize) -> String {
 
 fn food_title(name: &str, brand: Option<&str>) -> String {
     match brand.filter(|b| !b.is_empty()) {
-        Some(b) => format!("{} {} - {}", emojis::NUTRITION, name, b),
-        None => format!("{} {}", emojis::NUTRITION, name),
+        Some(b) => format!("{} {} - {}", emojis::nutrition(), name, b),
+        None => format!("{} {}", emojis::nutrition(), name),
     }
 }
 
@@ -323,12 +323,12 @@ fn build_fast_embed(food: &DetailFood) -> CreateEmbed {
 
     e.description(format!("**Per {}**", s.serving_description))
         .field(
-            format!("{} Calories", emojis::NUTRITION),
+            format!("{} Calories", emojis::nutrition()),
             fmt_kcal(s.calories.as_deref()),
             true,
         )
         .field(
-            format!("{} Carbs", emojis::CARBS),
+            format!("{} Carbs", emojis::carbs()),
             fmt_g(s.carbohydrate.as_deref()),
             true,
         )
@@ -354,32 +354,32 @@ fn build_full_embed(food: &DetailFood) -> CreateEmbed {
     e = e
         .description(format!("**Per {}**", s.serving_description))
         .field(
-            format!("{} Calories", emojis::NUTRITION),
+            format!("{} Calories", emojis::nutrition()),
             fmt_kcal(s.calories.as_deref()),
             true,
         )
         .field(
-            format!("{} Carbs", emojis::CARBS),
+            format!("{} Carbs", emojis::carbs()),
             fmt_g(s.carbohydrate.as_deref()),
             true,
         )
         .field(
-            format!("{} Protein", emojis::PROTEIN),
+            format!("{} Protein", emojis::protein()),
             fmt_g(s.protein.as_deref()),
             true,
         )
         .field(
-            format!("{} Fat", emojis::FAT),
+            format!("{} Fat", emojis::fat()),
             fmt_g(s.fat.as_deref()),
             true,
         )
         .field(
-            format!("{} Sugar", emojis::SUGAR),
+            format!("{} Sugar", emojis::sugar()),
             fmt_g(s.sugar.as_deref()),
             true,
         )
         .field(
-            format!("{} Fiber", emojis::FIBERS),
+            format!("{} Fiber", emojis::fibers()),
             fmt_g(s.fiber.as_deref()),
             true,
         );
@@ -389,7 +389,7 @@ fn build_full_embed(food: &DetailFood) -> CreateEmbed {
         .is_some()
     {
         e = e.field(
-            format!("{} Sat. Fat", emojis::FAT),
+            format!("{} Sat. Fat", emojis::fat()),
             fmt_g(s.saturated_fat.as_deref()),
             true,
         );
@@ -399,7 +399,7 @@ fn build_full_embed(food: &DetailFood) -> CreateEmbed {
         .is_some()
     {
         e = e.field(
-            format!("{} Sodium", emojis::SALT),
+            format!("{} Sodium", emojis::salt()),
             fmt_mg(s.sodium.as_deref()),
             true,
         );
@@ -409,7 +409,7 @@ fn build_full_embed(food: &DetailFood) -> CreateEmbed {
         .is_some()
     {
         e = e.field(
-            format!("{} Cholesterol", emojis::FAT),
+            format!("{} Cholesterol", emojis::fat()),
             fmt_mg(s.cholesterol.as_deref()),
             true,
         );

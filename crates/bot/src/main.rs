@@ -81,6 +81,38 @@ async fn main() -> anyhow::Result<()> {
                     "slash commands registered"
                 );
 
+                // Resolve emoji ids from this application's own emojis so the same
+                // binary works as either the beta or the production bot. Falls back
+                // to the ids baked into utils::emojis if the fetch fails.
+                match ctx.http.get_application_emojis().await {
+                    Ok(list) => {
+                        let present: std::collections::HashSet<&str> =
+                            list.iter().map(|e| e.name.as_str()).collect();
+                        let missing: Vec<&str> = utils::emojis::NAMES
+                            .iter()
+                            .copied()
+                            .filter(|n| !present.contains(n))
+                            .collect();
+                        if !missing.is_empty() {
+                            tracing::warn!(
+                                ?missing,
+                                "application is missing expected emojis; those will use fallback ids"
+                            );
+                        }
+                        let count = list.len();
+                        utils::emojis::init(
+                            list.into_iter().map(|e| (e.name, e.id.get(), e.animated)),
+                        );
+                        tracing::info!(count, "loaded application emojis");
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            error = %e,
+                            "could not load application emojis; using built-in fallback ids"
+                        );
+                    }
+                }
+
                 let db_url = env::var("DATABASE_URL").context("Missing DATABASE_URL")?;
                 let database = beetroot_core::Database::connect(&db_url).await?;
                 tracing::info!("database connected and migrated");

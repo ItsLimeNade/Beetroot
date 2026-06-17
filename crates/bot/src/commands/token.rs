@@ -44,7 +44,7 @@ pub async fn token(
             // Never log token values, even with LOG_SENSITIVE: they are credentials.
             tracing::info!(user = %crate::logging::redact(user_id), "nightscout token cleared");
             let embed = CreateEmbed::new()
-                .title(format!("{} Token Removed", emojis::LOCK_OPEN))
+                .title(format!("{} Token Removed", emojis::lock_open()))
                 .description("Your Nightscout token has been cleared.")
                 .color(Colour::DARK_GREEN);
             ctx.send(poise::CreateReply::default().embed(embed).ephemeral(true))
@@ -74,7 +74,7 @@ pub async fn token(
             tracing::info!(user = %crate::logging::redact(user_id), "nightscout token replaced");
 
             let embed = CreateEmbed::new()
-                .title(format!("{} Token Updated", emojis::PASSWORD))
+                .title(format!("{} Token Updated", emojis::password()))
                 .description("Your Nightscout token has been replaced and re-encrypted.")
                 .color(Colour::DARK_GREEN);
 

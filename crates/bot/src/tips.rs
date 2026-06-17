@@ -138,7 +138,7 @@ async fn try_send_tip(ctx: Context<'_>) -> Result<(), Error> {
     let tip = unseen[idx];
 
     let embed = CreateEmbed::new()
-        .title(format!("{} Tip", emojis::TIP))
+        .title(format!("{} Tip", emojis::tip()))
         .description(tip.text)
         .color(Colour::BLURPLE);
 
