@@ -68,6 +68,10 @@ pub const TIPS: &[Tip] = &[
         text: "Use `/nutrition` to look up calories, carbs, and macros for any food.",
     },
     Tip {
+        id: "nutrition_copy",
+        text: "Tap the buttons on someone else's `/nutrition` result and you'll get your own private copy to explore.",
+    },
+    Tip {
         id: "settings",
         text: "Use `/settings` to see every setting and its current value in one place.",
     },

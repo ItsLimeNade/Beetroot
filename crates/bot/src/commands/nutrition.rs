@@ -4,9 +4,11 @@ use futures::StreamExt;
 use poise::serenity_prelude as serenity;
 use serde::Deserialize;
 use serenity::all::{
-    ButtonStyle, Colour, ComponentInteractionDataKind, CreateActionRow, CreateButton, CreateEmbed,
-    CreateEmbedFooter, CreateInteractionResponse, CreateInteractionResponseMessage,
-    CreateSelectMenu, CreateSelectMenuKind, CreateSelectMenuOption,
+    ButtonStyle, Colour, ComponentInteraction, ComponentInteractionDataKind, CreateActionRow,
+    CreateButton, CreateEmbed, CreateEmbedFooter, CreateInteractionResponse,
+    CreateInteractionResponseMessage, CreateSelectMenu, CreateSelectMenuKind,
+    CreateSelectMenuOption, EditInteractionResponse, Message, MessageId,
+    MessageInteractionMetadata, UserId,
 };
 use std::env;
 use std::sync::OnceLock;
@@ -440,13 +442,13 @@ fn build_search_fallback_embed(f: &SearchFood) -> CreateEmbed {
     e
 }
 
-fn build_mode_buttons(base: &str, mode: DisplayMode) -> CreateActionRow {
+fn build_mode_buttons(base: &str, food_id: &str, mode: DisplayMode) -> CreateActionRow {
     CreateActionRow::Buttons(vec![
-        CreateButton::new(format!("{base}_fast"))
+        CreateButton::new(format!("{base}_{food_id}_fast"))
             .label("Fast Info")
             .style(ButtonStyle::Primary)
             .disabled(mode == DisplayMode::Fast),
-        CreateButton::new(format!("{base}_full"))
+        CreateButton::new(format!("{base}_{food_id}_full"))
             .label("Full Info")
             .style(ButtonStyle::Primary)
             .disabled(mode == DisplayMode::Full),
@@ -493,7 +495,7 @@ fn build_components(
 ) -> Vec<CreateActionRow> {
     let mut rows = Vec::new();
     if has_detail {
-        rows.push(build_mode_buttons(base, mode));
+        rows.push(build_mode_buttons(base, current_id, mode));
     }
     if let Some(menu) = build_alternatives_menu(&format!("{base}_select"), foods, current_id) {
         rows.push(menu);
@@ -581,9 +583,6 @@ pub async fn nutrition(
     let mut current_id = best.food_id.clone();
 
     let base = format!("nutrition_{}", ctx.id());
-    let id_fast = format!("{base}_fast");
-    let id_full = format!("{base}_full");
-    let id_select = format!("{base}_select");
 
     let initial_embed = match &current_detail {
         Some(d) => build_mode_embed(d, current_mode),
@@ -626,109 +625,19 @@ pub async fn nutrition(
     }
 
     let msg = reply.message().await?;
-    let serenity_ctx = ctx.serenity_context().clone();
 
-    let mut stream = serenity::ComponentInteractionCollector::new(&serenity_ctx)
-        .message_id(msg.id)
-        .author_id(ctx.author().id)
-        .timeout(COLLECTOR_TIMEOUT)
-        .stream();
-
-    while let Some(mci) = stream.next().await {
-        let cid = mci.data.custom_id.as_str();
-
-        if cid == id_fast || cid == id_full {
-            let Some(ref detail) = current_detail else {
-                continue;
-            };
-            current_mode = if cid == id_fast {
-                DisplayMode::Fast
-            } else {
-                DisplayMode::Full
-            };
-            let new_embed = build_mode_embed(detail, current_mode);
-            let new_components = build_components(&base, current_mode, true, &foods, &current_id);
-
-            let _ = mci
-                .create_response(
-                    &serenity_ctx,
-                    CreateInteractionResponse::UpdateMessage(
-                        CreateInteractionResponseMessage::new()
-                            .embed(new_embed)
-                            .components(new_components),
-                    ),
-                )
-                .await;
-        } else if cid == id_select {
-            let selected_id = match &mci.data.kind {
-                ComponentInteractionDataKind::StringSelect { values } => values.first().cloned(),
-                _ => None,
-            };
-            let Some(selected_id) = selected_id else {
-                continue;
-            };
-
-            let token = match get_access_token(&http).await {
-                Ok(t) => t,
-                Err(e) => {
-                    warn!(error = %e, "nutrition token refresh failed");
-                    let _ = mci
-                        .create_response(
-                            &serenity_ctx,
-                            CreateInteractionResponse::Message(
-                                CreateInteractionResponseMessage::new()
-                                    .content("Could not refresh authentication.")
-                                    .ephemeral(true),
-                            ),
-                        )
-                        .await;
-                    continue;
-                }
-            };
-
-            let (new_embed, has_detail) = match fetch_detail(&http, &token, &selected_id).await {
-                Ok(d) => {
-                    let embed = build_mode_embed(&d, current_mode);
-                    current_detail = Some(d);
-                    (embed, true)
-                }
-                Err(e) => {
-                    warn!(food_id = %selected_id, error = %e, "nutrition detail fetch failed");
-                    let fallback = foods.iter().find(|f| f.food_id == selected_id);
-                    let Some(f) = fallback else {
-                        let _ = mci
-                            .create_response(
-                                &serenity_ctx,
-                                CreateInteractionResponse::Message(
-                                    CreateInteractionResponseMessage::new()
-                                        .content("Could not load nutrition for that item.")
-                                        .ephemeral(true),
-                                ),
-                            )
-                            .await;
-                        continue;
-                    };
-                    current_detail = None;
-                    (build_search_fallback_embed(f), false)
-                }
-            };
-
-            current_id = selected_id;
-            let new_components =
-                build_components(&base, current_mode, has_detail, &foods, &current_id);
-
-            let _ = mci
-                .create_response(
-                    &serenity_ctx,
-                    CreateInteractionResponse::UpdateMessage(
-                        CreateInteractionResponseMessage::new()
-                            .embed(new_embed)
-                            .components(new_components),
-                    ),
-                )
-                .await;
-        }
-    }
+    drive_collector(
+        ctx.serenity_context(),
+        &http,
+        &base,
+        msg.id,
+        ctx.author().id,
+        &foods,
+        &mut current_detail,
+        &mut current_mode,
+        &mut current_id,
+    )
+    .await;
 
     let final_embed = match &current_detail {
         Some(d) => build_mode_embed(d, current_mode),
@@ -746,6 +655,293 @@ pub async fn nutrition(
                 .components(Vec::<CreateActionRow>::new()),
         )
         .await;
+
+    Ok(())
+}
+
+/// Drive the Fast/Full + alternatives component loop for a nutrition message
+/// until the collector times out, mutating `current_*` in place so the caller can
+/// render a final, component-free snapshot. Shared by the owner's reply and the
+/// ephemeral copies handed to other users.
+#[allow(clippy::too_many_arguments)]
+async fn drive_collector(
+    serenity_ctx: &serenity::Context,
+    http: &reqwest::Client,
+    base: &str,
+    message_id: MessageId,
+    author_id: UserId,
+    foods: &[SearchFood],
+    current_detail: &mut Option<DetailFood>,
+    current_mode: &mut DisplayMode,
+    current_id: &mut String,
+) {
+    let mut stream = serenity::ComponentInteractionCollector::new(serenity_ctx)
+        .message_id(message_id)
+        .author_id(author_id)
+        .timeout(COLLECTOR_TIMEOUT)
+        .stream();
+
+    while let Some(mci) = stream.next().await {
+        let cid = mci.data.custom_id.as_str();
+
+        if cid.ends_with("_fast") || cid.ends_with("_full") {
+            let Some(detail) = current_detail.as_ref() else {
+                continue;
+            };
+            *current_mode = if cid.ends_with("_fast") {
+                DisplayMode::Fast
+            } else {
+                DisplayMode::Full
+            };
+            let new_embed = build_mode_embed(detail, *current_mode);
+            let new_components =
+                build_components(base, *current_mode, true, foods, current_id.as_str());
+
+            let _ = mci
+                .create_response(
+                    serenity_ctx,
+                    CreateInteractionResponse::UpdateMessage(
+                        CreateInteractionResponseMessage::new()
+                            .embed(new_embed)
+                            .components(new_components),
+                    ),
+                )
+                .await;
+        } else if cid.ends_with("_select") {
+            let selected_id = match &mci.data.kind {
+                ComponentInteractionDataKind::StringSelect { values } => values.first().cloned(),
+                _ => None,
+            };
+            let Some(selected_id) = selected_id else {
+                continue;
+            };
+
+            let token = match get_access_token(http).await {
+                Ok(t) => t,
+                Err(e) => {
+                    warn!(error = %e, "nutrition token refresh failed");
+                    let _ = mci
+                        .create_response(
+                            serenity_ctx,
+                            CreateInteractionResponse::Message(
+                                CreateInteractionResponseMessage::new()
+                                    .content("Could not refresh authentication.")
+                                    .ephemeral(true),
+                            ),
+                        )
+                        .await;
+                    continue;
+                }
+            };
+
+            let (new_embed, has_detail) = match fetch_detail(http, &token, &selected_id).await {
+                Ok(d) => {
+                    let embed = build_mode_embed(&d, *current_mode);
+                    *current_detail = Some(d);
+                    (embed, true)
+                }
+                Err(e) => {
+                    warn!(food_id = %selected_id, error = %e, "nutrition detail fetch failed");
+                    let Some(f) = foods.iter().find(|f| f.food_id == selected_id) else {
+                        let _ = mci
+                            .create_response(
+                                serenity_ctx,
+                                CreateInteractionResponse::Message(
+                                    CreateInteractionResponseMessage::new()
+                                        .content("Could not load nutrition for that item.")
+                                        .ephemeral(true),
+                                ),
+                            )
+                            .await;
+                        continue;
+                    };
+                    *current_detail = None;
+                    (build_search_fallback_embed(f), false)
+                }
+            };
+
+            *current_id = selected_id;
+            let new_components =
+                build_components(base, *current_mode, has_detail, foods, current_id.as_str());
+
+            let _ = mci
+                .create_response(
+                    serenity_ctx,
+                    CreateInteractionResponse::UpdateMessage(
+                        CreateInteractionResponseMessage::new()
+                            .embed(new_embed)
+                            .components(new_components),
+                    ),
+                )
+                .await;
+        }
+    }
+}
+
+/// The user who created the message a component is attached to: the original
+/// slash-command invoker for a public reply, or the recipient of an ephemeral
+/// copy. Read from `interaction_metadata`, falling back to the legacy field.
+fn interaction_owner(msg: &Message) -> Option<UserId> {
+    if let Some(meta) = msg.interaction_metadata.as_deref()
+        && let Some(id) = metadata_user_id(meta)
+    {
+        return Some(id);
+    }
+    #[allow(deprecated)]
+    msg.interaction.as_ref().map(|i| i.user.id)
+}
+
+fn metadata_user_id(meta: &MessageInteractionMetadata) -> Option<UserId> {
+    match meta {
+        MessageInteractionMetadata::Command(m) => Some(m.user.id),
+        MessageInteractionMetadata::Component(m) => Some(m.user.id),
+        MessageInteractionMetadata::ModalSubmit(m) => Some(m.user.id),
+        _ => None,
+    }
+}
+
+/// Which food (and starting mode) an ephemeral copy should open on, parsed from
+/// the component the foreign user clicked. Fast/Full buttons embed the food id;
+/// the alternatives menu carries the chosen id as its selected value.
+fn resolve_seed(cid: &str, kind: &ComponentInteractionDataKind) -> Option<(String, DisplayMode)> {
+    if cid.ends_with("_select") {
+        match kind {
+            ComponentInteractionDataKind::StringSelect { values } => {
+                values.first().cloned().map(|id| (id, DisplayMode::Fast))
+            }
+            _ => None,
+        }
+    } else if let Some(rest) = cid.strip_suffix("_fast") {
+        rest.rsplit('_')
+            .next()
+            .map(|id| (id.to_string(), DisplayMode::Fast))
+    } else if let Some(rest) = cid.strip_suffix("_full") {
+        rest.rsplit('_')
+            .next()
+            .map(|id| (id.to_string(), DisplayMode::Full))
+    } else {
+        None
+    }
+}
+
+/// Global handler for component clicks on a nutrition message. The per-invocation
+/// collector only serves the original invoker; for anyone else we ack the click
+/// and hand them their own ephemeral, fully interactive copy seeded to the food
+/// they were looking at, instead of letting Discord reject the interaction.
+/// Returns true if the interaction was claimed.
+pub async fn handle_foreign_component(
+    serenity_ctx: &serenity::Context,
+    mci: &ComponentInteraction,
+) -> bool {
+    let cid = mci.data.custom_id.as_str();
+    if !cid.starts_with("nutrition_") {
+        return false;
+    }
+
+    match interaction_owner(&mci.message) {
+        Some(owner) if owner == mci.user.id => return false,
+        Some(_) => {}
+        None => return false,
+    }
+
+    let Some((seed_food_id, seed_mode)) = resolve_seed(cid, &mci.data.kind) else {
+        return false;
+    };
+
+    if mci
+        .create_response(
+            serenity_ctx,
+            CreateInteractionResponse::Defer(
+                CreateInteractionResponseMessage::new().ephemeral(true),
+            ),
+        )
+        .await
+        .is_err()
+    {
+        return true;
+    }
+
+    let serenity_ctx = serenity_ctx.clone();
+    let mci = mci.clone();
+    tokio::spawn(async move {
+        if let Err(e) = run_foreign_copy(&serenity_ctx, &mci, seed_food_id, seed_mode).await {
+            warn!(error = %e, "nutrition ephemeral copy failed");
+            let _ = mci
+                .edit_response(
+                    &serenity_ctx,
+                    EditInteractionResponse::new()
+                        .content("Could not open a nutrition view for that food."),
+                )
+                .await;
+        }
+    });
+
+    true
+}
+
+/// Build and drive an ephemeral, interactive nutrition view for a user who
+/// clicked on someone else's message. Seeds on the exact food they touched and
+/// re-runs the search by name so the copy offers the same "other matches" menu.
+async fn run_foreign_copy(
+    serenity_ctx: &serenity::Context,
+    mci: &ComponentInteraction,
+    seed_food_id: String,
+    seed_mode: DisplayMode,
+) -> Result<(), Error> {
+    let http = crate::utils::net::shared_client().clone();
+    let token = get_access_token(&http).await?;
+
+    let detail = fetch_detail(&http, &token, &seed_food_id).await?;
+
+    let foods = search_foods(&http, &token, &detail.food_name)
+        .await
+        .unwrap_or_default();
+
+    let base = format!("nutrition_{}", mci.id.get());
+    let mut current_id = seed_food_id;
+    let mut current_mode = seed_mode;
+
+    let initial_embed = build_mode_embed(&detail, current_mode);
+    let initial_components = build_components(&base, current_mode, true, &foods, &current_id);
+    let mut current_detail = Some(detail);
+
+    mci.edit_response(
+        serenity_ctx,
+        EditInteractionResponse::new()
+            .embed(initial_embed)
+            .components(initial_components),
+    )
+    .await?;
+
+    let msg = mci.get_response(serenity_ctx).await?;
+
+    drive_collector(
+        serenity_ctx,
+        &http,
+        &base,
+        msg.id,
+        mci.user.id,
+        &foods,
+        &mut current_detail,
+        &mut current_mode,
+        &mut current_id,
+    )
+    .await;
+
+    let final_embed = current_detail
+        .as_ref()
+        .map(|d| build_mode_embed(d, current_mode))
+        .or_else(|| {
+            foods
+                .iter()
+                .find(|f| f.food_id == current_id)
+                .map(build_search_fallback_embed)
+        });
+    let mut edit = EditInteractionResponse::new().components(Vec::<CreateActionRow>::new());
+    if let Some(embed) = final_embed {
+        edit = edit.embed(embed);
+    }
+    let _ = mci.edit_response(serenity_ctx, edit).await;
 
     Ok(())
 }

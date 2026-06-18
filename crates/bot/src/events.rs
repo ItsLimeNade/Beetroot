@@ -47,17 +47,26 @@ pub async fn on_error(error: poise::FrameworkError<'_, Data, Error>) {
 
 /// Generic event handler for raw Discord events
 pub async fn event_handler(
-    _ctx: &serenity::Context,
+    ctx: &serenity::Context,
     event: &serenity::FullEvent,
     _framework: poise::FrameworkContext<'_, Data, Error>,
     _data: &Data,
 ) -> Result<(), Error> {
-    if let serenity::FullEvent::Ready { data_about_bot, .. } = event {
-        tracing::info!(
-            bot = %data_about_bot.user.name,
-            guilds = data_about_bot.guilds.len(),
-            "gateway ready"
-        );
+    match event {
+        serenity::FullEvent::Ready { data_about_bot, .. } => {
+            tracing::info!(
+                bot = %data_about_bot.user.name,
+                guilds = data_about_bot.guilds.len(),
+                "gateway ready"
+            );
+        }
+        serenity::FullEvent::InteractionCreate {
+            interaction: serenity::Interaction::Component(mci),
+            ..
+        } => {
+            crate::commands::nutrition::handle_foreign_component(ctx, mci).await;
+        }
+        _ => {}
     }
     Ok(())
 }
