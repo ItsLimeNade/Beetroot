@@ -8,13 +8,18 @@ services:
     build: *build
     image: beetroot:latest
     restart: unless-stopped
-    env_file: .env
     environment:
-      DATABASE_URL: sqlite:///app/data/beetroot.db
+      DISCORD_TOKEN: ${DISCORD_TOKEN:?set DISCORD_TOKEN}
+      ENCRYPTION_SALT: ${ENCRYPTION_SALT:?set ENCRYPTION_SALT}
+      DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID:-}
+      FOOD_CLIENT_ID: ${FOOD_CLIENT_ID:-}
+      FOOD_CLIENT_SECRET: ${FOOD_CLIENT_SECRET:-}
+      EMOJI_SET: ${EMOJI_SET:-prod}
       RUST_LOG: ${RUST_LOG:-info}
+      DATABASE_URL: sqlite:///app/data/beetroot.db
+      LOG_DIR: /app/data/logs
     volumes:
       - beetroot_data:/app/data
-    command: ["bot"]
 
 volumes:
   beetroot_data:
