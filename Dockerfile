@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1.7
-
 FROM rust:1-slim-bookworm AS builder
 
 WORKDIR /app
@@ -12,9 +10,7 @@ COPY . .
 
 ENV SQLX_OFFLINE=true
 
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/app/target \
-    cargo build --release --locked --bin bot \
+RUN cargo build --release --locked --bin bot \
  && cp target/release/bot /usr/local/bin/bot
 
 FROM debian:bookworm-slim AS runtime
