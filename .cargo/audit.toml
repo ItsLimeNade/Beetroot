@@ -1,0 +1,25 @@
+# cargo-audit configuration.
+#
+# Every entry below is an advisory we cannot act on from this repo. They are
+# ignored so `cargo audit` still fails the build on NEW, fixable problems
+# instead of being permanently red on these. Re-check on dependency bumps and
+# remove entries as upstreams fix them.
+
+[advisories]
+ignore = [
+    # rsa 0.9.x "Marvin Attack" timing sidechannel. No fixed release exists, and
+    # rsa is only present as an inactive optional dependency of sqlx's MySQL /
+    # Postgres drivers. This bot uses the SQLite driver only, so rsa is never
+    # compiled into the binary.
+    "RUSTSEC-2023-0071",
+
+    # rustls-webpki 0.102.8 certificate-parsing advisories. Pulled only by
+    # serenity 0.12.5's gateway websocket (tokio-tungstenite 0.21 -> rustls 0.22)
+    # and not bumpable until serenity upgrades. The app's own outbound TLS
+    # (reqwest) already uses the patched rustls-webpki 0.103.13, and the gateway
+    # only ever connects to Discord's own endpoints.
+    "RUSTSEC-2026-0049",
+    "RUSTSEC-2026-0098",
+    "RUSTSEC-2026-0099",
+    "RUSTSEC-2026-0104",
+]

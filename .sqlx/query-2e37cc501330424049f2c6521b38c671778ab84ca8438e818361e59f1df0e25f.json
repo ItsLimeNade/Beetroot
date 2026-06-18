@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            INSERT INTO users (discord_id, nightscout_url, nightscout_token, is_private)\n            VALUES (?, ?, ?, ?)\n            ON CONFLICT(discord_id) DO UPDATE SET\n                nightscout_url = excluded.nightscout_url,\n                nightscout_token = excluded.nightscout_token,\n                is_private = excluded.is_private\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "2e37cc501330424049f2c6521b38c671778ab84ca8438e818361e59f1df0e25f"
+}

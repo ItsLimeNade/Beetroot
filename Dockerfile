@@ -1,19 +1,34 @@
-FROM rust:1-bookworm AS builder
+FROM rust:1-slim-bookworm AS builder
+
 WORKDIR /app
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends pkg-config libssl-dev \
+ && rm -rf /var/lib/apt/lists/*
 
 COPY . .
 
-RUN cargo build --release
+ENV SQLX_OFFLINE=true
 
-FROM debian:bookworm-slim AS runner
+RUN cargo build --release --locked --bin bot \
+ && cp target/release/bot /usr/local/bin/bot
+
+FROM debian:bookworm-slim AS runtime
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates libssl3 \
+ && rm -rf /var/lib/apt/lists/* \
+ && useradd --system --user-group --create-home beetroot
+
 WORKDIR /app
 
-RUN apt-get update && \
-    apt-get install -y ca-certificates libssl-dev && \
-    rm -rf /var/lib/apt/lists/*
+COPY --from=builder /usr/local/bin/bot /usr/local/bin/bot
+COPY assets /app/assets
 
-COPY --from=builder /app/target/release/beetroot ./beetroot
+RUN mkdir -p /app/data && chown -R beetroot:beetroot /app
 
-COPY --from=builder /app/assets ./assets
+ENV DATABASE_URL="sqlite:///app/data/beetroot.db"
 
-CMD ["./beetroot"]
+USER beetroot
+
+CMD ["bot"]

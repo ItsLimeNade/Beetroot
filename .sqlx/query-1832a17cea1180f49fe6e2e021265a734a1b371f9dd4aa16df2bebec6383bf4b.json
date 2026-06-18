@@ -1,0 +1,44 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            SELECT \n                command_name as name,\n                COUNT(*) as total_use,\n                SUM(CASE WHEN created_at > ? THEN 1 ELSE 0 END) as weekly_use,\n                SUM(CASE WHEN created_at > ? THEN 1 ELSE 0 END) as monthly_use,\n                CAST(AVG(execution_time_ms) AS INTEGER) as average_execution_time\n            FROM command_logs\n            GROUP BY command_name\n            ",
+  "describe": {
+    "columns": [
+      {
+        "name": "name",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "total_use",
+        "ordinal": 1,
+        "type_info": "Integer"
+      },
+      {
+        "name": "weekly_use",
+        "ordinal": 2,
+        "type_info": "Integer"
+      },
+      {
+        "name": "monthly_use",
+        "ordinal": 3,
+        "type_info": "Integer"
+      },
+      {
+        "name": "average_execution_time",
+        "ordinal": 4,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "1832a17cea1180f49fe6e2e021265a734a1b371f9dd4aa16df2bebec6383bf4b"
+}

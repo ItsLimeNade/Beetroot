@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO command_logs (command_name, user_id, execution_time_ms, created_at) VALUES (?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "6fe7067e3210ce63657df6fba2e9c4b9ffe788aaa309ba1c60664660950a56ba"
+}

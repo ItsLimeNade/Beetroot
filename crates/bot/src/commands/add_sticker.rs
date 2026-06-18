@@ -1,0 +1,395 @@
+use crate::data::{Context, Error};
+use crate::utils::emojis;
+use crate::utils::sticker_assets::validate_image_url;
+use beetroot_core::models::StickerCategory;
+use macros::track_analytics;
+use poise::serenity_prelude::{self as serenity, ComponentInteractionCollector};
+use serenity::{
+    ButtonStyle, Colour, CreateActionRow, CreateButton, CreateEmbed, CreateInteractionResponse,
+    CreateInteractionResponseMessage,
+};
+
+/// Add a sticker to your graph by providing an image URL.
+#[poise::command(
+    slash_command,
+    rename = "add-sticker",
+    install_context = "Guild|User",
+    interaction_context = "Guild|BotDm|PrivateChannel"
+)]
+#[track_analytics("add_sticker")]
+pub async fn add_sticker(
+    ctx: Context<'_>,
+    #[description = "Direct URL to the sticker image (png, jpg, webp, gif)"] url: String,
+    #[description = "Which glucose state triggers this sticker"]
+    #[rename = "category"]
+    category_choice: StickerCategoryChoice,
+) -> Result<(), Error> {
+    let db = &ctx.data().database;
+    let user_id = ctx.author().id.get();
+
+    db.ensure_user_row(user_id).await?;
+
+    let category = category_choice.into_model();
+
+    // Check category limit
+    let count = db.get_sticker_count_by_category(user_id, category).await?;
+    if count >= category.max_count() {
+        tracing::debug!(
+            user = %crate::logging::redact(user_id),
+            category = category.display_name(),
+            count,
+            "sticker category full"
+        );
+        send_error!(
+            ctx,
+            "Category Full",
+            format!(
+                "You already have {}/{} **{}** stickers. Remove one first with `/stickers`.",
+                count,
+                category.max_count(),
+                category.display_name()
+            )
+        );
+        return Ok(());
+    }
+
+    if db.sticker_url_exists(user_id, &url).await? {
+        tracing::debug!(user = %crate::logging::redact(user_id), "duplicate sticker URL");
+        send_error!(
+            ctx,
+            "Duplicate",
+            "You already have a sticker with this URL."
+        );
+        return Ok(());
+    }
+
+    crate::tips::safe_defer_ephemeral(ctx).await?;
+
+    if let Err(e) = validate_image_url(&url).await {
+        tracing::warn!(error = %e, "sticker image URL validation failed");
+        send_error!(
+            ctx,
+            "Invalid Image",
+            format!(
+                "The URL doesn't point to a valid image: {}\n\n\
+                Make sure the link goes directly to an image file.",
+                e
+            )
+        );
+        return Ok(());
+    }
+
+    let display_name = extract_display_name(&url);
+
+    db.insert_sticker(user_id, &url, &display_name, category)
+        .await?;
+    tracing::info!(
+        user = %crate::logging::redact(user_id),
+        category = category.display_name(),
+        "sticker added"
+    );
+
+    let embed = CreateEmbed::new()
+        .title(format!("{} Sticker Added", emojis::sticker_add()))
+        .description(format!(
+            "**{}** added to your **{}** stickers!\n\n\
+            It will appear on your next `/graph` when your glucose is {}.",
+            display_name,
+            category.display_name(),
+            category_condition_text(category),
+        ))
+        .thumbnail(&url)
+        .color(Colour::DARK_GREEN);
+
+    ctx.send(poise::CreateReply::default().embed(embed).ephemeral(true))
+        .await?;
+
+    Ok(())
+}
+
+#[poise::command(
+    context_menu_command = "Add Sticker",
+    install_context = "Guild|User",
+    interaction_context = "Guild|BotDm|PrivateChannel"
+)]
+#[track_analytics("add_sticker_context")]
+pub async fn add_sticker_context(
+    ctx: Context<'_>,
+    #[description = "Message to extract sticker from"] message: serenity::Message,
+) -> Result<(), Error> {
+    let db = &ctx.data().database;
+    let user_id = ctx.author().id.get();
+
+    db.ensure_user_row(user_id).await?;
+
+    let (sticker_url, sticker_name) = match extract_sticker_from_message(&message) {
+        Ok(result) => result,
+        Err(e) => {
+            tracing::debug!(error = %e, "no sticker found in message");
+            send_error!(ctx, "No Sticker Found", e.to_string());
+            return Ok(());
+        }
+    };
+
+    if db.sticker_url_exists(user_id, &sticker_url).await? {
+        send_error!(
+            ctx,
+            "Duplicate",
+            "You already have a sticker with this URL."
+        );
+        return Ok(());
+    }
+
+    let existing = db.get_all_user_stickers(user_id).await?;
+    let remaining = |category: StickerCategory| -> i64 {
+        let used = existing.iter().filter(|s| s.category == category).count() as i64;
+        (category.max_count() - used).max(0)
+    };
+
+    let row_one = vec![
+        CreateButton::new("sticker_cat_low")
+            .label(format!("Low ({} left)", remaining(StickerCategory::Low)))
+            .style(ButtonStyle::Danger),
+        CreateButton::new("sticker_cat_inrange")
+            .label(format!(
+                "In Range ({} left)",
+                remaining(StickerCategory::InRange)
+            ))
+            .style(ButtonStyle::Success),
+        CreateButton::new("sticker_cat_high")
+            .label(format!("High ({} left)", remaining(StickerCategory::High)))
+            .style(ButtonStyle::Primary),
+    ];
+
+    let row_two = vec![
+        CreateButton::new("sticker_cat_rising")
+            .label(format!(
+                "Rising ({} left)",
+                remaining(StickerCategory::FastRise)
+            ))
+            .style(ButtonStyle::Primary),
+        CreateButton::new("sticker_cat_dropping")
+            .label(format!(
+                "Dropping ({} left)",
+                remaining(StickerCategory::FastDrop)
+            ))
+            .style(ButtonStyle::Primary),
+        CreateButton::new("sticker_cat_other")
+            .label(format!(
+                "Any ({} left)",
+                remaining(StickerCategory::Background)
+            ))
+            .style(ButtonStyle::Secondary),
+    ];
+
+    let embed = CreateEmbed::new()
+        .title(format!("{} Select Sticker Category", emojis::sticker_add()))
+        .description(format!(
+            "Choose a category for **{}**:\n\n\
+            **Low** appears when glucose is below target\n\
+            **In Range** appears when glucose is in range\n\
+            **High** appears when glucose is above target\n\
+            **Rising** appears when glucose is trending up\n\
+            **Dropping** appears when glucose is trending down\n\
+            **Any** appears regardless of glucose state",
+            sticker_name
+        ))
+        .thumbnail(&sticker_url)
+        .color(Colour::BLURPLE);
+
+    let reply_handle = ctx
+        .send(
+            poise::CreateReply::default()
+                .embed(embed)
+                .components(vec![
+                    CreateActionRow::Buttons(row_one),
+                    CreateActionRow::Buttons(row_two),
+                ])
+                .ephemeral(true),
+        )
+        .await?;
+
+    let msg = reply_handle.message().await?;
+
+    let interaction = ComponentInteractionCollector::new(ctx.serenity_context().shard.clone())
+        .message_id(msg.id)
+        .author_id(ctx.author().id)
+        .timeout(std::time::Duration::from_secs(30))
+        .await;
+
+    let Some(interaction) = interaction else {
+        let expired_embed = CreateEmbed::new()
+            .title(format!("{} Timed Out", emojis::sync_problem()))
+            .description("Category selection expired. Use the command again to add a sticker.")
+            .color(Colour::LIGHT_GREY);
+
+        reply_handle
+            .edit(
+                ctx,
+                poise::CreateReply::default()
+                    .embed(expired_embed)
+                    .components(vec![]),
+            )
+            .await?;
+        return Ok(());
+    };
+
+    let category = match interaction.data.custom_id.as_str() {
+        "sticker_cat_low" => StickerCategory::Low,
+        "sticker_cat_inrange" => StickerCategory::InRange,
+        "sticker_cat_high" => StickerCategory::High,
+        "sticker_cat_rising" => StickerCategory::FastRise,
+        "sticker_cat_dropping" => StickerCategory::FastDrop,
+        "sticker_cat_other" => StickerCategory::Background,
+        _ => return Ok(()),
+    };
+
+    let count = db.get_sticker_count_by_category(user_id, category).await?;
+    if count >= category.max_count() {
+        let embed = CreateEmbed::new()
+            .title(format!("{} Category Full", emojis::error()))
+            .description(format!(
+                "You already have {}/{} **{}** stickers.\n\
+                Use `/stickers` to remove one first.",
+                count,
+                category.max_count(),
+                category.display_name()
+            ))
+            .color(Colour::RED);
+
+        interaction
+            .create_response(
+                &ctx.serenity_context().http,
+                CreateInteractionResponse::UpdateMessage(
+                    CreateInteractionResponseMessage::new()
+                        .embed(embed)
+                        .components(vec![]),
+                ),
+            )
+            .await?;
+        return Ok(());
+    }
+
+    db.insert_sticker(user_id, &sticker_url, &sticker_name, category)
+        .await?;
+    tracing::info!(
+        user = %crate::logging::redact(user_id),
+        category = category.display_name(),
+        "sticker added (context menu)"
+    );
+
+    let embed = CreateEmbed::new()
+        .title(format!("{} Sticker Added", emojis::sticker_add()))
+        .description(format!(
+            "**{}** added to your **{}** stickers!\n\n\
+            It will appear on your next `/graph` when your glucose is {}.",
+            sticker_name,
+            category.display_name(),
+            category_condition_text(category),
+        ))
+        .thumbnail(&sticker_url)
+        .color(Colour::DARK_GREEN);
+
+    interaction
+        .create_response(
+            &ctx.serenity_context().http,
+            CreateInteractionResponse::UpdateMessage(
+                CreateInteractionResponseMessage::new()
+                    .embed(embed)
+                    .components(vec![]),
+            ),
+        )
+        .await?;
+
+    Ok(())
+}
+
+#[derive(Debug, poise::ChoiceParameter)]
+pub enum StickerCategoryChoice {
+    #[name = "Low (glucose below target)"]
+    Low,
+    #[name = "In Range"]
+    InRange,
+    #[name = "High (glucose above target)"]
+    High,
+    #[name = "Rising (glucose trending up fast)"]
+    Rising,
+    #[name = "Dropping (glucose trending down fast)"]
+    Dropping,
+    #[name = "Any / No Context"]
+    Other,
+}
+
+impl StickerCategoryChoice {
+    fn into_model(self) -> StickerCategory {
+        match self {
+            Self::Low => StickerCategory::Low,
+            Self::InRange => StickerCategory::InRange,
+            Self::High => StickerCategory::High,
+            Self::Rising => StickerCategory::FastRise,
+            Self::Dropping => StickerCategory::FastDrop,
+            Self::Other => StickerCategory::Background,
+        }
+    }
+}
+
+fn extract_sticker_from_message(message: &serenity::Message) -> Result<(String, String), Error> {
+    if let Some(sticker) = message.sticker_items.first() {
+        let url = format!(
+            "https://media.discordapp.net/stickers/{}.png?size=320",
+            sticker.id
+        );
+        return Ok((url, sticker.name.clone()));
+    }
+
+    if let Some(attachment) = message.attachments.first()
+        && is_image_content_type(attachment.content_type.as_deref())
+    {
+        return Ok((attachment.url.clone(), attachment.filename.clone()));
+    }
+
+    if let Some(embed) = message.embeds.first() {
+        if let Some(ref img) = embed.image {
+            return Ok((img.url.clone(), "Embedded Image".to_string()));
+        }
+        if let Some(ref thumb) = embed.thumbnail {
+            return Ok((thumb.url.clone(), "Embedded Thumbnail".to_string()));
+        }
+    }
+
+    Err(anyhow::anyhow!(
+        "This message doesn't contain a sticker, image, or embed.\n\n\
+        Try right-clicking a message that has a Discord sticker or an attached image."
+    ))
+}
+
+fn is_image_content_type(ct: Option<&str>) -> bool {
+    ct.is_some_and(|s| s.starts_with("image/"))
+}
+
+fn extract_display_name(url: &str) -> String {
+    url.rsplit('/')
+        .next()
+        .and_then(|filename| filename.split('?').next())
+        .map(|name| {
+            name.trim_end_matches(".png")
+                .trim_end_matches(".jpg")
+                .trim_end_matches(".jpeg")
+                .trim_end_matches(".webp")
+                .trim_end_matches(".gif")
+                .replace(['_', '-'], " ")
+        })
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "Custom Sticker".to_string())
+}
+
+fn category_condition_text(category: StickerCategory) -> &'static str {
+    match category {
+        StickerCategory::Low => "below target",
+        StickerCategory::InRange => "in range",
+        StickerCategory::High => "above target",
+        StickerCategory::FastRise => "trending up fast",
+        StickerCategory::FastDrop => "trending down fast",
+        StickerCategory::Background => "in any state",
+    }
+}

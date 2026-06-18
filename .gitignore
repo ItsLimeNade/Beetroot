@@ -3,8 +3,12 @@ debug/
 target/
 
 # database
-nightscout_db.db
-data.db
+beetroot.db
+data/
+*.bak-*
+
+# logs (may contain identifiers / medical data when LOG_SENSITIVE is on)
+logs/
 
 # environment variables
 .env
@@ -14,6 +18,7 @@ data.db
 
 # MSVC Windows builds of rustc generate these, which store debugging information
 *.pdb
-Cargo.lock
+# Db stuff
 db.sqlite
-.claude/
+*.sqlite-shm
+*.sqlite-wal
