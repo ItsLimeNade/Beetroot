@@ -4,6 +4,10 @@ FROM rust:1-slim-bookworm AS builder
 
 WORKDIR /app
 
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends pkg-config libssl-dev \
+ && rm -rf /var/lib/apt/lists/*
+
 COPY . .
 
 ENV SQLX_OFFLINE=true
@@ -16,7 +20,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 FROM debian:bookworm-slim AS runtime
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates \
+ && apt-get install -y --no-install-recommends ca-certificates libssl3 \
  && rm -rf /var/lib/apt/lists/* \
  && useradd --system --user-group --create-home beetroot
 

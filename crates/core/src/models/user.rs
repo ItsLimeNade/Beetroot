@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+pub const DEFAULT_GRAPH_STICKER_COUNT: i64 = 4;
+
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct User {
     pub discord_id: i64,

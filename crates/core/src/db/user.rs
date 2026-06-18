@@ -1,6 +1,6 @@
 use crate::crypto;
 use crate::error::{CoreError, CoreResult};
-use crate::models::user::{User, UserDecrypted};
+use crate::models::user::{DEFAULT_GRAPH_STICKER_COUNT, User, UserDecrypted};
 
 use super::Database;
 
@@ -41,7 +41,9 @@ impl User {
             treatment_mode: self
                 .treatment_mode
                 .unwrap_or_else(|| "contextual".to_string()),
-            graph_sticker_count: self.graph_sticker_count.unwrap_or(8),
+            graph_sticker_count: self
+                .graph_sticker_count
+                .unwrap_or(DEFAULT_GRAPH_STICKER_COUNT),
         })
     }
 }
@@ -84,8 +86,8 @@ impl Database {
         };
 
         sqlx::query(
-            "INSERT INTO users (discord_id, nightscout_url, nightscout_token, is_private)
-             VALUES (?, ?, ?, ?)
+            "INSERT INTO users (discord_id, nightscout_url, nightscout_token, is_private, graph_sticker_count)
+             VALUES (?, ?, ?, ?, ?)
              ON CONFLICT(discord_id) DO UPDATE SET
                  nightscout_url = excluded.nightscout_url,
                  nightscout_token = excluded.nightscout_token,
@@ -95,6 +97,7 @@ impl Database {
         .bind(url)
         .bind(&encrypted_token)
         .bind(is_private)
+        .bind(DEFAULT_GRAPH_STICKER_COUNT)
         .execute(&self.pool)
         .await?;
 
@@ -300,8 +303,9 @@ impl Database {
 
     pub async fn ensure_user_row(&self, discord_id: u64) -> CoreResult<()> {
         let id = discord_id as i64;
-        sqlx::query("INSERT OR IGNORE INTO users (discord_id) VALUES (?)")
+        sqlx::query("INSERT OR IGNORE INTO users (discord_id, graph_sticker_count) VALUES (?, ?)")
             .bind(id)
+            .bind(DEFAULT_GRAPH_STICKER_COUNT)
             .execute(&self.pool)
             .await?;
         Ok(())
