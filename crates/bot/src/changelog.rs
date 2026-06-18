@@ -24,7 +24,7 @@ pub const CHANGELOG: &[ChangelogEntry] = &[ChangelogEntry {
         "Tune everything from `/settings`, plus dedicated commands: `/privacy`, `/allow`, `/block`, `/ephemeral`, `/image-mode`, `/microbolus` and `/fingerprick-expiry` etc...",
         "Manage your account with `/stickers` and `/delete-account`.",
         "Lots of security improvements",
-        "Plenty of bug fixes, notably the MBG reading as a *LO* value."
+        "Plenty of bug fixes, notably the MBG reading as a *LO* value.",
     ],
 }];
 

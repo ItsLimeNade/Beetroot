@@ -140,38 +140,44 @@ pub async fn add_sticker_context(
         return Ok(());
     }
 
+    let existing = db.get_all_user_stickers(user_id).await?;
+    let remaining = |category: StickerCategory| -> i64 {
+        let used = existing.iter().filter(|s| s.category == category).count() as i64;
+        (category.max_count() - used).max(0)
+    };
+
     let row_one = vec![
         CreateButton::new("sticker_cat_low")
-            .label(format!("Low ({} max)", StickerCategory::Low.max_count()))
+            .label(format!("Low ({} left)", remaining(StickerCategory::Low)))
             .style(ButtonStyle::Danger),
         CreateButton::new("sticker_cat_inrange")
             .label(format!(
-                "In Range ({} max)",
-                StickerCategory::InRange.max_count()
+                "In Range ({} left)",
+                remaining(StickerCategory::InRange)
             ))
             .style(ButtonStyle::Success),
         CreateButton::new("sticker_cat_high")
-            .label(format!("High ({} max)", StickerCategory::High.max_count()))
+            .label(format!("High ({} left)", remaining(StickerCategory::High)))
             .style(ButtonStyle::Primary),
     ];
 
     let row_two = vec![
         CreateButton::new("sticker_cat_rising")
             .label(format!(
-                "Rising ({} max)",
-                StickerCategory::FastRise.max_count()
+                "Rising ({} left)",
+                remaining(StickerCategory::FastRise)
             ))
             .style(ButtonStyle::Primary),
         CreateButton::new("sticker_cat_dropping")
             .label(format!(
-                "Dropping ({} max)",
-                StickerCategory::FastDrop.max_count()
+                "Dropping ({} left)",
+                remaining(StickerCategory::FastDrop)
             ))
             .style(ButtonStyle::Primary),
         CreateButton::new("sticker_cat_other")
             .label(format!(
-                "Any ({} max)",
-                StickerCategory::Background.max_count()
+                "Any ({} left)",
+                remaining(StickerCategory::Background)
             ))
             .style(ButtonStyle::Secondary),
     ];

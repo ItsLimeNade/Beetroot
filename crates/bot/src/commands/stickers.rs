@@ -206,7 +206,12 @@ fn build_components(stickers: &[Sticker]) -> Vec<CreateActionRow> {
         .take(MAX_MENU_OPTIONS)
         .map(|s| {
             CreateSelectMenuOption::new(
-                format!("[{}] {} #{}", s.category.display_name(), display_name(s), s.id),
+                format!(
+                    "[{}] {} #{}",
+                    s.category.display_name(),
+                    display_name(s),
+                    s.id
+                ),
                 s.id.to_string(),
             )
         })
