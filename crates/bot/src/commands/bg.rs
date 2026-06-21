@@ -1,6 +1,7 @@
 use crate::data::{Context, Error};
 use crate::utils::duration_parser::parse_ago_duration;
 use crate::utils::emojis;
+use crate::utils::targets::resolve_profile_targets_mgdl;
 use crate::utils::theme_assets;
 use bonbon::prelude::*;
 use cinnamon::models::properties::PropertyType;
@@ -122,26 +123,13 @@ pub async fn bg(
             "bg/image raw data dump"
         );
 
-        let (target_low, target_high, is_mmol) = if let Ok(profiles) = profile_result {
-            if let Some(profile) = profiles.first() {
-                if let Some(store) = profile.store.get(&profile.default_profile_name) {
-                    let low = store.target_low.first().map(|x| x.value).unwrap_or(4.0);
-                    let high = store.target_high.first().map(|x| x.value).unwrap_or(10.0);
-                    let mmol = store.units.starts_with("mmol");
-                    if mmol {
-                        (low * 18.0, high * 18.0, true)
-                    } else {
-                        (low, high, false)
-                    }
-                } else {
-                    (72.0, 180.0, false)
-                }
-            } else {
-                (72.0, 180.0, false)
-            }
-        } else {
-            (72.0, 180.0, false)
-        };
+        let (target_low, target_high, is_mmol) = profile_result
+            .as_ref()
+            .ok()
+            .and_then(|profiles| profiles.first())
+            .and_then(|profile| profile.store.get(&profile.default_profile_name))
+            .map(resolve_profile_targets_mgdl)
+            .unwrap_or((72.0, 180.0, false));
 
         let mut sorted = sparkline_entries;
         sorted.sort_by_key(|e| e.date);
@@ -165,9 +153,9 @@ pub async fn bg(
             format!("{} h ago", duration.num_hours())
         };
 
-        let current_status = if (entry.sgv as f64) < target_low {
+        let current_status = if (entry.sgv as f32) < target_low {
             GlucoseStatus::Low
-        } else if (entry.sgv as f64) > target_high {
+        } else if (entry.sgv as f32) > target_high {
             GlucoseStatus::High
         } else {
             GlucoseStatus::InRange
@@ -197,7 +185,7 @@ pub async fn bg(
                 } else {
                     0.0
                 };
-                let sgv_mgdl = e.sgv as f64;
+                let sgv_mgdl = e.sgv as f32;
                 let status = if sgv_mgdl < target_low {
                     GlucoseStatus::Low
                 } else if sgv_mgdl > target_high {

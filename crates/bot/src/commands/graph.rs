@@ -1,6 +1,7 @@
 use crate::data::{Context, Error};
 use crate::utils::duration_parser::parse_ago_duration;
 use crate::utils::sticker_assets;
+use crate::utils::targets::resolve_profile_targets_mgdl;
 use crate::utils::theme_assets;
 use bonbon::prelude::*;
 use chrono::{Duration, Utc};
@@ -103,16 +104,9 @@ pub async fn graph(
         .and_then(|p| p.first())
         .and_then(|p| p.store.get(&p.default_profile_name))
         .map(|store| {
-            let low = store.target_low.first().map(|x| x.value).unwrap_or(4.0);
-            let high = store.target_high.first().map(|x| x.value).unwrap_or(10.0);
             let tz: Tz = store.timezone.parse().unwrap_or(chrono_tz::UTC);
-            let mmol = store.units.starts_with("mmol");
-            let (low_mg, high_mg) = if mmol {
-                (low * 18.0, high * 18.0)
-            } else {
-                (low, high)
-            };
-            (low_mg as f32, high_mg as f32, tz, mmol)
+            let (low_mg, high_mg, mmol) = resolve_profile_targets_mgdl(store);
+            (low_mg, high_mg, tz, mmol)
         })
         .unwrap_or((72.0, 180.0, chrono_tz::UTC, false));
 
