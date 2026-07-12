@@ -137,34 +137,9 @@ async fn show_privacy_selection(
                     has_token = token.is_some(),
                     "nightscout setup completed"
                 );
-                let privacy_text = if is_private { "Private" } else { "Public" };
-                let success_embed = CreateEmbed::new()
-                    .title(format!("{} Setup Complete", emojis::celebration()))
-                    .description(format!(
-                        "{} Nightscout configured successfully!\n\n**URL:** {}\n**Privacy:** {}",
-                        emojis::wifi(),
-                        url,
-                        privacy_text
-                    ))
-                    .field(
-                        format!("{} Not medical advice", emojis::warning()),
-                        "**Beetroot is not a medical device and does not give medical advice.** \
-                         Readings can be delayed or wrong. Always confirm with a blood glucose \
-                         meter and follow your healthcare provider before making any treatment \
-                         decision.",
-                        false,
-                    )
-                    .color(Colour::DARK_GREEN);
-
-                mci.create_response(
-                    ctx.serenity_context(),
-                    CreateInteractionResponse::UpdateMessage(
-                        CreateInteractionResponseMessage::new()
-                            .embed(success_embed)
-                            .components(vec![]),
-                    ),
-                )
-                .await?;
+                // Final step: ask for telemetry consent, then show the completion
+                // message (which folds in the chosen telemetry status).
+                ask_telemetry_and_finish(ctx, mci, &reply, &url, is_private).await?;
             }
             Err(e) => {
                 tracing::error!(
@@ -200,6 +175,126 @@ async fn show_privacy_selection(
                     .components(vec![]),
             )
             .await?;
+    }
+
+    Ok(())
+}
+
+/// Final setup step: ask the user to opt in or out of telemetry (in place of the
+/// privacy buttons), record their choice, then show the completion message.
+///
+/// `mci` is the privacy-button interaction; we reuse its message to swap in the
+/// consent prompt, then collect the accept/decline click on the same message.
+async fn ask_telemetry_and_finish(
+    ctx: Context<'_>,
+    mci: serenity::ComponentInteraction,
+    reply: &poise::ReplyHandle<'_>,
+    url: &str,
+    is_private: bool,
+) -> Result<(), Error> {
+    let user_id = ctx.author().id.get();
+
+    let consent_embed = CreateEmbed::new()
+        .title(format!("{} One more thing: telemetry", emojis::tip()))
+        .description(
+            "Beetroot can record anonymous usage telemetry to help improve it. It is \
+             optional and stays off unless you turn it on.",
+        )
+        .field(
+            "What this means",
+            crate::commands::telemetry::TELEMETRY_DISCLOSURE,
+            false,
+        )
+        .color(Colour::BLURPLE);
+
+    let buttons = CreateActionRow::Buttons(vec![
+        CreateButton::new("telemetry_accept")
+            .label("Enable telemetry")
+            .style(ButtonStyle::Success),
+        CreateButton::new("telemetry_decline")
+            .label("No thanks")
+            .style(ButtonStyle::Secondary),
+    ]);
+
+    mci.create_response(
+        ctx.serenity_context(),
+        CreateInteractionResponse::UpdateMessage(
+            CreateInteractionResponseMessage::new()
+                .embed(consent_embed)
+                .components(vec![buttons]),
+        ),
+    )
+    .await?;
+
+    let msg = reply.message().await?;
+    let choice = serenity::ComponentInteractionCollector::new(ctx.serenity_context())
+        .message_id(msg.id)
+        .author_id(ctx.author().id)
+        .timeout(std::time::Duration::from_secs(120))
+        .await;
+
+    let db = &ctx.data().database;
+    let telemetry_line = match &choice {
+        Some(c) => {
+            let accepted = c.data.custom_id == "telemetry_accept";
+            db.set_telemetry_consent(user_id, accepted).await?;
+            tracing::info!(
+                user = %crate::logging::redact(user_id),
+                accepted,
+                "telemetry consent set during setup"
+            );
+            if accepted {
+                "**Telemetry:** Enabled. Turn it off any time with `/telemetry`."
+            } else {
+                "**Telemetry:** Disabled. Enable it any time with `/telemetry`."
+            }
+        }
+        // No response leaves consent unset (off); the user can enable it later.
+        None => "**Telemetry:** Off. Enable it any time with `/telemetry`.",
+    };
+
+    let privacy_text = if is_private { "Private" } else { "Public" };
+    let success_embed = CreateEmbed::new()
+        .title(format!("{} Setup Complete", emojis::celebration()))
+        .description(format!(
+            "{} Nightscout configured successfully!\n\n**URL:** {}\n**Privacy:** {}\n{}",
+            emojis::wifi(),
+            url,
+            privacy_text,
+            telemetry_line,
+        ))
+        .field(
+            format!("{} Not medical advice", emojis::warning()),
+            "**Beetroot is not a medical device and does not give medical advice.** \
+             Readings can be delayed or wrong. Always confirm with a blood glucose \
+             meter and follow your healthcare provider before making any treatment \
+             decision.",
+            false,
+        )
+        .color(Colour::DARK_GREEN);
+
+    match choice {
+        Some(c) => {
+            c.create_response(
+                ctx.serenity_context(),
+                CreateInteractionResponse::UpdateMessage(
+                    CreateInteractionResponseMessage::new()
+                        .embed(success_embed)
+                        .components(vec![]),
+                ),
+            )
+            .await?;
+        }
+        None => {
+            reply
+                .edit(
+                    ctx,
+                    poise::CreateReply::default()
+                        .embed(success_embed)
+                        .components(vec![]),
+                )
+                .await?;
+        }
     }
 
     Ok(())

@@ -44,6 +44,7 @@ impl User {
             graph_sticker_count: self
                 .graph_sticker_count
                 .unwrap_or(DEFAULT_GRAPH_STICKER_COUNT),
+            telemetry_accepted: self.telemetry_accepted,
         })
     }
 }
@@ -299,6 +300,31 @@ impl Database {
         tx.commit().await?;
 
         Ok(changed)
+    }
+
+    /// Record the user's telemetry choice, creating the row if it does not
+    /// exist yet. `true` opts in, `false` opts out.
+    pub async fn set_telemetry_consent(&self, discord_id: u64, accepted: bool) -> CoreResult<()> {
+        self.ensure_user_row(discord_id).await?;
+        let id = discord_id as i64;
+        sqlx::query("UPDATE users SET telemetry_accepted = ? WHERE discord_id = ?")
+            .bind(accepted)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// The user's telemetry choice: `Some(true/false)` once made, `None` if the
+    /// user has never been asked.
+    pub async fn get_telemetry_consent(&self, discord_id: u64) -> CoreResult<Option<bool>> {
+        let id = discord_id as i64;
+        let row: Option<(Option<bool>,)> =
+            sqlx::query_as("SELECT telemetry_accepted FROM users WHERE discord_id = ?")
+                .bind(id)
+                .fetch_optional(&self.pool)
+                .await?;
+        Ok(row.and_then(|(v,)| v))
     }
 
     pub async fn ensure_user_row(&self, discord_id: u64) -> CoreResult<()> {

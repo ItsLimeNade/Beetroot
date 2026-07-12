@@ -19,6 +19,8 @@ pub struct User {
     pub active_theme: Option<String>,
     pub treatment_mode: Option<String>,
     pub graph_sticker_count: Option<i64>,
+    /// `None` = never asked, `Some(true/false)` = opted in / out of telemetry.
+    pub telemetry_accepted: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -38,4 +40,6 @@ pub struct UserDecrypted {
     pub active_theme: Option<String>,
     pub treatment_mode: String,
     pub graph_sticker_count: i64,
+    /// `None` = never asked, `Some(true/false)` = opted in / out of telemetry.
+    pub telemetry_accepted: Option<bool>,
 }

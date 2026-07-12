@@ -1,10 +1,15 @@
 use crate::error::CoreResult;
-use crate::models::analytics::{CommandStats, UsageStats};
+use crate::models::analytics::{CommandStats, UsageStats, UserDataSummary};
 
 use super::Database;
 
 impl Database {
     /// Record that a slash command was executed.
+    ///
+    /// This is gated on telemetry consent: the row is only written when the
+    /// user has explicitly opted in (`telemetry_accepted = 1`). Undecided or
+    /// opted-out users are never recorded. The check is part of the same
+    /// statement so there is no separate lookup.
     pub async fn log_command_execution(
         &self,
         command: &str,
@@ -15,19 +20,58 @@ impl Database {
         let uid = user_id as i64;
         let dur = duration_ms as i64;
 
-        sqlx::query(
+        let result = sqlx::query(
             "INSERT INTO command_logs (command_name, user_id, execution_time_ms, created_at)
-             VALUES (?, ?, ?, ?)",
+             SELECT ?, ?, ?, ?
+             WHERE EXISTS (
+                 SELECT 1 FROM users WHERE discord_id = ? AND telemetry_accepted = 1
+             )",
         )
         .bind(command)
         .bind(uid)
         .bind(dur)
         .bind(now)
+        .bind(uid)
         .execute(&self.pool)
         .await?;
 
-        tracing::trace!(command, duration_ms = dur, "logged command execution");
+        tracing::trace!(
+            command,
+            duration_ms = dur,
+            recorded = result.rows_affected() > 0,
+            "command execution (telemetry gated)"
+        );
         Ok(())
+    }
+
+    /// Everything the telemetry table holds about one user, for a data request.
+    pub async fn get_user_data_summary(&self, user_id: u64) -> CoreResult<UserDataSummary> {
+        let uid = user_id as i64;
+
+        let (total, first_at, last_at): (i64, Option<i64>, Option<i64>) = sqlx::query_as(
+            "SELECT COUNT(*), MIN(created_at), MAX(created_at)
+             FROM command_logs WHERE user_id = ?",
+        )
+        .bind(uid)
+        .fetch_one(&self.pool)
+        .await?;
+
+        let per_command: Vec<(String, i64)> = sqlx::query_as(
+            "SELECT command_name, COUNT(*)
+             FROM command_logs WHERE user_id = ?
+             GROUP BY command_name
+             ORDER BY COUNT(*) DESC",
+        )
+        .bind(uid)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(UserDataSummary {
+            command_log_count: total,
+            first_at,
+            last_at,
+            per_command,
+        })
     }
 
     /// Aggregate per-command statistics (total, weekly, monthly, avg time).

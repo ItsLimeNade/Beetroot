@@ -60,6 +60,8 @@ async fn main() -> anyhow::Result<()> {
             commands::graph_stickers::graph_stickers(),
             commands::url::url(),
             commands::token::token(),
+            commands::telemetry::telemetry(),
+            commands::my_data::my_data(),
             commands::delete_account::delete_account(),
         ],
 

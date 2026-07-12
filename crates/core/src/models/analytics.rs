@@ -15,3 +15,13 @@ pub struct UsageStats {
     pub daily_active_users: u64,
     pub monthly_active_users: u64,
 }
+
+/// Everything the telemetry table (`command_logs`) holds about a single user,
+/// surfaced by the `/my-data` data request.
+#[derive(Debug, Clone)]
+pub struct UserDataSummary {
+    pub command_log_count: i64,
+    pub first_at: Option<i64>,
+    pub last_at: Option<i64>,
+    pub per_command: Vec<(String, i64)>,
+}
