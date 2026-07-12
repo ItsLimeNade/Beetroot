@@ -639,31 +639,31 @@ impl ThemeBaseChoice {
 pub enum ThemeFieldChoice {
     #[name = "Background"]
     Background,
-    #[name = "Major Grid"]
+    #[name = "Main gridlines"]
     GridMajor,
-    #[name = "Minor Grid"]
+    #[name = "Faint gridlines"]
     GridMinor,
-    #[name = "Axis Lines"]
+    #[name = "Axis lines"]
     AxisLines,
-    #[name = "Primary Text"]
+    #[name = "Main text"]
     TextPrimary,
-    #[name = "Secondary Text"]
+    #[name = "Secondary text"]
     TextSecondary,
-    #[name = "Dim Text"]
+    #[name = "Faint text"]
     TextDim,
-    #[name = "High Glucose"]
+    #[name = "High glucose"]
     GlucoseHigh,
-    #[name = "Low Glucose"]
+    #[name = "Low glucose"]
     GlucoseLow,
-    #[name = "In-Range Glucose"]
+    #[name = "In-range glucose"]
     GlucoseInRange,
     #[name = "Insulin"]
     Insulin,
     #[name = "Carbs"]
     Carbs,
-    #[name = "Reading Fill"]
+    #[name = "Reading dot fill"]
     GlucoseReadingFill,
-    #[name = "Reading Outline"]
+    #[name = "Reading dot outline"]
     GlucoseReadingOutline,
 }
 

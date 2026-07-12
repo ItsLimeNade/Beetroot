@@ -10,19 +10,19 @@ use image::Rgba;
 /// choices and embeds.
 pub const THEME_FIELDS: &[(&str, &str)] = &[
     ("background", "Background"),
-    ("grid_major", "Major Grid"),
-    ("grid_minor", "Minor Grid"),
-    ("axis_lines", "Axis Lines"),
-    ("text_primary", "Primary Text"),
-    ("text_secondary", "Secondary Text"),
-    ("text_dim", "Dim Text"),
-    ("glucose_high", "High Glucose"),
-    ("glucose_low", "Low Glucose"),
-    ("glucose_in_range", "In-Range Glucose"),
+    ("grid_major", "Main gridlines"),
+    ("grid_minor", "Faint gridlines"),
+    ("axis_lines", "Axis lines"),
+    ("text_primary", "Main text"),
+    ("text_secondary", "Secondary text"),
+    ("text_dim", "Faint text"),
+    ("glucose_high", "High glucose"),
+    ("glucose_low", "Low glucose"),
+    ("glucose_in_range", "In-range glucose"),
     ("insulin", "Insulin"),
     ("carbs", "Carbs"),
-    ("glucose_reading_fill", "Reading Fill"),
-    ("glucose_reading_outline", "Reading Outline"),
+    ("glucose_reading_fill", "Reading dot fill"),
+    ("glucose_reading_outline", "Reading dot outline"),
 ];
 
 /// Every color of a theme as `(json_key, color)`, in display order.
