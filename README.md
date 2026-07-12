@@ -68,7 +68,7 @@ docker compose logs -f bot
 ```
 
 For a full walkthrough, including deploying with Portainer on a Raspberry Pi and
-how to browse the database, see the [deployment guide](guide.md).
+how to browse the database, see the [deployment guide](GUIDE.md).
 
 ## Privacy & Data
 

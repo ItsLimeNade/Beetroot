@@ -23,7 +23,7 @@ services:
 
   # Optional web UI for browsing the SQLite database. Opt-in via the "tools"
   # profile, so it never starts during a normal deploy. Bound to localhost
-  # only; reach it over an SSH tunnel (see guide.md). It exposes the raw
+  # only; reach it over an SSH tunnel (see GUIDE.md). It exposes the raw
   # database, so keep it off unless you are actively inspecting data.
   db-viewer:
     image: coleifer/sqlite-web:latest
