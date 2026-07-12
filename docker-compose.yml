@@ -21,5 +21,21 @@ services:
     volumes:
       - beetroot_data:/app/data
 
+  # Optional web UI for browsing the SQLite database. Opt-in via the "tools"
+  # profile, so it never starts during a normal deploy. Bound to localhost
+  # only; reach it over an SSH tunnel (see guide.md). It exposes the raw
+  # database, so keep it off unless you are actively inspecting data.
+  db-viewer:
+    image: coleifer/sqlite-web:latest
+    container_name: beetroot_db_viewer
+    profiles: ["tools"]
+    restart: unless-stopped
+    environment:
+      SQLITE_DATABASE: beetroot.db
+    volumes:
+      - beetroot_data:/data
+    ports:
+      - "127.0.0.1:8080:8080"
+
 volumes:
   beetroot_data:
