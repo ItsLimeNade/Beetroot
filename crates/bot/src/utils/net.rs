@@ -11,6 +11,10 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 /// Maximum redirects we will follow, each re-validated.
 const MAX_REDIRECTS: usize = 5;
+/// User-Agent for outbound fetches. Some image CDNs reject requests that carry
+/// no User-Agent, which silently broke sticker image downloads; a named agent
+/// is also friendlier to Nightscout hosts.
+const USER_AGENT: &str = concat!("Beetroot/", env!("CARGO_PKG_VERSION"));
 
 /// True if an IPv4 address must never be the target of an outbound fetch.
 fn is_blocked_ipv4(ip: Ipv4Addr) -> bool {
@@ -113,6 +117,7 @@ pub fn guarded_client() -> &'static reqwest::Client {
         });
 
         reqwest::Client::builder()
+            .user_agent(USER_AGENT)
             .connect_timeout(CONNECT_TIMEOUT)
             .timeout(REQUEST_TIMEOUT)
             .redirect(redirect)
@@ -130,6 +135,7 @@ pub fn shared_client() -> &'static reqwest::Client {
     static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
     CLIENT.get_or_init(|| {
         reqwest::Client::builder()
+            .user_agent(USER_AGENT)
             .connect_timeout(CONNECT_TIMEOUT)
             .timeout(REQUEST_TIMEOUT)
             .build()

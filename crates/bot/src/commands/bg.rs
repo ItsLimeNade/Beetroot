@@ -110,7 +110,21 @@ pub async fn bg(
             .send();
         let profiles_builder = client.profiles();
         let profile_fut = profiles_builder.get();
-        let (properties_result, profile_result) = tokio::join!(properties_fut, profile_fut);
+
+        let status_fut = {
+            let client = client.clone();
+            async move {
+                let url = client.base_url.join("api/v2/status.json").ok()?;
+                let req = client.auth(client.http.get(url));
+                let val: serde_json::Value = req.send().await.ok()?.json().await.ok()?;
+                val.pointer("/settings/customTitle")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+            }
+        };
+
+        let (properties_result, profile_result, custom_title) =
+            tokio::join!(properties_fut, profile_fut, status_fut);
 
         tracing::debug!(
             sparkline_entries = sparkline_entries.len(),
@@ -237,7 +251,9 @@ pub async fn bg(
             age_str,
             unit_str,
             time_str: now.format("%H:%M").to_string(),
-            watermark_str: "Beetroot".to_string(),
+            watermark_str: custom_title
+                .filter(|t| !t.trim().is_empty())
+                .unwrap_or_else(|| format!("{}'s Nightscout", target_user.name)),
             iob_str,
             cob_str,
             sparkline_points,

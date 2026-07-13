@@ -85,10 +85,9 @@ async fn download_bytes(url: &str) -> Result<Vec<u8>> {
         .get(reqwest::header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
-    if !content_type.starts_with("image/") {
+    if looks_like_webpage(content_type) {
         return Err(anyhow!(
-            "URL did not return an image (content-type: {})",
-            content_type
+            "URL returned a web page, not an image (content-type: {content_type})"
         ));
     }
 
@@ -140,12 +139,28 @@ pub async fn validate_image_url(url: &str) -> Result<()> {
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
 
-    if !content_type.starts_with("image/") {
+    if looks_like_webpage(content_type) {
         return Err(anyhow!(
-            "URL does not point to an image (content-type: {})",
-            content_type
+            "That link looks like a web page, not a direct image. Open the image \
+             itself and copy its address (it should end in .png, .jpg, .webp or .gif)."
         ));
     }
 
     Ok(())
+}
+
+/// True when a content-type clearly indicates a web page or other text document
+/// rather than an image. Kept deliberately narrow so images with a generic or
+/// absent content-type still pass; the real image decode is the final check.
+fn looks_like_webpage(content_type: &str) -> bool {
+    let ct = content_type
+        .split(';')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
+    ct.starts_with("text/")
+        || ct == "application/json"
+        || ct == "application/xml"
+        || ct == "application/xhtml+xml"
 }
