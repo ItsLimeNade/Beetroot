@@ -1,7 +1,13 @@
 use anyhow::{Result, anyhow};
+use base64::Engine;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use beetroot_core::Database;
 use bonbon::theme::Theme;
 use image::Rgba;
+
+/// Version byte prefixing every share code. Bump if the byte layout changes so
+/// old codes fail cleanly instead of decoding to garbage.
+const SHARE_CODE_VERSION: u8 = 1;
 
 /// The 14 bonbon `Theme` color fields: `(json_key, human_label)`.
 ///
@@ -101,6 +107,76 @@ pub fn set_field(data: &str, field: &str, hex: &str) -> Result<String> {
     Ok(serde_json::Value::Object(map).to_string())
 }
 
+/// Encode a theme into a compact, shareable code.
+///
+/// Byte layout before base64url: `[version:1][alpha_mask:2 big-endian][R,G,B x14]`
+/// followed by one alpha byte for each color whose alpha is not fully opaque
+/// (flagged in `alpha_mask`). Fully opaque themes, the common case, carry no
+/// alpha bytes at all, keeping the code short (about 60 characters).
+pub fn encode_share_code(theme: &Theme) -> String {
+    let colors = theme_colors(theme);
+
+    let mut alpha_mask: u16 = 0;
+    for (i, (_, c)) in colors.iter().enumerate() {
+        if c.0[3] != 0xff {
+            alpha_mask |= 1 << i;
+        }
+    }
+
+    let mut bytes = Vec::with_capacity(3 + colors.len() * 3);
+    bytes.push(SHARE_CODE_VERSION);
+    bytes.extend_from_slice(&alpha_mask.to_be_bytes());
+    for (_, c) in colors.iter() {
+        bytes.extend_from_slice(&[c.0[0], c.0[1], c.0[2]]);
+    }
+    for (i, (_, c)) in colors.iter().enumerate() {
+        if alpha_mask & (1 << i) != 0 {
+            bytes.push(c.0[3]);
+        }
+    }
+
+    URL_SAFE_NO_PAD.encode(bytes)
+}
+
+/// Decode a share code produced by [`encode_share_code`] back into a theme.
+pub fn decode_share_code(code: &str) -> Result<Theme> {
+    let bytes = URL_SAFE_NO_PAD
+        .decode(code.trim())
+        .map_err(|_| anyhow!("That share code isn't valid. Copy the whole code and try again."))?;
+
+    let n = THEME_FIELDS.len();
+    if bytes.len() < 3 + 3 * n {
+        return Err(anyhow!("That share code is too short to be a theme."));
+    }
+    if bytes[0] != SHARE_CODE_VERSION {
+        return Err(anyhow!(
+            "That share code was made with a newer version of Beetroot."
+        ));
+    }
+
+    let alpha_mask = u16::from_be_bytes([bytes[1], bytes[2]]);
+    let rgb = &bytes[3..3 + 3 * n];
+    let mut alphas = bytes[3 + 3 * n..].iter().copied();
+
+    let mut map = serde_json::Map::with_capacity(n);
+    for (i, (key, _)) in THEME_FIELDS.iter().enumerate() {
+        let (r, g, b) = (rgb[i * 3], rgb[i * 3 + 1], rgb[i * 3 + 2]);
+        let a = if alpha_mask & (1 << i) != 0 {
+            alphas
+                .next()
+                .ok_or_else(|| anyhow!("That share code is incomplete."))?
+        } else {
+            0xff
+        };
+        map.insert(
+            key.to_string(),
+            serde_json::Value::String(format!("#{r:02x}{g:02x}{b:02x}{a:02x}")),
+        );
+    }
+
+    json_to_theme(&serde_json::Value::Object(map).to_string())
+}
+
 /// Look up a builtin theme by its bonbon name (e.g. `"beetroot_dark"`).
 pub fn builtin_by_name(name: &str) -> Option<Theme> {
     Theme::builtins()
@@ -137,4 +213,32 @@ pub async fn resolve_user_theme(db: &Database, discord_id: u64, active: Option<&
     }
 
     builtin_by_name(selector).unwrap_or_else(Theme::dark)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn share_code_round_trips_opaque() {
+        let theme = Theme::dark();
+        let decoded = decode_share_code(&encode_share_code(&theme)).expect("decode");
+        assert_eq!(theme_colors(&theme), theme_colors(&decoded));
+    }
+
+    #[test]
+    fn share_code_round_trips_with_alpha() {
+        // Force non-opaque alphas to exercise the alpha mask + trailing bytes.
+        let mut theme = Theme::light();
+        theme.grid_minor = Rgba([10, 20, 30, 40]);
+        theme.glucose_reading_fill = Rgba([1, 2, 3, 128]);
+        let decoded = decode_share_code(&encode_share_code(&theme)).expect("decode");
+        assert_eq!(theme_colors(&theme), theme_colors(&decoded));
+    }
+
+    #[test]
+    fn rejects_garbage_code() {
+        assert!(decode_share_code("not a real code!!!").is_err());
+        assert!(decode_share_code("").is_err());
+    }
 }

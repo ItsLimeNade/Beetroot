@@ -17,7 +17,10 @@ const MAX_IMPORT_BYTES: u32 = 64 * 1024;
     slash_command,
     install_context = "Guild|User",
     interaction_context = "Guild|BotDm|PrivateChannel",
-    subcommands("list", "set", "create", "edit", "delete", "import", "export", "view", "copy")
+    subcommands(
+        "list", "set", "create", "edit", "delete", "import", "export", "view", "copy", "share",
+        "paste"
+    )
 )]
 pub async fn theme(_ctx: Context<'_>) -> Result<(), Error> {
     // Parent of a slash command group; never invoked directly.
@@ -724,6 +727,131 @@ pub async fn copy(
         .description(format!(
             "Copied **{}** into your themes as **{}**. Preview with `/theme view name:{}` and apply with `/theme set`.",
             name, target_name, target_name
+        ))
+        .color(Colour::DARK_GREEN);
+
+    ctx.send(poise::CreateReply::default().embed(embed).ephemeral(true))
+        .await?;
+
+    Ok(())
+}
+
+/// Generate a compact share code for a theme, to send to a friend.
+#[poise::command(slash_command)]
+#[track_analytics("theme_share")]
+pub async fn share(
+    ctx: Context<'_>,
+    #[description = "Theme name (a builtin or one of your custom themes)"] name: String,
+) -> Result<(), Error> {
+    let db = &ctx.data().database;
+    let user_id = ctx.author().id.get();
+    let name = name.trim();
+
+    let theme = if let Some(row) = db.get_theme_by_name(user_id, name).await? {
+        match theme_assets::json_to_theme(&row.data) {
+            Ok(t) => t,
+            Err(e) => {
+                send_error!(ctx, "Corrupt Theme", e.to_string());
+                return Ok(());
+            }
+        }
+    } else if let Some(t) = theme_assets::builtin_by_name(name) {
+        t
+    } else {
+        send_error!(
+            ctx,
+            "No Such Theme",
+            format!("`{}` isn't a builtin or one of your themes.", name)
+        );
+        return Ok(());
+    };
+
+    let code = theme_assets::encode_share_code(&theme);
+
+    let embed = CreateEmbed::new()
+        .title(format!("{} Share Code for {}", emojis::image_mode(), name))
+        .description(format!(
+            "Send this to a friend. They can add it with `/theme paste`.\n\n```\n{}\n```",
+            code
+        ))
+        .footer(CreateEmbedFooter::new(
+            "Anyone with this code can recreate the theme",
+        ))
+        .color(Colour::DARK_GREEN);
+
+    ctx.send(poise::CreateReply::default().embed(embed).ephemeral(true))
+        .await?;
+
+    Ok(())
+}
+
+/// Add a theme from a share code someone sent you.
+#[poise::command(slash_command)]
+#[track_analytics("theme_paste")]
+pub async fn paste(
+    ctx: Context<'_>,
+    #[description = "The share code a friend gave you"] code: String,
+    #[description = "A name to save it under"] name: String,
+) -> Result<(), Error> {
+    let db = &ctx.data().database;
+    let user_id = ctx.author().id.get();
+    db.ensure_user_row(user_id).await?;
+
+    let name = name.trim();
+    if let Err(msg) = validate_theme_name(name) {
+        send_error!(ctx, "Invalid Name", msg);
+        return Ok(());
+    }
+    if theme_assets::builtin_by_name(name).is_some() {
+        send_error!(
+            ctx,
+            "Reserved Name",
+            "That name belongs to a builtin theme. Pick a different name."
+        );
+        return Ok(());
+    }
+
+    let theme = match theme_assets::decode_share_code(&code) {
+        Ok(t) => t,
+        Err(e) => {
+            send_error!(ctx, "Invalid Code", e.to_string());
+            return Ok(());
+        }
+    };
+    let data = theme_assets::theme_to_json(&theme);
+
+    let count = db.count_user_themes(user_id).await?;
+    if count >= MAX_THEMES_PER_USER {
+        send_error!(
+            ctx,
+            "Too Many Themes",
+            format!(
+                "You already have {}/{} themes. Delete one with `/theme delete` first.",
+                count, MAX_THEMES_PER_USER
+            )
+        );
+        return Ok(());
+    }
+
+    if !db.insert_theme(user_id, name, &data).await? {
+        send_error!(
+            ctx,
+            "Name Taken",
+            format!("You already have a theme called `{}`.", name)
+        );
+        return Ok(());
+    }
+    tracing::info!(
+        user = %crate::logging::redact(user_id),
+        theme = %name,
+        "theme added from share code"
+    );
+
+    let embed = CreateEmbed::new()
+        .title(format!("{} Theme Added", emojis::celebration()))
+        .description(format!(
+            "Added **{}** from the share code. Preview with `/theme view name:{}` and apply with `/theme set`.",
+            name, name
         ))
         .color(Colour::DARK_GREEN);
 
