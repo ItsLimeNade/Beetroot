@@ -1,9 +1,11 @@
 pub mod a1c;
 pub mod add_sticker;
 pub mod allow;
+pub mod analyze_units;
 pub mod bg;
 pub mod block;
 pub mod changelog;
+pub mod convert;
 pub mod delete_account;
 pub mod ephemeral;
 pub mod fingerprick_expiry;

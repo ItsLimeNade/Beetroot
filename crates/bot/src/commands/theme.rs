@@ -17,19 +17,59 @@ const MAX_IMPORT_BYTES: u32 = 64 * 1024;
     slash_command,
     install_context = "Guild|User",
     interaction_context = "Guild|BotDm|PrivateChannel",
-    subcommands("list", "set", "create", "edit", "delete", "import", "view")
+    subcommands("list", "set", "create", "edit", "delete", "import", "export", "view", "copy")
 )]
 pub async fn theme(_ctx: Context<'_>) -> Result<(), Error> {
     // Parent of a slash command group; never invoked directly.
     Ok(())
 }
 
-/// List the builtin themes and your custom themes.
+/// List the builtin themes and custom themes (yours, or another user's).
 #[poise::command(slash_command)]
 #[track_analytics("theme_list")]
-pub async fn list(ctx: Context<'_>) -> Result<(), Error> {
+pub async fn list(
+    ctx: Context<'_>,
+    #[description = "Whose themes to list (leave empty for your own)"] user: Option<serenity::User>,
+) -> Result<(), Error> {
     let db = &ctx.data().database;
     let user_id = ctx.author().id.get();
+
+    // Listing another user's themes is allowed only if their privacy settings
+    // let the caller see their data.
+    if let Some(target) = user.as_ref().filter(|u| u.id.get() != user_id) {
+        let owner_id = target.id.get();
+        let Some(owner_data) = db.get_user(owner_id).await? else {
+            send_error!(
+                ctx,
+                "No Themes",
+                format!("<@{owner_id}> hasn't set up Beetroot yet.")
+            );
+            return Ok(());
+        };
+        check_privacy!(ctx, target.id, owner_data);
+
+        let rows = db.get_user_themes(owner_id).await?;
+        let listing = if rows.is_empty() {
+            "_No custom themes yet._".to_string()
+        } else {
+            rows.iter()
+                .map(|t| format!("- `{}`", t.name))
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+
+        let embed = CreateEmbed::new()
+            .title(format!("{} {}'s Themes", emojis::image_mode(), target.name))
+            .color(Colour::from_rgb(87, 189, 79))
+            .field("Custom themes", listing, false)
+            .footer(CreateEmbedFooter::new(
+                "Preview with /theme view user:… name:… • copy with /theme copy",
+            ));
+
+        ctx.send(poise::CreateReply::default().embed(embed).ephemeral(true))
+            .await?;
+        return Ok(());
+    }
 
     let active = db.get_user(user_id).await?.and_then(|u| u.active_theme);
     let active = active.as_deref();
@@ -433,11 +473,105 @@ pub async fn import(
 #[track_analytics("theme_view")]
 pub async fn view(
     ctx: Context<'_>,
-    #[description = "Theme name (builtin or your custom theme)"] name: String,
+    #[description = "Theme name (a builtin or a custom theme)"] name: String,
+    #[description = "Whose theme to view (leave empty for your own or a builtin)"]
+    user: Option<serenity::User>,
+) -> Result<(), Error> {
+    let db = &ctx.data().database;
+    let viewer_id = ctx.author().id.get();
+    let name = name.trim();
+
+    let owner = user.as_ref().map(|u| u.id).unwrap_or_else(|| ctx.author().id);
+    let owner_id = owner.get();
+    let is_other = owner_id != viewer_id;
+
+    if is_other {
+        let Some(owner_data) = db.get_user(owner_id).await? else {
+            send_error!(
+                ctx,
+                "No Themes",
+                format!("<@{owner_id}> hasn't set up Beetroot, so they have no themes to show.")
+            );
+            return Ok(());
+        };
+        check_privacy!(ctx, owner, owner_data);
+    }
+
+    let theme = if let Some(row) = db.get_theme_by_name(owner_id, name).await? {
+        match theme_assets::json_to_theme(&row.data) {
+            Ok(t) => t,
+            Err(e) => {
+                send_error!(ctx, "Corrupt Theme", e.to_string());
+                return Ok(());
+            }
+        }
+    } else if !is_other && let Some(t) = theme_assets::builtin_by_name(name) {
+        t
+    } else if is_other {
+        send_error!(
+            ctx,
+            "No Such Theme",
+            format!("<@{owner_id}> doesn't have a theme called `{}`.", name)
+        );
+        return Ok(());
+    } else {
+        send_error!(
+            ctx,
+            "No Such Theme",
+            format!("`{}` isn't a builtin or one of your themes.", name)
+        );
+        return Ok(());
+    };
+
+    let owner_label = user
+        .as_ref()
+        .filter(|_| is_other)
+        .map(|u| format!("{}'s ", u.name))
+        .unwrap_or_default();
+
+    let legend = theme_assets::theme_colors(&theme)
+        .iter()
+        .map(|(key, color)| {
+            format!(
+                "`{}` {}",
+                theme_assets::rgba_to_hex(*color),
+                theme_assets::field_label(key)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let theme_for_image = theme.clone();
+    let img_buffer = tokio::task::spawn_blocking(move || render_swatch(&theme_for_image)).await??;
+
+    let attachment = CreateAttachment::bytes(img_buffer, "theme.png");
+
+    let embed = CreateEmbed::new()
+        .title(format!("{} {}Theme: {}", emojis::image_mode(), owner_label, name))
+        .description(legend)
+        .color(rgba_to_colour(theme.glucose_in_range))
+        .image("attachment://theme.png");
+
+    ctx.send(
+        poise::CreateReply::default()
+            .embed(embed)
+            .attachment(attachment)
+            .ephemeral(true),
+    )
+    .await?;
+
+    Ok(())
+}
+
+/// Export a theme as a JSON file you can edit, back up, or share.
+#[poise::command(slash_command)]
+#[track_analytics("theme_export")]
+pub async fn export(
+    ctx: Context<'_>,
+    #[description = "Theme name (a builtin or one of your custom themes)"] name: String,
 ) -> Result<(), Error> {
     let db = &ctx.data().database;
     let user_id = ctx.author().id.get();
-
     let name = name.trim();
 
     let theme = if let Some(row) = db.get_theme_by_name(user_id, name).await? {
@@ -459,28 +593,21 @@ pub async fn view(
         return Ok(());
     };
 
-    let legend = theme_assets::theme_colors(&theme)
-        .iter()
-        .map(|(key, color)| {
-            format!(
-                "`{}` {}",
-                theme_assets::rgba_to_hex(*color),
-                theme_assets::field_label(key)
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let compact = theme_assets::theme_to_json(&theme);
+    let pretty = serde_json::from_str::<serde_json::Value>(&compact)
+        .ok()
+        .and_then(|v| serde_json::to_string_pretty(&v).ok())
+        .unwrap_or(compact);
 
-    let theme_for_image = theme.clone();
-    let img_buffer = tokio::task::spawn_blocking(move || render_swatch(&theme_for_image)).await??;
-
-    let attachment = CreateAttachment::bytes(img_buffer, "theme.png");
+    let attachment = CreateAttachment::bytes(pretty.into_bytes(), format!("{}.json", file_stem(name)));
 
     let embed = CreateEmbed::new()
-        .title(format!("{} Theme: {}", emojis::image_mode(), name))
-        .description(legend)
-        .color(rgba_to_colour(theme.glucose_in_range))
-        .image("attachment://theme.png");
+        .title(format!("{} Theme Exported", emojis::celebration()))
+        .description(format!(
+            "Here is **{}** as JSON. Edit it and bring it back with `/theme import`, or send the file to a friend so they can import it.",
+            name
+        ))
+        .color(Colour::DARK_GREEN);
 
     ctx.send(
         poise::CreateReply::default()
@@ -491,6 +618,138 @@ pub async fn view(
     .await?;
 
     Ok(())
+}
+
+/// Copy someone else's theme (if their privacy settings allow it) into yours.
+#[poise::command(slash_command)]
+#[track_analytics("theme_copy")]
+pub async fn copy(
+    ctx: Context<'_>,
+    #[description = "Whose theme to copy"] user: serenity::User,
+    #[description = "The name of their theme"] name: String,
+    #[description = "Save it under a different name (optional)"] save_as: Option<String>,
+) -> Result<(), Error> {
+    let db = &ctx.data().database;
+    let me = ctx.author().id.get();
+    db.ensure_user_row(me).await?;
+
+    let owner_id = user.id.get();
+    let name = name.trim();
+
+    if owner_id == me {
+        send_error!(ctx, "That's Yours", "You already own that theme.");
+        return Ok(());
+    }
+
+    let Some(owner_data) = db.get_user(owner_id).await? else {
+        send_error!(
+            ctx,
+            "No Themes",
+            format!("<@{owner_id}> hasn't set up Beetroot, so they have no themes.")
+        );
+        return Ok(());
+    };
+    check_privacy!(ctx, user.id, owner_data);
+
+    let Some(row) = db.get_theme_by_name(owner_id, name).await? else {
+        send_error!(
+            ctx,
+            "No Such Theme",
+            format!("<@{owner_id}> doesn't have a theme called `{}`.", name)
+        );
+        return Ok(());
+    };
+
+    let theme = match theme_assets::json_to_theme(&row.data) {
+        Ok(t) => t,
+        Err(e) => {
+            send_error!(ctx, "Corrupt Theme", format!("That theme can't be copied: {e}"));
+            return Ok(());
+        }
+    };
+    let data = theme_assets::theme_to_json(&theme);
+
+    let target_name = save_as
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(name);
+
+    if let Err(msg) = validate_theme_name(target_name) {
+        send_error!(ctx, "Invalid Name", msg);
+        return Ok(());
+    }
+    if theme_assets::builtin_by_name(target_name).is_some() {
+        send_error!(
+            ctx,
+            "Reserved Name",
+            "That name belongs to a builtin theme. Pick a different `save_as`."
+        );
+        return Ok(());
+    }
+
+    let count = db.count_user_themes(me).await?;
+    if count >= MAX_THEMES_PER_USER {
+        send_error!(
+            ctx,
+            "Too Many Themes",
+            format!(
+                "You already have {}/{} themes. Delete one with `/theme delete` first.",
+                count, MAX_THEMES_PER_USER
+            )
+        );
+        return Ok(());
+    }
+
+    if !db.insert_theme(me, target_name, &data).await? {
+        send_error!(
+            ctx,
+            "Name Taken",
+            format!(
+                "You already have a theme called `{}`. Try `save_as` with a different name.",
+                target_name
+            )
+        );
+        return Ok(());
+    }
+    tracing::info!(
+        user = %crate::logging::redact(me),
+        source_user = %crate::logging::redact(owner_id),
+        theme = %target_name,
+        "theme copied from another user"
+    );
+
+    let embed = CreateEmbed::new()
+        .title(format!("{} Theme Copied", emojis::celebration()))
+        .description(format!(
+            "Copied **{}** into your themes as **{}**. Preview with `/theme view name:{}` and apply with `/theme set`.",
+            name, target_name, target_name
+        ))
+        .color(Colour::DARK_GREEN);
+
+    ctx.send(poise::CreateReply::default().embed(embed).ephemeral(true))
+        .await?;
+
+    Ok(())
+}
+
+/// Turn a theme name into a safe file stem (keep alnum, `-`, `_`; others -> `_`).
+fn file_stem(name: &str) -> String {
+    let stem: String = name
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    if stem.is_empty() {
+        "theme".to_string()
+    } else {
+        stem
+    }
 }
 
 /// Draw a 7×2 grid of color swatches over the theme background.
@@ -512,7 +771,6 @@ fn render_swatch(theme: &Theme) -> Result<Vec<u8>, Error> {
         let x0 = PAD + col * CELL;
         let y0 = PAD + row * CELL;
 
-        // subtle outline using the theme's outline color
         fill_rect(
             &mut img,
             x0.saturating_sub(2),
@@ -521,7 +779,6 @@ fn render_swatch(theme: &Theme) -> Result<Vec<u8>, Error> {
             SWATCH + 4,
             opaque(theme.glucose_reading_outline),
         );
-        // the swatch itself, alpha composited over the background
         fill_rect_blended(&mut img, x0, y0, SWATCH, SWATCH, *color);
     }
 
