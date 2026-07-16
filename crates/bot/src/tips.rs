@@ -107,6 +107,14 @@ pub const TIPS: &[Tip] = &[
         id: "donate",
         text: "Enjoying Beetroot? `/info` has a donation link that helps keep it running.",
     },
+    Tip {
+        id: "very_useful_tip_1000",
+        text:"You can use /convert to convert between mg/dL and mmol/L."
+    },
+    Tip {
+        id: "very_useful_tip_1001",
+        text:"You can use /analyze_units in a message's context (the little 3 dots when hovering it then go in Applications) menu to find and convert every units!"
+    }
 ];
 
 const SKIP_FOR_COMMANDS: &[&str] = &["setup", "token"];
@@ -114,6 +122,11 @@ const SKIP_FOR_COMMANDS: &[&str] = &["setup", "token"];
 pub async fn pre_command_hook(ctx: Context<'_>) {
     if SKIP_FOR_COMMANDS.contains(&ctx.command().name.as_str()) {
         return;
+    }
+    match crate::commands::telemetry::maybe_prompt_existing_user(ctx).await {
+        Ok(true) => return,
+        Ok(false) => {}
+        Err(e) => tracing::warn!("telemetry notice: failed to send: {}", e),
     }
     if let Err(e) = try_send_tip(ctx).await {
         tracing::warn!("tip: failed to send: {}", e);

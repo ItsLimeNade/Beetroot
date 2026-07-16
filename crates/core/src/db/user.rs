@@ -315,6 +315,19 @@ impl Database {
         Ok(())
     }
 
+    /// Whether the user has a stored row but has never made a telemetry choice
+    /// (their `telemetry_accepted` is NULL). These users predate the consent
+    /// prompt and are shown a one-time apology + choice.
+    pub async fn needs_telemetry_prompt(&self, discord_id: u64) -> CoreResult<bool> {
+        let id = discord_id as i64;
+        let row: Option<(Option<bool>,)> =
+            sqlx::query_as("SELECT telemetry_accepted FROM users WHERE discord_id = ?")
+                .bind(id)
+                .fetch_optional(&self.pool)
+                .await?;
+        Ok(matches!(row, Some((None,))))
+    }
+
     /// The user's telemetry choice: `Some(true/false)` once made, `None` if the
     /// user has never been asked.
     pub async fn get_telemetry_consent(&self, discord_id: u64) -> CoreResult<Option<bool>> {

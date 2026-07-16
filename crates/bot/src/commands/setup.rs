@@ -197,7 +197,7 @@ async fn ask_telemetry_and_finish(
     let consent_embed = CreateEmbed::new()
         .title(format!("{} One more thing: telemetry", emojis::tip()))
         .description(
-            "Beetroot can record anonymous usage telemetry to help improve it. It is \
+            "Beetroot can record usage telemetry to help improve it. It is \
              optional and stays off unless you turn it on.",
         )
         .field(

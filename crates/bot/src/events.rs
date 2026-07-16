@@ -50,7 +50,7 @@ pub async fn event_handler(
     ctx: &serenity::Context,
     event: &serenity::FullEvent,
     _framework: poise::FrameworkContext<'_, Data, Error>,
-    _data: &Data,
+    data: &Data,
 ) -> Result<(), Error> {
     match event {
         serenity::FullEvent::Ready { data_about_bot, .. } => {
@@ -65,6 +65,7 @@ pub async fn event_handler(
             ..
         } => {
             crate::commands::nutrition::handle_foreign_component(ctx, mci).await;
+            crate::commands::telemetry::handle_notice_component(ctx, mci, &data.database).await;
         }
         _ => {}
     }
