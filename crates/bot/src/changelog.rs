@@ -14,6 +14,20 @@ pub struct ChangelogEntry {
 
 pub const CHANGELOG: &[ChangelogEntry] = &[
     ChangelogEntry {
+        version: CURRENT_VERSION,
+        date: "2026-07-14",
+        changes: &[
+            "Added `/convert` to convert between mg/dL to mmol/L",
+            "Added `/analyze_units` to a message's context menu to find and convert every mention of blood sugar levels",
+            "Added `/theme share and /theme paste to easily share themes between users!",
+            "You can now export your themes and easily edit them with `/theme export`",
+            "`/bg` will now display your nightscout custom name.",
+            "You can now opt-in and out of telemetry using `/telemetry`",
+            "You can now ask to see all your collected data with `/my_data`",
+            "`/tir` now has a `1 day` parameter :)",
+        ],
+    },
+    ChangelogEntry {
         version: "1.0.0",
         date: "2026-06-17",
         changes: &[
@@ -26,20 +40,6 @@ pub const CHANGELOG: &[ChangelogEntry] = &[
             "Manage your account with `/stickers` and `/delete-account`.",
             "Lots of security improvements",
             "Plenty of bug fixes, notably the MBG reading as a *LO* value.",
-        ],
-    },
-    ChangelogEntry {
-        version: CURRENT_VERSION,
-        date: "2026-07-14",
-        changes: &[
-            "Added `/convert` to convert between mg/dL to mmol/L",
-            "Added `/analyze_units` to a message's context menu to find and convert every mention of blood sugar levels",
-            "Added `/theme share and /theme paste to easily share themes between users!",
-            "You can now export your themes and easily edit them with `/theme export`",
-            "`/bg` will now display your nightscout custom name.",
-            "You can now opt-in and out of telemetry using `/telemetry`",
-            "You can now ask to see all your collected data with `/my_data`",
-            "`/tir` now has a `1 day` parameter :)",
         ],
     },
 ];
