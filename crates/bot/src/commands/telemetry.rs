@@ -192,7 +192,10 @@ pub async fn handle_notice_component(
         )
     };
 
-    let embed = CreateEmbed::new().title(title).description(body).color(color);
+    let embed = CreateEmbed::new()
+        .title(title)
+        .description(body)
+        .color(color);
 
     let _ = mci
         .create_response(

@@ -14,19 +14,19 @@ pub struct ChangelogEntry {
 
 pub const CHANGELOG: &[ChangelogEntry] = &[
     ChangelogEntry {
-    version: CURRENT_VERSION,
-    date: "2026-06-17",
-    changes: &[
-        "Enable image mode for `/bg` with the `/image-mode` command",
-        "See your time in range and A1C with the `/tir` and `/a1c` commands",
-        "Look back in time with the new `at` option on `/bg` and `/graph` (e.g. `2h`, `1d`, `1w`, `1h30m`).",
-        "Personalize your graphs with `/theme` color themes and your own stickers.",
-        "Look up carbs, calories and macros for any food with `/nutrition`.",
-        "Tune everything from `/settings`, plus dedicated commands: `/privacy`, `/allow`, `/block`, `/ephemeral`, `/image-mode`, `/microbolus` and `/fingerprick-expiry` etc...",
-        "Manage your account with `/stickers` and `/delete-account`.",
-        "Lots of security improvements",
-        "Plenty of bug fixes, notably the MBG reading as a *LO* value.",
-    ],
+        version: CURRENT_VERSION,
+        date: "2026-06-17",
+        changes: &[
+            "Enable image mode for `/bg` with the `/image-mode` command",
+            "See your time in range and A1C with the `/tir` and `/a1c` commands",
+            "Look back in time with the new `at` option on `/bg` and `/graph` (e.g. `2h`, `1d`, `1w`, `1h30m`).",
+            "Personalize your graphs with `/theme` color themes and your own stickers.",
+            "Look up carbs, calories and macros for any food with `/nutrition`.",
+            "Tune everything from `/settings`, plus dedicated commands: `/privacy`, `/allow`, `/block`, `/ephemeral`, `/image-mode`, `/microbolus` and `/fingerprick-expiry` etc...",
+            "Manage your account with `/stickers` and `/delete-account`.",
+            "Lots of security improvements",
+            "Plenty of bug fixes, notably the MBG reading as a *LO* value.",
+        ],
     },
     ChangelogEntry {
         version: CURRENT_VERSION,
@@ -38,9 +38,9 @@ pub const CHANGELOG: &[ChangelogEntry] = &[
             "You can now export your themes and easily edit them with `/theme export`",
             "`/bg` will now display your nightscout custom name.",
             "You can now opt-in and out of telemetry using `/telemetry`",
-            "You can now ask to see all your collected data with `/my_data`"
-        ]
-    }
+            "You can now ask to see all your collected data with `/my_data`",
+        ],
+    },
 ];
 
 pub async fn post_command_hook(ctx: Context<'_>) {

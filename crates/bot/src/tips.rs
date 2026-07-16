@@ -109,12 +109,12 @@ pub const TIPS: &[Tip] = &[
     },
     Tip {
         id: "very_useful_tip_1000",
-        text:"You can use /convert to convert between mg/dL and mmol/L."
+        text: "You can use /convert to convert between mg/dL and mmol/L.",
     },
     Tip {
         id: "very_useful_tip_1001",
-        text:"You can use /analyze_units in a message's context (the little 3 dots when hovering it then go in Applications) menu to find and convert every units!"
-    }
+        text: "You can use /analyze_units in a message's context (the little 3 dots when hovering it then go in Applications) menu to find and convert every units!",
+    },
 ];
 
 const SKIP_FOR_COMMANDS: &[&str] = &["setup", "token"];

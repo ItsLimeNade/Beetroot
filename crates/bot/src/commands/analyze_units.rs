@@ -103,7 +103,10 @@ pub async fn analyze_units(
     };
 
     let embed = CreateEmbed::new()
-        .title(format!("{} Blood Glucose Unit Conversions", emojis::sugar()))
+        .title(format!(
+            "{} Blood Glucose Unit Conversions",
+            emojis::sugar()
+        ))
         .description(format!(
             "Found {} value(s):\n\n{}",
             readings.len(),
@@ -158,9 +161,19 @@ fn parse_num(s: &str) -> f64 {
 /// unit (mg/dL 20-600, mmol/L 1-35), else `None`.
 fn known_reading(original: String, value: f64, is_mgdl: bool, guessed: bool) -> Option<Reading> {
     let (from_unit, converted_value, converted_unit, in_range) = if is_mgdl {
-        ("mg/dL", value / 18.0, "mmol/L", (20.0..=600.0).contains(&value))
+        (
+            "mg/dL",
+            value / 18.0,
+            "mmol/L",
+            (20.0..=600.0).contains(&value),
+        )
     } else {
-        ("mmol/L", value * 18.0, "mg/dL", (1.0..=35.0).contains(&value))
+        (
+            "mmol/L",
+            value * 18.0,
+            "mg/dL",
+            (1.0..=35.0).contains(&value),
+        )
     };
 
     in_range.then_some(Reading {

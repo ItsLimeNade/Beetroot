@@ -28,9 +28,7 @@ pub async fn my_data(ctx: Context<'_>) -> Result<(), Error> {
     let Some(user) = db.get_user(user_id).await? else {
         let embed = CreateEmbed::new()
             .title(format!("{} No Data Stored", emojis::wifi_off()))
-            .description(
-                "Beetroot has nothing stored about you. Run `/setup` to get started.",
-            )
+            .description("Beetroot has nothing stored about you. Run `/setup` to get started.")
             .color(Colour::LIGHT_GREY);
         ctx.send(poise::CreateReply::default().embed(embed).ephemeral(true))
             .await?;
@@ -73,7 +71,11 @@ pub async fn my_data(ctx: Context<'_>) -> Result<(), Error> {
         consent, summary.command_log_count,
     );
     if let (Some(first), Some(last)) = (summary.first_at, summary.last_at) {
-        telemetry.push_str(&format!("\n**First:** {}\n**Latest:** {}", date(first), date(last)));
+        telemetry.push_str(&format!(
+            "\n**First:** {}\n**Latest:** {}",
+            date(first),
+            date(last)
+        ));
     }
     if !summary.per_command.is_empty() {
         let top: Vec<String> = summary

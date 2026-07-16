@@ -477,14 +477,18 @@ pub async fn import(
 pub async fn view(
     ctx: Context<'_>,
     #[description = "Theme name (a builtin or a custom theme)"] name: String,
-    #[description = "Whose theme to view (leave empty for your own or a builtin)"]
-    user: Option<serenity::User>,
+    #[description = "Whose theme to view (leave empty for your own or a builtin)"] user: Option<
+        serenity::User,
+    >,
 ) -> Result<(), Error> {
     let db = &ctx.data().database;
     let viewer_id = ctx.author().id.get();
     let name = name.trim();
 
-    let owner = user.as_ref().map(|u| u.id).unwrap_or_else(|| ctx.author().id);
+    let owner = user
+        .as_ref()
+        .map(|u| u.id)
+        .unwrap_or_else(|| ctx.author().id);
     let owner_id = owner.get();
     let is_other = owner_id != viewer_id;
 
@@ -550,7 +554,12 @@ pub async fn view(
     let attachment = CreateAttachment::bytes(img_buffer, "theme.png");
 
     let embed = CreateEmbed::new()
-        .title(format!("{} {}Theme: {}", emojis::image_mode(), owner_label, name))
+        .title(format!(
+            "{} {}Theme: {}",
+            emojis::image_mode(),
+            owner_label,
+            name
+        ))
         .description(legend)
         .color(rgba_to_colour(theme.glucose_in_range))
         .image("attachment://theme.png");
@@ -602,7 +611,8 @@ pub async fn export(
         .and_then(|v| serde_json::to_string_pretty(&v).ok())
         .unwrap_or(compact);
 
-    let attachment = CreateAttachment::bytes(pretty.into_bytes(), format!("{}.json", file_stem(name)));
+    let attachment =
+        CreateAttachment::bytes(pretty.into_bytes(), format!("{}.json", file_stem(name)));
 
     let embed = CreateEmbed::new()
         .title(format!("{} Theme Exported", emojis::celebration()))
@@ -666,7 +676,11 @@ pub async fn copy(
     let theme = match theme_assets::json_to_theme(&row.data) {
         Ok(t) => t,
         Err(e) => {
-            send_error!(ctx, "Corrupt Theme", format!("That theme can't be copied: {e}"));
+            send_error!(
+                ctx,
+                "Corrupt Theme",
+                format!("That theme can't be copied: {e}")
+            );
             return Ok(());
         }
     };
