@@ -11,6 +11,8 @@ use serenity::all::CreateAttachment;
 /// How far back the Time-in-Range card looks.
 #[derive(Debug, Clone, Copy, poise::ChoiceParameter)]
 pub enum TirPeriodChoice {
+    #[name = "Last 24 hours"]
+    Day,
     #[name = "Last 7 days"]
     Week,
     #[name = "Last 14 days"]
@@ -24,6 +26,7 @@ pub enum TirPeriodChoice {
 impl TirPeriodChoice {
     fn days(self) -> i64 {
         match self {
+            Self::Day => 1,
             Self::Week => 7,
             Self::Fortnight => 14,
             Self::Month => 30,
@@ -33,6 +36,7 @@ impl TirPeriodChoice {
 
     fn label(self) -> &'static str {
         match self {
+            Self::Day => "Last 24 hours",
             Self::Week => "Last 7 days",
             Self::Fortnight => "Last 14 days",
             Self::Month => "Last 30 days",

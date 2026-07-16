@@ -14,7 +14,7 @@ pub struct ChangelogEntry {
 
 pub const CHANGELOG: &[ChangelogEntry] = &[
     ChangelogEntry {
-        version: CURRENT_VERSION,
+        version: "1.0.0",
         date: "2026-06-17",
         changes: &[
             "Enable image mode for `/bg` with the `/image-mode` command",
@@ -39,6 +39,7 @@ pub const CHANGELOG: &[ChangelogEntry] = &[
             "`/bg` will now display your nightscout custom name.",
             "You can now opt-in and out of telemetry using `/telemetry`",
             "You can now ask to see all your collected data with `/my_data`",
+            "`/tir` now has a `1 day` parameter :)",
         ],
     },
 ];
