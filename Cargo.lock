@@ -328,7 +328,7 @@ dependencies = [
 
 [[package]]
 name = "bot"
-version = "1.1.1"
+version = "1.1.2"
 dependencies = [
  "anyhow",
  "base64",
@@ -490,9 +490,9 @@ dependencies = [
 
 [[package]]
 name = "cinnamon"
-version = "1.0.1"
+version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "49f114dee1543b581a141b057fa4ffa09f93a0c5df3ef1d3988ac7f281d2819a"
+checksum = "9874eb3c043ac2f5ab017d3b7b6362545c8cb593701aa40aeea62d42c2b31e75"
 dependencies = [
  "chrono",
  "futures",

@@ -1,10 +1,10 @@
 [package]
 name = "bot"
-version = "1.1.1"
+version = "1.1.2"
 edition = "2024"
 
 [dependencies]
-cinnamon = "1.0.1"
+cinnamon = "1.0.3"
 bonbon = {version = "0.4.2", features = ["cinnamon", "beetroot"]}
 poise = {git = "https://github.com/serenity-rs/poise", rev = "932351a"}
 tokio = { version = "1.49.0", features = ["full"] }

@@ -15,6 +15,13 @@ pub struct ChangelogEntry {
 pub const CHANGELOG: &[ChangelogEntry] = &[
     ChangelogEntry {
         version: CURRENT_VERSION,
+        date: "2026-07-20",
+        changes: &[
+            "Fixed a bug where some nightscout instances couldn't use beetroot due to a compatibility issue."
+        ],
+    },
+    ChangelogEntry {
+        version: "1.1.1",
         date: "2026-07-14",
         changes: &[
             "Added `/convert` to convert between mg/dL to mmol/L",

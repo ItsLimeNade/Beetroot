@@ -157,9 +157,7 @@ pub async fn bg(
         };
         let delta = prev.map(|p| entry.sgv as f64 - p.sgv as f64).unwrap_or(0.0);
 
-        let entry_time = chrono::DateTime::parse_from_rfc3339(&entry.date_string)
-            .unwrap_or_else(|_| now.into())
-            .with_timezone(&chrono::Utc);
+        let entry_time = entry.datetime().unwrap_or(now);
         let duration = now.signed_duration_since(entry_time);
         let age_str = if duration.num_minutes() < 60 {
             format!("{} min ago", duration.num_minutes())
@@ -418,9 +416,7 @@ pub async fn bg(
         (72.0, 180.0)
     };
 
-    let entry_time = chrono::DateTime::parse_from_rfc3339(&entry.date_string)
-        .unwrap_or_else(|_| chrono::Utc::now().into())
-        .with_timezone(&chrono::Utc);
+    let entry_time = entry.datetime().unwrap_or(now);
 
     let duration = now.signed_duration_since(entry_time);
 
@@ -526,10 +522,8 @@ pub async fn bg(
 
         let from_mbg = mbg_res.ok().and_then(|list| {
             list.into_iter().next().and_then(|mbg| {
-                let t = chrono::DateTime::parse_from_rfc3339(&mbg.date_string).ok()?;
-                let age = now
-                    .signed_duration_since(t.with_timezone(&chrono::Utc))
-                    .num_minutes();
+                let t = mbg.datetime()?;
+                let age = now.signed_duration_since(t).num_minutes();
                 if age <= expiry_mins {
                     Some((mbg.mbg as f64, age))
                 } else {

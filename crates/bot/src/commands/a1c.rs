@@ -48,18 +48,16 @@ pub async fn a1c(ctx: Context<'_>) -> Result<(), Error> {
         Ok(entries) if !entries.is_empty() => {
             debug!(
                 count = entries.len(),
-                newest = ?entries.first().map(|e| &e.date_string),
-                oldest = ?entries.last().map(|e| &e.date_string),
+                newest = ?entries.first().and_then(|e| e.datetime()),
+                oldest = ?entries.last().and_then(|e| e.datetime()),
                 "received SGV entries"
             );
 
             let tolerance = chrono::Duration::days(5);
-            let oldest_date_string = &entries.last().unwrap().date_string;
-            let oldest_date_res = chrono::DateTime::parse_from_rfc3339(oldest_date_string);
+            let oldest_entry = entries.last().unwrap();
 
-            match oldest_date_res {
-                Ok(oldest_date) => {
-                    let oldest_utc = oldest_date.to_utc();
+            match oldest_entry.datetime() {
+                Some(oldest_utc) => {
                     let data_gap = oldest_utc - ago;
 
                     debug!(
@@ -113,8 +111,8 @@ pub async fn a1c(ctx: Context<'_>) -> Result<(), Error> {
                         .field("Readings Used", format!("{}", entries.len()), true)
                         .field("A1C Estimation", format!("{:.1}%", a1c), true);
                 }
-                Err(e) => {
-                    warn!(date_string = ?oldest_date_string, error = %e, "failed to parse oldest entry date");
+                None => {
+                    warn!(date = oldest_entry.date, "oldest entry has an out-of-range timestamp");
                     send_error!(
                         ctx,
                         "Error Parsing Time",
