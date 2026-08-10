@@ -5,6 +5,7 @@ mod changelog;
 mod commands;
 mod data;
 mod events;
+mod health;
 mod logging;
 mod tips;
 mod utils;
@@ -31,6 +32,11 @@ async fn main() -> anyhow::Result<()> {
     // Fail closed: refuse to boot if token encryption isn't configured with a
     // real secret, rather than silently deriving a key from public source code.
     beetroot_core::crypto::init().context("token encryption is not configured")?;
+
+    let db_url = env::var("DATABASE_URL").context("Missing DATABASE_URL")?;
+    let database = beetroot_core::Database::connect(&db_url).await?;
+    tracing::info!("database connected and migrated");
+    let database_for_health = database.clone();
 
     let options = poise::FrameworkOptions {
         commands: vec![
@@ -79,7 +85,7 @@ async fn main() -> anyhow::Result<()> {
 
     let framework = poise::Framework::builder()
         .options(options)
-        .setup(|ctx, _ready, framework| {
+        .setup(move |ctx, _ready, framework| {
             Box::pin(async move {
                 poise::builtins::register_globally(ctx, &framework.options().commands).await?;
                 tracing::info!(
@@ -119,10 +125,6 @@ async fn main() -> anyhow::Result<()> {
                     }
                 }
 
-                let db_url = env::var("DATABASE_URL").context("Missing DATABASE_URL")?;
-                let database = beetroot_core::Database::connect(&db_url).await?;
-                tracing::info!("database connected and migrated");
-
                 Ok(data::Data { database })
             })
         })
@@ -144,6 +146,8 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!("shutdown signal received; stopping gateway");
         shard_manager.shutdown_all().await;
     });
+
+    health::spawn(client.shard_manager.clone(), database_for_health);
 
     tracing::info!("connecting to Discord gateway");
     match client.start().await {

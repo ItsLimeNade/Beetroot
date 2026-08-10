@@ -39,6 +39,11 @@ impl Database {
         Ok(Self { pool })
     }
 
+    pub async fn ping(&self) -> CoreResult<()> {
+        sqlx::query("SELECT 1").execute(&self.pool).await?;
+        Ok(())
+    }
+
     /// Wrap an existing, already-migrated pool.
     pub fn new(pool: SqlitePool) -> Self {
         Self { pool }
