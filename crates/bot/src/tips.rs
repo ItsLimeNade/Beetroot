@@ -68,6 +68,10 @@ pub const TIPS: &[Tip] = &[
         text: "Use `/compare` to see your last two weeks next to the two before, with how your average, GMI and variability changed.",
     },
     Tip {
+        id: "agp",
+        text: "Use `/agp` to see your typical day: your median glucose and its usual range at each time of day.",
+    },
+    Tip {
         id: "search",
         text: "Use `/search` to find your lows, highs, meals and more, then open any of them on a graph.",
     },

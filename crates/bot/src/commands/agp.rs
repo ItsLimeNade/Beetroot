@@ -1,3 +1,4 @@
+use crate::commands::tir::autocomplete_period;
 use crate::data::{Context, Error};
 use crate::utils::graph_render::ProfileSettings;
 use crate::utils::period::{self, Period};
@@ -10,35 +11,39 @@ use macros::track_analytics;
 use poise::serenity_prelude as serenity;
 use serenity::all::CreateAttachment;
 
-/// Suggests the rolling periods, then calendar months, narrowing as the user
-/// types (e.g. "July 202" lists every July).
-pub async fn autocomplete_period(_ctx: Context<'_>, partial: &str) -> Vec<String> {
-    period::suggestions(partial, Utc::now().date_naive())
-}
+/// Period summarized when none is given: the usual choice for a glucose
+/// profile.
+const DEFAULT_PERIOD: Period = Period::LastDays(14);
 
-/// Shows your Time in Range distribution over a chosen period.
+/// Shows your typical day: median glucose and its usual range by time of day.
 #[poise::command(
     slash_command,
     install_context = "Guild|User",
     interaction_context = "Guild|BotDm|PrivateChannel",
     user_cooldown = 10
 )]
-#[track_analytics("tir")]
-pub async fn tir(
+#[track_analytics("agp")]
+pub async fn agp(
     ctx: Context<'_>,
-    #[description = "How far back, or a month: 'Last 7 days', 'July 2026'..."]
+    #[description = "How far back, or a month: 'Last 30 days', 'July 2026'... (default: last 14 days)"]
     #[autocomplete = "autocomplete_period"]
-    period: String,
-    #[description = "View another user's Time in Range"] user: Option<serenity::User>,
+    period: Option<String>,
+    #[description = "View another user's glucose profile"] user: Option<serenity::User>,
 ) -> Result<(), Error> {
-    let Some(period) = period::parse(&period, Utc::now().date_naive()) else {
-        tracing::debug!(input = %period, "could not parse TIR period");
-        send_error!(
-            ctx,
-            "Invalid Period",
-            "Pick a period from the list, or type one like `Last 7 days`, `45d`, `July 2026` or `2026-07`. Periods go up to 90 days, and months can't be in the future."
-        );
-        return Ok(());
+    let period = match period.as_deref() {
+        None => DEFAULT_PERIOD,
+        Some(input) => match period::parse(input, Utc::now().date_naive()) {
+            Some(period) => period,
+            None => {
+                tracing::debug!(input = %input, "could not parse AGP period");
+                send_error!(
+                    ctx,
+                    "Invalid Period",
+                    "Pick a period from the list, or type one like `Last 7 days`, `45d`, `July 2026` or `2026-07`. Periods go up to 90 days, and months can't be in the future."
+                );
+                return Ok(());
+            }
+        },
     };
     let period_label = period.label();
 
@@ -59,15 +64,12 @@ pub async fn tir(
     // The profile comes first: a named month starts at midnight in its timezone.
     let profile = client.profiles().current().await.ok().flatten();
     let settings = ProfileSettings::from_profile(profile.as_ref());
-    let (target_low, target_high, is_mmol) =
-        (settings.target_low, settings.target_high, settings.is_mmol);
 
-    let now = Utc::now();
-    let (start_time, end_time) = period.bounds(now, settings.timezone);
+    let (start_time, end_time) = period.bounds(Utc::now(), settings.timezone);
     tracing::debug!(
         target_user = %crate::logging::redact(target_id.get()),
         period = %period_label,
-        "rendering time-in-range card"
+        "rendering glucose profile"
     );
 
     let entries = match client
@@ -112,43 +114,43 @@ pub async fn tir(
         return Ok(());
     }
 
-    tracing::debug!(is_mmol, "resolved target range from profile");
-    crate::log_medical!(target_low, target_high, is_mmol, "TIR target range");
+    crate::log_medical!(
+        target_low = settings.target_low,
+        target_high = settings.target_high,
+        is_mmol = settings.is_mmol,
+        "AGP target range"
+    );
 
     let db = &ctx.data().database;
     let theme =
         theme_assets::resolve_user_theme(db, target_id.get(), user_data.active_theme.as_deref())
             .await;
 
-    tracing::debug!(
-        theme = user_data.active_theme.as_deref().unwrap_or("default"),
-        "assets resolved, rendering image"
-    );
-
-    let tir_image = render::run_blocking(move || {
-        let graph_entries: Vec<GraphEntry> = entries.into_iter().map(GraphEntry::from).collect();
-
-        let builder = TimeInRangeBuilder::new()
-            .with_entries(graph_entries)
-            .with_targets(target_low, target_high)
+    let profile_image = render::run_blocking(move || {
+        let builder = PercentileGraphBuilder::new()
+            .with_layout(LayoutConfig {
+                width: 1275 * 2,
+                height: 825 * 2,
+                ..Default::default()
+            })
+            .with_entries(entries)
+            .with_targets(settings.target_low, settings.target_high)
             .with_units(UnitDisplay::Dual {
-                primary: if is_mmol {
+                primary: if settings.is_mmol {
                     UnitPreference::MmolL
                 } else {
                     UnitPreference::MgDl
                 },
             })
-            .with_period_label(period_label)
-            .with_extremes(true)
-            .with_theme(theme)
-            .with_scale(2.0);
+            .with_timezone(settings.timezone)
+            .with_theme(theme);
 
         builder.build().map_err(|e| anyhow::anyhow!(e.to_string()))
     })
     .await?;
 
     let img_buffer = render::run_blocking(move || {
-        let mut buffer = Vec::with_capacity(120_000);
+        let mut buffer = Vec::with_capacity(200_000);
         let encoder = image::codecs::png::PngEncoder::new_with_quality(
             &mut buffer,
             image::codecs::png::CompressionType::Level(9),
@@ -156,16 +158,16 @@ pub async fn tir(
         );
 
         encoder.write_image(
-            &tir_image,
-            tir_image.width(),
-            tir_image.height(),
+            &profile_image,
+            profile_image.width(),
+            profile_image.height(),
             image::ExtendedColorType::Rgba8,
         )?;
         Ok::<Vec<u8>, anyhow::Error>(buffer)
     })
     .await?;
 
-    let attachment = CreateAttachment::bytes(img_buffer, "tir.png");
+    let attachment = CreateAttachment::bytes(img_buffer, "agp.png");
 
     ctx.send(
         poise::CreateReply::default()
