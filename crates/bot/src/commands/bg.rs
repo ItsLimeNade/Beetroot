@@ -1,6 +1,7 @@
 use crate::data::{Context, Error};
 use crate::utils::duration_parser::parse_ago_duration;
 use crate::utils::emojis;
+use crate::utils::render;
 use crate::utils::targets::resolve_profile_targets_mgdl;
 use crate::utils::theme_assets;
 use bonbon::prelude::*;
@@ -199,21 +200,13 @@ pub async fn bg(
                 } else {
                     GlucoseStatus::InRange
                 };
-                let sgv = if is_mmol { sgv_mgdl / 18.0 } else { sgv_mgdl };
-                SparklinePoint { t, sgv, status }
+                SparklinePoint {
+                    t,
+                    sgv: sgv_mgdl,
+                    status,
+                }
             })
             .collect();
-
-        let display_sgv = if is_mmol { sgv_mgdl / 18.0 } else { sgv_mgdl };
-        let display_delta = if is_mmol { delta / 18.0 } else { delta };
-        let (unit_str, delta_str) = if is_mmol {
-            (
-                "mmol/L".to_string(),
-                format!("{:+.1} mmol/L", display_delta),
-            )
-        } else {
-            ("mg/dL".to_string(), format!("{:+.0} mg/dL", display_delta))
-        };
 
         let current_rate = sorted.windows(2).last().and_then(|w| {
             let dt_min = (w[1].date.as_millis() - w[0].date.as_millis()) as f32 / 60_000.0;
@@ -229,12 +222,11 @@ pub async fn bg(
         );
 
         let data = BgCardData {
-            current_sgv: display_sgv,
+            current_sgv: sgv_mgdl,
             status: current_status,
             trend_arrow: trend_arrow(entry.direction.as_ref()).to_string(),
-            delta_str,
+            delta: Some(delta as f32),
             age_str,
-            unit_str,
             time_str: now.format("%H:%M").to_string(),
             watermark_str: custom_title
                 .filter(|t| !t.trim().is_empty())
@@ -252,9 +244,16 @@ pub async fn bg(
             user_data.active_theme.as_deref(),
         )
         .await;
-        let img_buffer = tokio::task::spawn_blocking(move || {
+        let img_buffer = render::run_blocking(move || {
             let builder = BgCardBuilder::new()
                 .with_data(data)
+                .with_units(UnitDisplay::Dual {
+                    primary: if is_mmol {
+                        UnitPreference::MmolL
+                    } else {
+                        UnitPreference::MgDl
+                    },
+                })
                 .with_theme(theme)
                 .with_scale(4.0);
 
@@ -276,7 +275,7 @@ pub async fn bg(
             )?;
             Ok::<Vec<u8>, anyhow::Error>(buffer)
         })
-        .await??;
+        .await?;
 
         ctx.send(
             poise::CreateReply::default()

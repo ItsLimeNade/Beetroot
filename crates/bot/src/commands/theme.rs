@@ -1,5 +1,6 @@
 use crate::data::{Context, Error};
 use crate::utils::emojis;
+use crate::utils::render;
 use crate::utils::theme_assets;
 use bonbon::theme::Theme;
 use image::{ImageEncoder, Rgba, RgbaImage};
@@ -549,7 +550,7 @@ pub async fn view(
         .join("\n");
 
     let theme_for_image = theme.clone();
-    let img_buffer = tokio::task::spawn_blocking(move || render_swatch(&theme_for_image)).await??;
+    let img_buffer = render::run_blocking(move || render_swatch(&theme_for_image)).await?;
 
     let attachment = CreateAttachment::bytes(img_buffer, "theme.png");
 

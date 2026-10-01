@@ -1,5 +1,6 @@
 use crate::data::{Context, Error};
 use crate::utils::duration_parser::parse_ago_duration;
+use crate::utils::render;
 use crate::utils::sticker_assets;
 use crate::utils::targets::resolve_profile_targets_mgdl;
 use crate::utils::theme_assets;
@@ -120,13 +121,6 @@ pub async fn graph(
     let theme =
         theme_assets::resolve_user_theme(db, target_id.get(), user_data.active_theme.as_deref())
             .await;
-    let user_stickers = db.get_all_user_stickers(target_id.get()).await?;
-    let bonbon_stickers = sticker_assets::load_bonbon_stickers(&user_stickers).await;
-    tracing::debug!(
-        stickers = bonbon_stickers.len(),
-        "assets resolved, rendering image"
-    );
-
     // The data owner's graph preferences.
     let treatment_mode = if user_data.treatment_mode == "timeline" {
         TreatmentDisplayMode::Timeline
@@ -137,10 +131,19 @@ pub async fn graph(
         .graph_sticker_count
         .clamp(0, crate::commands::graph_stickers::MAX_GRAPH_STICKERS)
         as usize;
+
+    // Stickers are downloaded on every render, so skip that entirely when the
+    // owner has turned them off.
+    let bonbon_stickers = if sticker_count > 0 {
+        let user_stickers = db.get_all_user_stickers(target_id.get()).await?;
+        sticker_assets::load_bonbon_stickers(&user_stickers).await
+    } else {
+        Vec::new()
+    };
     tracing::debug!(
         unique_stickers = bonbon_stickers.len(),
         sticker_count,
-        "graph render prefs resolved"
+        "assets resolved, rendering image"
     );
 
     let graph_width: u32 = 1275 * 2;
@@ -152,7 +155,7 @@ pub async fn graph(
         None
     };
 
-    let graph_image = tokio::task::spawn_blocking(move || {
+    let graph_image = render::run_blocking(move || {
         let layout = LayoutConfig {
             width: graph_width,
             height: graph_height,
@@ -198,9 +201,9 @@ pub async fn graph(
 
         builder.build().map_err(|e| anyhow::anyhow!(e.to_string()))
     })
-    .await??;
+    .await?;
 
-    let img_buffer = tokio::task::spawn_blocking(move || {
+    let img_buffer = render::run_blocking(move || {
         let mut buffer = Vec::with_capacity(200_000);
         let encoder = image::codecs::png::PngEncoder::new_with_quality(
             &mut buffer,
@@ -216,7 +219,7 @@ pub async fn graph(
         )?;
         Ok::<Vec<u8>, anyhow::Error>(buffer)
     })
-    .await??;
+    .await?;
 
     let attachment = CreateAttachment::bytes(img_buffer, "graph.png");
 

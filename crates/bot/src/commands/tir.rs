@@ -1,4 +1,5 @@
 use crate::data::{Context, Error};
+use crate::utils::render;
 use crate::utils::targets::resolve_profile_targets_mgdl;
 use crate::utils::theme_assets;
 use bonbon::prelude::*;
@@ -141,7 +142,7 @@ pub async fn tir(
 
     let period_label = period.label().to_string();
 
-    let tir_image = tokio::task::spawn_blocking(move || {
+    let tir_image = render::run_blocking(move || {
         let graph_entries: Vec<GraphEntry> = entries.into_iter().map(GraphEntry::from).collect();
 
         let builder = TimeInRangeBuilder::new()
@@ -161,9 +162,9 @@ pub async fn tir(
 
         builder.build().map_err(|e| anyhow::anyhow!(e.to_string()))
     })
-    .await??;
+    .await?;
 
-    let img_buffer = tokio::task::spawn_blocking(move || {
+    let img_buffer = render::run_blocking(move || {
         let mut buffer = Vec::with_capacity(120_000);
         let encoder = image::codecs::png::PngEncoder::new_with_quality(
             &mut buffer,
@@ -179,7 +180,7 @@ pub async fn tir(
         )?;
         Ok::<Vec<u8>, anyhow::Error>(buffer)
     })
-    .await??;
+    .await?;
 
     let attachment = CreateAttachment::bytes(img_buffer, "tir.png");
 

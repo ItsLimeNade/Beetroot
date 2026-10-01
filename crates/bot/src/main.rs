@@ -132,7 +132,10 @@ async fn main() -> anyhow::Result<()> {
 
     let token = env::var("DISCORD_TOKEN").context("Missing DISCORD_TOKEN")?;
 
-    let intents = serenity::GatewayIntents::non_privileged();
+    // Every feature is driven by interactions, which Discord delivers without
+    // any gateway intent. Subscribing to none keeps guild, member and message
+    // traffic (and serenity's ever-growing cache of it) out of the process.
+    let intents = serenity::GatewayIntents::empty();
 
     let mut client = serenity::Client::builder(token, intents)
         .framework(framework)
