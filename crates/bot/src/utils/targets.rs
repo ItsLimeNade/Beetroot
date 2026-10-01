@@ -1,4 +1,4 @@
-use cinnamon::models::profile::ProfileConfig;
+use cinnamon::model::{Profile, Units};
 
 const DEFAULT_LOW_MGDL: f32 = 72.0;
 const DEFAULT_HIGH_MGDL: f32 = 180.0;
@@ -19,8 +19,8 @@ fn target_to_mgdl(value: Option<f64>, is_mmol: bool) -> Option<f32> {
     Some(mgdl as f32)
 }
 
-pub fn resolve_profile_targets_mgdl(store: &ProfileConfig) -> (f32, f32, bool) {
-    let is_mmol = store.units.starts_with("mmol");
+pub fn resolve_profile_targets_mgdl(store: &Profile) -> (f32, f32, bool) {
+    let is_mmol = store.units() == Some(Units::MmolL);
 
     let low = target_to_mgdl(store.target_low.first().map(|x| x.value), is_mmol)
         .unwrap_or(DEFAULT_LOW_MGDL);

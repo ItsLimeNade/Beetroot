@@ -101,10 +101,13 @@ pub async fn graph(
     // Extract targets, timezone, and unit preference from profile
     let (target_low, target_high, user_tz, is_mmol) = profiles
         .as_ref()
-        .and_then(|p| p.first())
-        .and_then(|p| p.store.get(&p.default_profile_name))
+        .and_then(|p| p.default_entry())
         .map(|store| {
-            let tz: Tz = store.timezone.parse().unwrap_or(chrono_tz::UTC);
+            let tz: Tz = store
+                .timezone
+                .as_deref()
+                .and_then(|tz| tz.parse().ok())
+                .unwrap_or(chrono_tz::UTC);
             let (low_mg, high_mg, mmol) = resolve_profile_targets_mgdl(store);
             (low_mg, high_mg, tz, mmol)
         })

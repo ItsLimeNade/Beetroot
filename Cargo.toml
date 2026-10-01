@@ -5,3 +5,8 @@ members = ["crates/bot", "crates/macros", "crates/core"]
 [profile.release]
 lto = "thin"
 strip = true
+
+# bonbon 0.6.0 (the cinnamon 2.0 integration) is not on crates.io yet.
+# Remove once it is published.
+[patch.crates-io]
+bonbon = { path = "../bonbon" }

@@ -81,11 +81,11 @@ pub async fn tir(
     );
 
     let entries = match client
+        .entries()
         .sgv()
-        .get()
-        .from(start_time)
+        .list()
+        .since(start_time)
         .limit(120_000)
-        .send()
         .await
     {
         Ok(e) => {
@@ -116,11 +116,10 @@ pub async fn tir(
         return Ok(());
     }
 
-    let profiles = client.profiles().get().await.ok();
-    let (target_low, target_high, is_mmol) = profiles
+    let profile = client.profiles().current().await.ok().flatten();
+    let (target_low, target_high, is_mmol) = profile
         .as_ref()
-        .and_then(|p| p.first())
-        .and_then(|p| p.store.get(&p.default_profile_name))
+        .and_then(|p| p.default_entry())
         .map(|store| {
             let (low_mg, high_mg, mmol) = resolve_profile_targets_mgdl(store);
             (low_mg, high_mg, mmol)
