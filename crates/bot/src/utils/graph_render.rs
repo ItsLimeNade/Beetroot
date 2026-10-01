@@ -1,0 +1,259 @@
+use crate::data::Error;
+use crate::utils::graph_data;
+use crate::utils::sticker_assets;
+use crate::utils::targets::resolve_profile_targets_mgdl;
+use crate::utils::theme_assets;
+use beetroot_core::Database;
+use beetroot_core::models::UserDecrypted;
+use bonbon::prelude::*;
+use chrono::{DateTime, Duration, Utc};
+use chrono_tz::Tz;
+use cinnamon::client::NightscoutClient;
+use cinnamon::error::NightscoutError;
+use cinnamon::models::devicestatus::DeviceStatus;
+use cinnamon::models::entries::SgvEntry;
+use cinnamon::models::profile::ProfileSet;
+use cinnamon::models::treatments::Treatment;
+use image::ImageEncoder;
+
+/// What a graph needs from the data owner's Nightscout profile.
+#[derive(Debug, Clone, Copy)]
+pub struct ProfileSettings {
+    /// Target range in mg/dL.
+    pub target_low: f32,
+    pub target_high: f32,
+    pub timezone: Tz,
+    pub is_mmol: bool,
+    /// Duration of insulin action, in hours.
+    pub dia_hours: Option<f64>,
+}
+
+impl ProfileSettings {
+    /// Reads the default profile, falling back to 72-180 mg/dL in UTC when
+    /// there is none.
+    pub fn from_profiles(profiles: Option<&[ProfileSet]>) -> Self {
+        profiles
+            .and_then(|p| p.first())
+            .and_then(|p| p.store.get(&p.default_profile_name))
+            .map(|store| {
+                let (target_low, target_high, is_mmol) = resolve_profile_targets_mgdl(store);
+                Self {
+                    target_low,
+                    target_high,
+                    timezone: store.timezone.parse().unwrap_or(chrono_tz::UTC),
+                    is_mmol,
+                    dia_hours: Some(store.dia),
+                }
+            })
+            .unwrap_or(Self {
+                target_low: 72.0,
+                target_high: 180.0,
+                timezone: chrono_tz::UTC,
+                is_mmol: false,
+                dia_hours: None,
+            })
+    }
+}
+
+/// Everything Nightscout holds for one graph's time window.
+pub struct WindowData {
+    pub entries: Vec<SgvEntry>,
+    pub treatments: Vec<Treatment>,
+    pub device_statuses: Vec<DeviceStatus>,
+}
+
+/// Fetches entries, treatments, and device statuses between `start` and `end`
+/// in parallel.
+///
+/// Treatments reach back before `start` so earlier doses and meals still count
+/// toward IOB/COB. Only failing to fetch entries is an error; treatments and
+/// device statuses fail gracefully (empty).
+pub async fn fetch_window(
+    client: &NightscoutClient,
+    start: DateTime<Utc>,
+    end: DateTime<Utc>,
+) -> Result<WindowData, NightscoutError> {
+    // Nightscout returns the newest matches first, so without an upper bound a
+    // window far in the past would be crowded out by everything after it.
+    let entries_fut = client.sgv().get().from(start).to(end).limit(5000).send();
+    let treatments_fut = client
+        .treatments()
+        .get()
+        .from(start - Duration::hours(graph_data::ON_BOARD_LOOKBACK_HOURS))
+        .to(end)
+        .limit(5000)
+        .send();
+    let device_statuses_fut = client
+        .devicestatus()
+        .get()
+        .from(start)
+        .to(end)
+        .limit(2000)
+        .send();
+
+    let (entries_res, treatments_res, device_statuses_res) =
+        tokio::join!(entries_fut, treatments_fut, device_statuses_fut);
+
+    let treatments = treatments_res.unwrap_or_else(|e| {
+        tracing::warn!("Failed to fetch treatments: {}", e);
+        Vec::new()
+    });
+    let device_statuses = device_statuses_res.unwrap_or_else(|e| {
+        tracing::warn!("Failed to fetch device statuses: {}", e);
+        Vec::new()
+    });
+
+    Ok(WindowData {
+        entries: entries_res?,
+        treatments,
+        device_statuses,
+    })
+}
+
+/// Renders a glucose graph as a PNG, styled with the data owner's theme,
+/// stickers and graph preferences.
+///
+/// The graph spans `duration` from `start`. With `pinned` it shows exactly that
+/// window; without, it ends at the latest data (the usual "last N hours" view).
+pub async fn render_png(
+    db: &Database,
+    user_data: &UserDecrypted,
+    settings: ProfileSettings,
+    data: WindowData,
+    start: DateTime<Utc>,
+    duration: Duration,
+    pinned: bool,
+) -> Result<Vec<u8>, Error> {
+    let owner_id = user_data.discord_id;
+    let theme =
+        theme_assets::resolve_user_theme(db, owner_id, user_data.active_theme.as_deref()).await;
+    let user_stickers = db.get_all_user_stickers(owner_id).await?;
+    let bonbon_stickers = sticker_assets::load_bonbon_stickers(&user_stickers).await;
+
+    // The data owner's graph preferences.
+    let treatment_mode = if user_data.treatment_mode == "timeline" {
+        TreatmentDisplayMode::Timeline
+    } else {
+        TreatmentDisplayMode::Contextual
+    };
+    let sticker_count = user_data
+        .graph_sticker_count
+        .clamp(0, crate::commands::graph_stickers::MAX_GRAPH_STICKERS)
+        as usize;
+    tracing::debug!(
+        unique_stickers = bonbon_stickers.len(),
+        sticker_count,
+        "graph assets and prefs resolved"
+    );
+
+    let entries: Vec<GraphEntry> = data
+        .entries
+        .into_iter()
+        .map(graph_data::graph_entry)
+        .collect();
+    let treatments: Vec<GraphTreatment> = data
+        .treatments
+        .into_iter()
+        .filter_map(graph_data::graph_treatment)
+        .collect();
+
+    // IOB/COB mini graphs, only the ones with something on board in the window.
+    let (reported_iob, reported_cob) = graph_data::reported_on_board(&data.device_statuses);
+    let mut mini_graphs = graph_data::mini_graphs(
+        reported_iob,
+        reported_cob,
+        &treatments,
+        settings.dia_hours,
+        start,
+        start + duration,
+    );
+    tracing::debug!(mini_graphs = mini_graphs.len(), "mini graphs resolved");
+
+    // The data owner's microbolus preferences. Hidden microboluses leave the
+    // graph but still count toward IOB.
+    let microbolus_threshold = user_data.microbolus_threshold as f32;
+    let treatments = if user_data.display_microbolus {
+        treatments
+    } else {
+        let shown = graph_data::hide_microboluses(&treatments, microbolus_threshold);
+        let doses = |list: &[GraphTreatment]| list.iter().filter(|t| t.insulin.is_some()).count();
+        if doses(&shown) != doses(&treatments) {
+            let end = (start + duration).min(Utc::now());
+            mini_graphs = graph_data::pin_iob(mini_graphs, &treatments, start, end);
+        }
+        shown
+    };
+
+    let graph_width: u32 = 1275 * 2;
+    let graph_height: u32 = 825 * 2;
+
+    let graph_image = tokio::task::spawn_blocking(move || {
+        let layout = LayoutConfig {
+            width: graph_width,
+            height: graph_height,
+            ..Default::default()
+        };
+
+        let mut builder = GlucoseGraphBuilder::new()
+            .with_treatment_mode(treatment_mode)
+            .with_microbolus_threshold(microbolus_threshold)
+            .with_scaling(GraphScaling::Dynamic {
+                clamp_min: 40.0,
+                clamp_max: 400.0,
+                default_min: 60.0,
+                default_max: 200.0,
+            })
+            .with_trace(false)
+            .with_layout(layout)
+            .with_theme(theme)
+            .with_units(UnitDisplay::Dual {
+                primary: if settings.is_mmol {
+                    UnitPreference::MmolL
+                } else {
+                    UnitPreference::MgDl
+                },
+            })
+            .with_targets(settings.target_low, settings.target_high)
+            .with_timezone(settings.timezone)
+            .add_entries(entries)
+            .add_treatments(treatments)
+            .with_mini_graphs(mini_graphs)
+            .with_time_axis(TimeAxisMode::EquallyDistributed { count: 6 })
+            .with_fixed_duration(duration);
+
+        if pinned {
+            builder = builder.start_at(start);
+        }
+
+        if !bonbon_stickers.is_empty() && sticker_count > 0 {
+            let stickers = StickerSet::new(sticker_count)
+                .with_stickers(bonbon_stickers)
+                .with_graph_size_ratio(0.22)
+                .with_graph_alpha(0.5);
+            builder = builder.with_stickers(stickers);
+        }
+
+        builder.build().map_err(|e| anyhow::anyhow!(e.to_string()))
+    })
+    .await??;
+
+    let img_buffer = tokio::task::spawn_blocking(move || {
+        let mut buffer = Vec::with_capacity(200_000);
+        let encoder = image::codecs::png::PngEncoder::new_with_quality(
+            &mut buffer,
+            image::codecs::png::CompressionType::Level(9),
+            image::codecs::png::FilterType::NoFilter,
+        );
+
+        encoder.write_image(
+            &graph_image,
+            graph_image.width(),
+            graph_image.height(),
+            image::ExtendedColorType::Rgba8,
+        )?;
+        Ok::<Vec<u8>, anyhow::Error>(buffer)
+    })
+    .await??;
+
+    Ok(img_buffer)
+}

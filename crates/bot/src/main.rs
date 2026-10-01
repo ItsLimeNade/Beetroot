@@ -49,6 +49,7 @@ async fn main() -> anyhow::Result<()> {
             commands::add_sticker::add_sticker_context(),
             commands::analyze_units::analyze_units(),
             commands::stickers::stickers(),
+            commands::search::search(),
             commands::theme::theme(),
             commands::nutrition::nutrition(),
             commands::info::info(),

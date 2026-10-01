@@ -23,6 +23,7 @@ v1.0.0-pre2 | ...one giant leap for diabetics
 - `/graph` now shows IOB and COB mini graphs under the glucose plot when there is insulin or carbs on board (from your loop's reported values, or worked out from your treatments)
 - The IOB and COB icons on `/bg` now sit after the text
 - Image-mode `/bg` now shows your reading and delta in both mg/dL and mmol/L
+- Added `/search` to look through your Nightscout history (`lows`, `highs`, `in-range`, `carbs`, `insulin`), sort the results (lowest, highest, longest, shortest, most recent...) and open any of them on a graph centered on that moment
 - `/bg` cards now show a short, actionable hint (like "verify reading" or "monitor") instead of just restating your status
 - Stickers now appear only on `/graph`; the `/bg` card and `/tir` are kept clean
 - Added `/delete-account` to wipe all of your stored data
@@ -30,6 +31,8 @@ v1.0.0-pre2 | ...one giant leap for diabetics
 - Added an in-bot changelog that shows what's new since your last use
 
 ### Fixes
+- `/microbolus` settings now actually apply to graphs: doses up to your threshold are drawn as small unlabelled ticks, and turning the display off hides them (they still count toward IOB)
+- `/graph` with a far-back `at` (more than a couple of weeks) no longer comes back empty: the request is now bounded to the graph's window
 - Token encryption now fails closed instead of falling back to a public hard-coded key, so a leaked database can no longer be decrypted with the source code. `ENCRYPTION_SALT` was renamed to `ENCRYPTION_KEY` (existing values still work)
 - Added SSRF protection to Nightscout and sticker fetching: private, loopback and cloud-metadata addresses are blocked, redirects are re-checked, and outbound requests now have timeouts
 - Stopped dumping glucose, treatments and profiles to the logs. The new logging system never records medical data or Discord IDs unless you opt in with `LOG_SENSITIVE=true`

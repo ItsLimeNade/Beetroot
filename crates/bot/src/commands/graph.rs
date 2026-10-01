@@ -1,13 +1,7 @@
 use crate::data::{Context, Error};
 use crate::utils::duration_parser::parse_ago_duration;
-use crate::utils::graph_data;
-use crate::utils::sticker_assets;
-use crate::utils::targets::resolve_profile_targets_mgdl;
-use crate::utils::theme_assets;
-use bonbon::prelude::*;
+use crate::utils::graph_render::{self, ProfileSettings};
 use chrono::{Duration, Utc};
-use chrono_tz::Tz;
-use image::ImageEncoder;
 use macros::track_analytics;
 use poise::serenity_prelude as serenity;
 use serenity::all::CreateAttachment;
@@ -80,17 +74,40 @@ pub async fn graph(
         "rendering glucose graph"
     );
 
-    let (entries, treatments, profiles, device_statuses) =
-        fetch_graph_data!(ctx, client, start_time, graph_end_time);
+    let profiles_service = client.profiles();
+    let (window_res, profiles_res) = tokio::join!(
+        graph_render::fetch_window(&client, start_time, graph_end_time),
+        profiles_service.get()
+    );
+
+    let data = match window_res {
+        Ok(d) => d,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to fetch glucose entries");
+            send_error!(
+                ctx,
+                "Fetch Error",
+                "Could not retrieve glucose data. Please try again in a moment."
+            );
+            return Ok(());
+        }
+    };
+    let profiles = match profiles_res {
+        Ok(p) => Some(p),
+        Err(e) => {
+            tracing::warn!("Failed to fetch profiles: {}", e);
+            None
+        }
+    };
     tracing::debug!(
-        entries = entries.len(),
-        treatments = treatments.len(),
+        entries = data.entries.len(),
+        treatments = data.treatments.len(),
         has_profiles = profiles.is_some(),
-        device_statuses = device_statuses.len(),
+        device_statuses = data.device_statuses.len(),
         "fetched graph data"
     );
 
-    if entries.is_empty() {
+    if data.entries.is_empty() {
         tracing::debug!("no SGV entries in window");
         send_error!(
             ctx,
@@ -100,141 +117,28 @@ pub async fn graph(
         return Ok(());
     }
 
-    // Extract targets, timezone, unit preference, and insulin duration from profile
-    let (target_low, target_high, user_tz, is_mmol, dia_hours) = profiles
-        .as_ref()
-        .and_then(|p| p.first())
-        .and_then(|p| p.store.get(&p.default_profile_name))
-        .map(|store| {
-            let tz: Tz = store.timezone.parse().unwrap_or(chrono_tz::UTC);
-            let (low_mg, high_mg, mmol) = resolve_profile_targets_mgdl(store);
-            (low_mg, high_mg, tz, mmol, Some(store.dia))
-        })
-        .unwrap_or((72.0, 180.0, chrono_tz::UTC, false, None));
+    // Targets, timezone, unit preference, and insulin duration from the profile
+    let settings = ProfileSettings::from_profiles(profiles.as_deref());
 
-    tracing::debug!(tz = %user_tz, is_mmol, "resolved profile settings");
-    crate::log_medical!(target_low, target_high, is_mmol, "graph target range");
-
-    let db = &ctx.data().database;
-    let theme =
-        theme_assets::resolve_user_theme(db, target_id.get(), user_data.active_theme.as_deref())
-            .await;
-    let user_stickers = db.get_all_user_stickers(target_id.get()).await?;
-    let bonbon_stickers = sticker_assets::load_bonbon_stickers(&user_stickers).await;
-    tracing::debug!(
-        stickers = bonbon_stickers.len(),
-        "assets resolved, rendering image"
+    tracing::debug!(tz = %settings.timezone, is_mmol = settings.is_mmol, "resolved profile settings");
+    crate::log_medical!(
+        target_low = settings.target_low,
+        target_high = settings.target_high,
+        is_mmol = settings.is_mmol,
+        "graph target range"
     );
 
-    // The data owner's graph preferences.
-    let treatment_mode = if user_data.treatment_mode == "timeline" {
-        TreatmentDisplayMode::Timeline
-    } else {
-        TreatmentDisplayMode::Contextual
-    };
-    let sticker_count = user_data
-        .graph_sticker_count
-        .clamp(0, crate::commands::graph_stickers::MAX_GRAPH_STICKERS)
-        as usize;
-    tracing::debug!(
-        unique_stickers = bonbon_stickers.len(),
-        sticker_count,
-        "graph render prefs resolved"
-    );
-
-    let graph_width: u32 = 1275 * 2;
-    let graph_height: u32 = 825 * 2;
-    let has_lookback = lookback.is_some();
-    let custom_start = if has_lookback {
-        Some(graph_end_time - Duration::hours(duration_hours))
-    } else {
-        None
-    };
-
-    let entries: Vec<GraphEntry> = entries.into_iter().map(graph_data::graph_entry).collect();
-    let treatments: Vec<GraphTreatment> = treatments
-        .into_iter()
-        .filter_map(graph_data::graph_treatment)
-        .collect();
-
-    // IOB/COB mini graphs, only the ones with something on board in the window.
-    let (reported_iob, reported_cob) = graph_data::reported_on_board(&device_statuses);
-    let mini_graphs = graph_data::mini_graphs(
-        reported_iob,
-        reported_cob,
-        &treatments,
-        dia_hours,
-        graph_end_time - Duration::hours(duration_hours),
-        graph_end_time,
-    );
-    tracing::debug!(mini_graphs = mini_graphs.len(), "mini graphs resolved");
-
-    let graph_image = tokio::task::spawn_blocking(move || {
-        let layout = LayoutConfig {
-            width: graph_width,
-            height: graph_height,
-            ..Default::default()
-        };
-
-        let mut builder = GlucoseGraphBuilder::new()
-            .with_treatment_mode(treatment_mode)
-            .with_scaling(GraphScaling::Dynamic {
-                clamp_min: 40.0,
-                clamp_max: 400.0,
-                default_min: 60.0,
-                default_max: 200.0,
-            })
-            .with_trace(false)
-            .with_layout(layout)
-            .with_theme(theme)
-            .with_units(UnitDisplay::Dual {
-                primary: if is_mmol {
-                    UnitPreference::MmolL
-                } else {
-                    UnitPreference::MgDl
-                },
-            })
-            .with_targets(target_low, target_high)
-            .with_timezone(user_tz)
-            .add_entries(entries)
-            .add_treatments(treatments)
-            .with_mini_graphs(mini_graphs)
-            .with_time_axis(TimeAxisMode::EquallyDistributed { count: 6 })
-            .with_fixed_duration(Duration::hours(duration_hours));
-
-        if let Some(start) = custom_start {
-            builder = builder.start_at(start);
-        }
-
-        if !bonbon_stickers.is_empty() && sticker_count > 0 {
-            let stickers = StickerSet::new(sticker_count)
-                .with_stickers(bonbon_stickers)
-                .with_graph_size_ratio(0.22)
-                .with_graph_alpha(0.5);
-            builder = builder.with_stickers(stickers);
-        }
-
-        builder.build().map_err(|e| anyhow::anyhow!(e.to_string()))
-    })
-    .await??;
-
-    let img_buffer = tokio::task::spawn_blocking(move || {
-        let mut buffer = Vec::with_capacity(200_000);
-        let encoder = image::codecs::png::PngEncoder::new_with_quality(
-            &mut buffer,
-            image::codecs::png::CompressionType::Level(9),
-            image::codecs::png::FilterType::NoFilter,
-        );
-
-        encoder.write_image(
-            &graph_image,
-            graph_image.width(),
-            graph_image.height(),
-            image::ExtendedColorType::Rgba8,
-        )?;
-        Ok::<Vec<u8>, anyhow::Error>(buffer)
-    })
-    .await??;
+    let duration = Duration::hours(duration_hours);
+    let img_buffer = graph_render::render_png(
+        &ctx.data().database,
+        &user_data,
+        settings,
+        data,
+        graph_end_time - duration,
+        duration,
+        lookback.is_some(),
+    )
+    .await?;
 
     let attachment = CreateAttachment::bytes(img_buffer, "graph.png");
 

@@ -1,4 +1,4 @@
-use bonbon::prelude::{GraphEntry, GraphTreatment, MiniGraph, SeriesPoint};
+use bonbon::prelude::{GraphEntry, GraphTreatment, MiniGraph, OnBoard, SeriesPoint};
 use chrono::{DateTime, Duration, Utc};
 use cinnamon::models::devicestatus::DeviceStatus;
 use cinnamon::models::entries::SgvEntry;
@@ -184,10 +184,86 @@ pub fn mini_graphs(
     graphs
 }
 
+/// Takes microboluses off a graph: insulin doses of `threshold` units or less
+/// that come without carbs. A treatment that also carries a BG check keeps
+/// that reading and only loses its insulin.
+pub fn hide_microboluses(treatments: &[GraphTreatment], threshold: f32) -> Vec<GraphTreatment> {
+    treatments
+        .iter()
+        .filter_map(|t| {
+            let is_micro = t.carbs.is_none() && t.insulin.is_some_and(|units| units <= threshold);
+            if !is_micro {
+                return Some(t.clone());
+            }
+            t.mbg.is_some().then(|| GraphTreatment {
+                insulin: None,
+                ..t.clone()
+            })
+        })
+        .collect()
+}
+
+/// Fixes an IOB mini graph that would be worked out from the graph's own
+/// treatments to the curve `treatments` give instead, sampled every minute
+/// from `start` to `end`.
+///
+/// Used when some doses are kept off the graph (hidden microboluses): the
+/// graph only knows the treatments it draws, so left alone its IOB would
+/// drop them too.
+pub fn pin_iob(
+    graphs: Vec<MiniGraph>,
+    treatments: &[GraphTreatment],
+    start: DateTime<Utc>,
+    end: DateTime<Utc>,
+) -> Vec<MiniGraph> {
+    graphs
+        .into_iter()
+        .map(|graph| match graph {
+            MiniGraph::Iob(OnBoard::FromTreatments(duration)) => {
+                let doses: Vec<(DateTime<Utc>, f32)> = treatments
+                    .iter()
+                    .filter_map(|t| t.insulin.map(|units| (t.date, units)))
+                    .collect();
+                MiniGraph::iob_reported(on_board_series(&doses, duration, start, end))
+            }
+            other => other,
+        })
+        .collect()
+}
+
+/// What is on board each minute from `start` to `end`, with every dose
+/// counting in full when given and fading in a straight line to nothing over
+/// `duration` (the same model the graph uses for its own treatments).
+fn on_board_series(
+    doses: &[(DateTime<Utc>, f32)],
+    duration: Duration,
+    start: DateTime<Utc>,
+    end: DateTime<Utc>,
+) -> Vec<SeriesPoint> {
+    let span = duration.num_seconds() as f32;
+    let minutes = (end - start).num_minutes().max(0);
+    (0..=minutes)
+        .map(|m| {
+            let date = start + Duration::minutes(m);
+            let value = doses
+                .iter()
+                .map(|&(given, amount)| {
+                    let age = (date - given).num_seconds() as f32;
+                    if span > 0.0 && (0.0..span).contains(&age) {
+                        amount * (1.0 - age / span)
+                    } else {
+                        0.0
+                    }
+                })
+                .sum();
+            SeriesPoint { value, date }
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bonbon::prelude::OnBoard;
     use serde_json::json;
 
     fn at(minutes: i64) -> DateTime<Utc> {
@@ -317,6 +393,69 @@ mod tests {
 
         let worn_off = [treatment(-300, Some(3.0), Some(40.0))];
         assert!(mini_graphs(vec![], vec![], &worn_off, None, start, end).is_empty());
+    }
+
+    #[test]
+    fn hides_only_carbless_small_doses() {
+        let treatments = [
+            treatment(0, Some(0.3), None),
+            treatment(5, Some(0.5), None),
+            treatment(10, Some(0.6), None),
+            // A small dose given with carbs is a meal bolus, not a microbolus.
+            treatment(15, Some(0.4), Some(10.0)),
+            treatment(20, None, Some(20.0)),
+            GraphTreatment {
+                mbg: Some(110.0),
+                ..treatment(25, Some(0.2), None)
+            },
+        ];
+
+        let shown = hide_microboluses(&treatments, 0.5);
+        let summary: Vec<_> = shown.iter().map(|t| (t.insulin, t.carbs, t.mbg)).collect();
+        assert_eq!(
+            summary,
+            vec![
+                (Some(0.6), None, None),
+                (Some(0.4), Some(10.0), None),
+                (None, Some(20.0), None),
+                (None, None, Some(110.0)),
+            ]
+        );
+    }
+
+    #[test]
+    fn pinned_iob_keeps_every_dose() {
+        let (start, end) = (at(0), at(240));
+        // A bolus before the window and a microbolus inside it.
+        let treatments = [
+            treatment(-60, Some(4.0), None),
+            treatment(60, Some(0.4), None),
+        ];
+
+        let graphs = vec![
+            MiniGraph::iob(Duration::hours(4)),
+            MiniGraph::cob(Duration::hours(3)),
+        ];
+        let pinned = pin_iob(graphs, &treatments, start, end);
+        assert_eq!(kinds(&pinned), vec!["iob reported", "cob treatments"]);
+
+        let MiniGraph::Iob(OnBoard::Reported(points)) = &pinned[0] else {
+            panic!("IOB should be pinned");
+        };
+        let value_at = |minutes: i64| {
+            points
+                .iter()
+                .find(|p| p.date == at(minutes))
+                .map(|p| p.value)
+                .unwrap()
+        };
+        assert_eq!(points.len(), 241);
+        // 4 U an hour into a 4 h fade.
+        assert!((value_at(0) - 3.0).abs() < 1e-4);
+        // The microbolus counts in full the minute it is given.
+        assert!((value_at(60) - (2.0 + 0.4)).abs() < 1e-4);
+        // The bolus has worn off; the microbolus is two hours in.
+        assert!((value_at(180) - 0.2).abs() < 1e-4);
     }
 
     #[test]

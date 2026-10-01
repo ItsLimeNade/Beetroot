@@ -18,6 +18,7 @@ pub mod microbolus;
 pub mod my_data;
 pub mod nutrition;
 pub mod privacy;
+pub mod search;
 pub mod settings;
 pub mod setup;
 pub mod stickers;

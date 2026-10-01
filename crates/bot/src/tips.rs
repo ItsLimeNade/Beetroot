@@ -60,6 +60,10 @@ pub const TIPS: &[Tip] = &[
         text: "Use `/bg-sticker` to swap your profile picture on `/bg` for a sticker that reacts to your blood sugar.",
     },
     Tip {
+        id: "search",
+        text: "Use `/search` to find your lows, highs, meals and more, then open any of them on a graph.",
+    },
+    Tip {
         id: "add_sticker_menu",
         text: "Right-click any message and pick `Add Sticker` to save its image as a sticker instantly.",
     },
