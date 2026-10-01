@@ -64,6 +64,10 @@ pub const TIPS: &[Tip] = &[
         text: "Use `/denoise` to smooth sensor jitter out of your graphs.",
     },
     Tip {
+        id: "compare",
+        text: "Use `/compare` to see your last two weeks next to the two before, with how your average, GMI and variability changed.",
+    },
+    Tip {
         id: "search",
         text: "Use `/search` to find your lows, highs, meals and more, then open any of them on a graph.",
     },

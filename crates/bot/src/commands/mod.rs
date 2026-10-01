@@ -6,6 +6,7 @@ pub mod bg;
 pub mod bg_sticker;
 pub mod block;
 pub mod changelog;
+pub mod compare;
 pub mod convert;
 pub mod delete_account;
 pub mod denoise;

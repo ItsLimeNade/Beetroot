@@ -50,6 +50,7 @@ async fn main() -> anyhow::Result<()> {
             commands::analyze_units::analyze_units(),
             commands::stickers::stickers(),
             commands::search::search(),
+            commands::compare::compare(),
             commands::theme::theme(),
             commands::nutrition::nutrition(),
             commands::info::info(),
