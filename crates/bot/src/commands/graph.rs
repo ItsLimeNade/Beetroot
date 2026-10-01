@@ -1,6 +1,8 @@
+use crate::commands::denoise::DenoiseChoice;
 use crate::data::{Context, Error};
+use crate::utils::denoise::Strength;
 use crate::utils::duration_parser::parse_ago_duration;
-use crate::utils::graph_render::{self, ProfileSettings};
+use crate::utils::graph_render::{self, GraphWindow, ProfileSettings};
 use chrono::{Duration, Utc};
 use macros::track_analytics;
 use poise::serenity_prelude as serenity;
@@ -24,6 +26,8 @@ pub async fn graph(
     #[description = "Look back in time (e.g. '30s', '2h', '1d', '1w', '1mo', '1y'). The graph ends at this point"]
     #[rename = "at"]
     at_str: Option<String>,
+    #[description = "Smooth sensor noise for this graph only (default: the /denoise setting, off unless changed)"]
+    smoothing: Option<DenoiseChoice>,
 ) -> Result<(), Error> {
     let target_user = user.as_ref().unwrap_or(ctx.author());
     let target_id = target_user.id;
@@ -128,15 +132,24 @@ pub async fn graph(
         "graph target range"
     );
 
+    // A one-off choice wins over the data owner's saved /denoise setting.
+    let smoothing = match smoothing {
+        Some(choice) => choice.strength(),
+        None => Strength::from_level(user_data.graph_denoise),
+    };
+
     let duration = Duration::hours(duration_hours);
     let img_buffer = graph_render::render_png(
         &ctx.data().database,
         &user_data,
         settings,
         data,
-        graph_end_time - duration,
-        duration,
-        lookback.is_some(),
+        GraphWindow {
+            start: graph_end_time - duration,
+            duration,
+            pinned: lookback.is_some(),
+        },
+        smoothing,
     )
     .await?;
 

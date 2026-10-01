@@ -117,20 +117,33 @@ pub async fn fetch_window(
     })
 }
 
+/// The stretch of time a graph shows.
+#[derive(Debug, Clone, Copy)]
+pub struct GraphWindow {
+    pub start: DateTime<Utc>,
+    pub duration: Duration,
+    /// Show exactly this window. Otherwise the graph ends at the latest data
+    /// (the usual "last N hours" view).
+    pub pinned: bool,
+}
+
 /// Renders a glucose graph as a PNG, styled with the data owner's theme,
 /// stickers and graph preferences.
 ///
-/// The graph spans `duration` from `start`. With `pinned` it shows exactly that
-/// window; without, it ends at the latest data (the usual "last N hours" view).
+/// `smoothing` is how strongly the readings are denoised, `None` for raw.
 pub async fn render_png(
     db: &Database,
     user_data: &UserDecrypted,
     settings: ProfileSettings,
     data: WindowData,
-    start: DateTime<Utc>,
-    duration: Duration,
-    pinned: bool,
+    window: GraphWindow,
+    smoothing: Option<Strength>,
 ) -> Result<Vec<u8>, Error> {
+    let GraphWindow {
+        start,
+        duration,
+        pinned,
+    } = window;
     let owner_id = user_data.discord_id;
     let theme =
         theme_assets::resolve_user_theme(db, owner_id, user_data.active_theme.as_deref()).await;
@@ -160,8 +173,7 @@ pub async fn render_png(
     );
 
     let entries: Vec<GraphEntry> = data.entries.into_iter().map(GraphEntry::from).collect();
-    // The data owner's smoothing preference.
-    let entries = match Strength::from_level(user_data.graph_denoise) {
+    let entries = match smoothing {
         Some(strength) => denoise::denoise(entries, strength),
         None => entries,
     };

@@ -17,6 +17,18 @@ pub enum DenoiseChoice {
     Strong,
 }
 
+impl DenoiseChoice {
+    /// The smoothing to apply, or `None` for raw readings.
+    pub fn strength(self) -> Option<Strength> {
+        match self {
+            Self::Off => None,
+            Self::Light => Some(Strength::Light),
+            Self::Medium => Some(Strength::Medium),
+            Self::Strong => Some(Strength::Strong),
+        }
+    }
+}
+
 /// Smooth sensor noise out of the glucose readings on your graphs.
 #[poise::command(
     slash_command,
@@ -31,12 +43,7 @@ pub async fn denoise(
     let user_id = ctx.author().id.get();
     let _ = get_db_user!(ctx, user_id);
 
-    let strength = match strength {
-        DenoiseChoice::Off => None,
-        DenoiseChoice::Light => Some(Strength::Light),
-        DenoiseChoice::Medium => Some(Strength::Medium),
-        DenoiseChoice::Strong => Some(Strength::Strong),
-    };
+    let strength = strength.strength();
     let level = strength.map_or(0, Strength::level);
 
     let db = &ctx.data().database;

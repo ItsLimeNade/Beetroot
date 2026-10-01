@@ -1,6 +1,7 @@
 use crate::data::{Context, Error};
+use crate::utils::denoise::Strength;
 use crate::utils::emojis;
-use crate::utils::graph_render::{self, ProfileSettings};
+use crate::utils::graph_render::{self, GraphWindow, ProfileSettings};
 use crate::utils::search::{
     self, Extreme, Hit, Kind, MIN_EPISODE_MINUTES, Reading, Sort, find_episodes, sort_hits,
     treatment_hits,
@@ -785,9 +786,12 @@ async fn render_hit(
         user_data,
         session.settings,
         data,
-        start,
-        length,
-        true,
+        GraphWindow {
+            start,
+            duration: length,
+            pinned: true,
+        },
+        Strength::from_level(user_data.graph_denoise),
     )
     .await
     .map_err(|e| {
