@@ -3,6 +3,7 @@ pub mod emojis;
 pub mod graph_data;
 pub mod graph_render;
 pub mod net;
+pub mod period;
 pub mod search;
 pub mod sticker_assets;
 pub mod targets;

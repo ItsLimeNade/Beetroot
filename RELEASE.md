@@ -23,6 +23,8 @@ v1.0.0-pre2 | ...one giant leap for diabetics
 - `/graph` now shows IOB and COB mini graphs under the glucose plot when there is insulin or carbs on board (from your loop's reported values, or worked out from your treatments)
 - The IOB and COB icons on `/bg` now sit after the text
 - Image-mode `/bg` now shows your reading and delta in both mg/dL and mmol/L
+- `/tir` can now summarize a named month (`July 2026`, `2026-07`...) as well as the last N days, with suggestions as you type
+- `/theme` now suggests theme names as you type instead of making you remember them
 - Added `/search` to look through your Nightscout history (`lows`, `highs`, `in-range`, `carbs`, `insulin`), sort the results (lowest, highest, longest, shortest, most recent...) and open any of them on a graph centered on that moment
 - `/bg` cards now show a short, actionable hint (like "verify reading" or "monitor") instead of just restating your status
 - Stickers now appear only on `/graph`; the `/bg` card and `/tir` are kept clean

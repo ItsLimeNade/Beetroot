@@ -12,6 +12,90 @@ const MAX_THEMES_PER_USER: i64 = 15;
 /// Maximum accepted size of an imported theme file.
 const MAX_IMPORT_BYTES: u32 = 64 * 1024;
 
+/// Discord shows at most 25 autocomplete choices.
+const MAX_SUGGESTIONS: usize = 25;
+
+/// Keeps the names matching what the user has typed so far.
+fn matching_names(names: impl IntoIterator<Item = String>, partial: &str) -> Vec<String> {
+    let needle = partial.trim().to_lowercase();
+    let mut seen = std::collections::HashSet::new();
+    names
+        .into_iter()
+        .filter(|name| name.to_lowercase().contains(&needle))
+        .filter(|name| seen.insert(name.clone()))
+        .take(MAX_SUGGESTIONS)
+        .collect()
+}
+
+/// Names of a user's custom themes. Empty on a database error: a failed
+/// lookup should cost the suggestions, not the command.
+async fn custom_theme_names(ctx: Context<'_>, owner_id: u64) -> Vec<String> {
+    match ctx.data().database.get_user_themes(owner_id).await {
+        Ok(rows) => rows.into_iter().map(|t| t.name).collect(),
+        Err(e) => {
+            tracing::warn!(error = %e, "theme autocomplete lookup failed");
+            Vec::new()
+        }
+    }
+}
+
+fn builtin_theme_names() -> impl Iterator<Item = String> {
+    theme_assets::builtin_names().into_iter().map(String::from)
+}
+
+/// Suggests the caller's own custom themes.
+async fn autocomplete_own(ctx: Context<'_>, partial: &str) -> Vec<String> {
+    matching_names(
+        custom_theme_names(ctx, ctx.author().id.get()).await,
+        partial,
+    )
+}
+
+/// Suggests the caller's custom themes, then the builtins.
+async fn autocomplete_any(ctx: Context<'_>, partial: &str) -> Vec<String> {
+    let own = custom_theme_names(ctx, ctx.author().id.get()).await;
+    matching_names(own.into_iter().chain(builtin_theme_names()), partial)
+}
+
+/// Suggests another user's themes once the command's `user` option is filled
+/// in, and only if their privacy settings let the caller see them. With no
+/// other user picked, suggests the caller's themes and the builtins.
+async fn autocomplete_theirs(ctx: Context<'_>, partial: &str) -> Vec<String> {
+    let viewer_id = ctx.author().id;
+
+    let picked = match ctx {
+        poise::Context::Application(app) => app.args.iter().find_map(|option| {
+            if option.name != "user" {
+                return None;
+            }
+            match &option.value {
+                serenity::ResolvedValue::User(user, _) => Some(user.id),
+                serenity::ResolvedValue::Unresolved(serenity::Unresolved::User(id)) => Some(*id),
+                _ => None,
+            }
+        }),
+        poise::Context::Prefix(_) => None,
+    };
+
+    match picked.filter(|id| *id != viewer_id) {
+        Some(owner) => {
+            let can_view = match ctx.data().database.get_user(owner.get()).await {
+                Ok(Some(owner_data)) => {
+                    !owner_data.blocked_people.contains(&viewer_id.get())
+                        && (!owner_data.is_private
+                            || owner_data.allowed_people.contains(&viewer_id.get()))
+                }
+                _ => false,
+            };
+            if !can_view {
+                return Vec::new();
+            }
+            matching_names(custom_theme_names(ctx, owner.get()).await, partial)
+        }
+        None => autocomplete_any(ctx, partial).await,
+    }
+}
+
 /// Create, edit and apply color themes for your glucose visuals.
 #[poise::command(
     slash_command,
@@ -144,7 +228,9 @@ pub async fn list(
 #[track_analytics("theme_set")]
 pub async fn set(
     ctx: Context<'_>,
-    #[description = "Theme name (a builtin or one of your custom themes)"] name: String,
+    #[description = "Theme name (a builtin or one of your custom themes)"]
+    #[autocomplete = "autocomplete_any"]
+    name: String,
 ) -> Result<(), Error> {
     let db = &ctx.data().database;
     let user_id = ctx.author().id.get();
@@ -268,7 +354,9 @@ pub async fn create(
 #[track_analytics("theme_edit")]
 pub async fn edit(
     ctx: Context<'_>,
-    #[description = "Which of your themes to edit"] name: String,
+    #[description = "Which of your themes to edit"]
+    #[autocomplete = "autocomplete_own"]
+    name: String,
     #[description = "Which color to change"] field: ThemeFieldChoice,
     #[description = "New color as hex, e.g. #ff5555 or #ff5555cc"] color: String,
 ) -> Result<(), Error> {
@@ -323,7 +411,9 @@ pub async fn edit(
 #[track_analytics("theme_delete")]
 pub async fn delete(
     ctx: Context<'_>,
-    #[description = "Which of your themes to delete"] name: String,
+    #[description = "Which of your themes to delete"]
+    #[autocomplete = "autocomplete_own"]
+    name: String,
 ) -> Result<(), Error> {
     let db = &ctx.data().database;
     let user_id = ctx.author().id.get();
@@ -476,7 +566,9 @@ pub async fn import(
 #[track_analytics("theme_view")]
 pub async fn view(
     ctx: Context<'_>,
-    #[description = "Theme name (a builtin or a custom theme)"] name: String,
+    #[description = "Theme name (a builtin or a custom theme)"]
+    #[autocomplete = "autocomplete_theirs"]
+    name: String,
     #[description = "Whose theme to view (leave empty for your own or a builtin)"] user: Option<
         serenity::User,
     >,
@@ -580,7 +672,9 @@ pub async fn view(
 #[track_analytics("theme_export")]
 pub async fn export(
     ctx: Context<'_>,
-    #[description = "Theme name (a builtin or one of your custom themes)"] name: String,
+    #[description = "Theme name (a builtin or one of your custom themes)"]
+    #[autocomplete = "autocomplete_any"]
+    name: String,
 ) -> Result<(), Error> {
     let db = &ctx.data().database;
     let user_id = ctx.author().id.get();
@@ -639,7 +733,9 @@ pub async fn export(
 pub async fn copy(
     ctx: Context<'_>,
     #[description = "Whose theme to copy"] user: serenity::User,
-    #[description = "The name of their theme"] name: String,
+    #[description = "The name of their theme"]
+    #[autocomplete = "autocomplete_theirs"]
+    name: String,
     #[description = "Save it under a different name (optional)"] save_as: Option<String>,
 ) -> Result<(), Error> {
     let db = &ctx.data().database;
@@ -755,7 +851,9 @@ pub async fn copy(
 #[track_analytics("theme_share")]
 pub async fn share(
     ctx: Context<'_>,
-    #[description = "Theme name (a builtin or one of your custom themes)"] name: String,
+    #[description = "Theme name (a builtin or one of your custom themes)"]
+    #[autocomplete = "autocomplete_any"]
+    name: String,
 ) -> Result<(), Error> {
     let db = &ctx.data().database;
     let user_id = ctx.author().id.get();
@@ -1084,5 +1182,23 @@ impl ThemeFieldChoice {
             Self::GlucoseReadingFill => "glucose_reading_fill",
             Self::GlucoseReadingOutline => "glucose_reading_outline",
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn matching_names_filters_dedupes_and_caps() {
+        let names = ["Sunset", "sunrise", "Ocean", "Sunset"].map(String::from);
+        assert_eq!(
+            matching_names(names.clone(), " SUN "),
+            ["Sunset", "sunrise"]
+        );
+        assert_eq!(matching_names(names, ""), ["Sunset", "sunrise", "Ocean"]);
+
+        let many = (0..40).map(|i| format!("theme {i}"));
+        assert_eq!(matching_names(many, "theme").len(), MAX_SUGGESTIONS);
     }
 }
