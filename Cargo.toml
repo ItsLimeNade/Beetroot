@@ -5,8 +5,3 @@ members = ["crates/bot", "crates/macros", "crates/core"]
 [profile.release]
 lto = "thin"
 strip = true
-
-# TEMPORARY: bonbon 0.7.0 (dual units on every chart) is not published yet.
-# Remove this once it is on crates.io.
-[patch.crates-io]
-bonbon = { path = "../bonbon" }
