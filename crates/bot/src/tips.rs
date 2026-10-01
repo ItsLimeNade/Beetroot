@@ -72,6 +72,10 @@ pub const TIPS: &[Tip] = &[
         text: "Use `/agp` to see your typical day: your median glucose and its usual range at each time of day.",
     },
     Tip {
+        id: "breakdown",
+        text: "Use `/breakdown` to see which hours of the day or days of the week your time in range slips.",
+    },
+    Tip {
         id: "search",
         text: "Use `/search` to find your lows, highs, meals and more, then open any of them on a graph.",
     },

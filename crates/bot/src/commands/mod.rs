@@ -6,6 +6,7 @@ pub mod analyze_units;
 pub mod bg;
 pub mod bg_sticker;
 pub mod block;
+pub mod breakdown;
 pub mod changelog;
 pub mod compare;
 pub mod convert;

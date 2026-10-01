@@ -11,31 +11,49 @@ use macros::track_analytics;
 use poise::serenity_prelude as serenity;
 use serenity::all::CreateAttachment;
 
-/// Period summarized when none is given: the usual choice for a glucose
-/// profile.
+/// Most readings fetched for the period, and again for the one before it.
+const ENTRY_LIMIT: usize = 120_000;
+
+/// Period broken down when none is given.
 const DEFAULT_PERIOD: Period = Period::LastDays(14);
 
-/// Shows your typical day: median glucose and its usual range by time of day.
+/// How the readings are split into columns.
+#[derive(Debug, Clone, Copy, poise::ChoiceParameter)]
+pub enum BreakdownChoice {
+    #[name = "Hour of the day"]
+    Hour,
+    #[name = "Day of the week"]
+    Weekday,
+}
+
+/// Breaks your time in range down by hour of the day or day of the week.
 #[poise::command(
     slash_command,
     install_context = "Guild|User",
     interaction_context = "Guild|BotDm|PrivateChannel",
     user_cooldown = 10
 )]
-#[track_analytics("agp")]
-pub async fn agp(
+#[track_analytics("breakdown")]
+pub async fn breakdown(
     ctx: Context<'_>,
+    #[description = "Split by hour of the day or by day of the week (default: hour)"] by: Option<
+        BreakdownChoice,
+    >,
     #[description = "How far back, or a month: 'Last 30 days', 'July 2026'... (default: last 14 days)"]
     #[autocomplete = "autocomplete_period"]
     period: Option<String>,
-    #[description = "View another user's glucose profile"] user: Option<serenity::User>,
+    #[description = "View another user's breakdown"] user: Option<serenity::User>,
 ) -> Result<(), Error> {
+    let grouping = match by.unwrap_or(BreakdownChoice::Hour) {
+        BreakdownChoice::Hour => Grouping::Hour,
+        BreakdownChoice::Weekday => Grouping::Weekday,
+    };
     let period = match period.as_deref() {
         None => DEFAULT_PERIOD,
         Some(input) => match period::parse(input, Utc::now().date_naive()) {
             Some(period) => period,
             None => {
-                tracing::debug!(input = %input, "could not parse AGP period");
+                tracing::debug!(input = %input, "could not parse breakdown period");
                 send_error!(ctx, "Invalid Period", period::INVALID_PERIOD_HELP);
                 return Ok(());
             }
@@ -61,24 +79,33 @@ pub async fn agp(
     let profile = client.profiles().current().await.ok().flatten();
     let settings = ProfileSettings::from_profile(profile.as_ref());
 
-    let (start_time, end_time) = period.bounds(Utc::now(), settings.timezone);
+    let now = Utc::now();
+    let (start_time, end_time) = period.bounds(now, settings.timezone);
+    let (previous_start, previous_end) = period.previous_bounds(now, settings.timezone);
     tracing::debug!(
         target_user = %crate::logging::redact(target_id.get()),
         period = %period_label,
-        "rendering glucose profile"
+        grouping = ?grouping,
+        "rendering breakdown graph"
     );
 
-    let entries = match client
-        .entries()
-        .sgv()
-        .list()
-        .since(start_time)
-        // Nightscout returns the newest matches first, so a past month needs
-        // its end bound or everything after it would crowd it out.
-        .until(end_time)
-        .limit(120_000)
-        .await
-    {
+    // Each period is its own request: Nightscout returns the newest matches
+    // first, so one request for both could crowd the older period out.
+    let sgv = client.entries().sgv();
+    let (entries_res, previous_res) = tokio::join!(
+        sgv.list()
+            .since(start_time)
+            .until(end_time)
+            .limit(ENTRY_LIMIT)
+            .send(),
+        sgv.list()
+            .since(previous_start)
+            .until(previous_end)
+            .limit(ENTRY_LIMIT)
+            .send()
+    );
+
+    let entries = match entries_res {
         Ok(e) => {
             tracing::debug!(count = e.len(), "fetched SGV entries");
             e
@@ -110,11 +137,21 @@ pub async fn agp(
         return Ok(());
     }
 
+    // The period before only adds the "change" chips: without it the
+    // breakdown is drawn on its own.
+    let previous = match previous_res {
+        Ok(p) => p,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to fetch the previous period");
+            Vec::new()
+        }
+    };
+
     crate::log_medical!(
         target_low = settings.target_low,
         target_high = settings.target_high,
         is_mmol = settings.is_mmol,
-        "AGP target range"
+        "breakdown target range"
     );
 
     let db = &ctx.data().database;
@@ -122,13 +159,20 @@ pub async fn agp(
         theme_assets::resolve_user_theme(db, target_id.get(), user_data.active_theme.as_deref())
             .await;
 
-    let profile_image = render::run_blocking(move || {
-        let builder = PercentileGraphBuilder::new()
+    let title = match grouping {
+        Grouping::Hour => format!("Time in range by hour · {period_label}"),
+        Grouping::Weekday => format!("Time in range by day · {period_label}"),
+    };
+
+    let breakdown_image = render::run_blocking(move || {
+        let mut builder = BreakdownGraphBuilder::new()
             .with_layout(LayoutConfig {
                 width: 1275 * 2,
                 height: 825 * 2,
                 ..Default::default()
             })
+            .with_grouping(grouping)
+            .with_title(title)
             .with_entries(entries)
             .with_targets(settings.target_low, settings.target_high)
             .with_units(UnitDisplay::Dual {
@@ -140,6 +184,10 @@ pub async fn agp(
             })
             .with_timezone(settings.timezone)
             .with_theme(theme);
+
+        if !previous.is_empty() {
+            builder = builder.with_previous(previous);
+        }
 
         builder.build().map_err(|e| anyhow::anyhow!(e.to_string()))
     })
@@ -154,16 +202,16 @@ pub async fn agp(
         );
 
         encoder.write_image(
-            &profile_image,
-            profile_image.width(),
-            profile_image.height(),
+            &breakdown_image,
+            breakdown_image.width(),
+            breakdown_image.height(),
             image::ExtendedColorType::Rgba8,
         )?;
         Ok::<Vec<u8>, anyhow::Error>(buffer)
     })
     .await?;
 
-    let attachment = CreateAttachment::bytes(img_buffer, "agp.png");
+    let attachment = CreateAttachment::bytes(img_buffer, "breakdown.png");
 
     ctx.send(
         poise::CreateReply::default()

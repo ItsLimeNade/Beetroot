@@ -52,6 +52,7 @@ async fn main() -> anyhow::Result<()> {
             commands::search::search(),
             commands::compare::compare(),
             commands::agp::agp(),
+            commands::breakdown::breakdown(),
             commands::theme::theme(),
             commands::nutrition::nutrition(),
             commands::info::info(),

@@ -13,6 +13,9 @@ const SUGGESTED_MONTHS: u32 = 120;
 /// Discord shows at most 25 autocomplete choices.
 const MAX_SUGGESTIONS: usize = 25;
 
+/// What to tell someone whose period could not be read by [`parse`].
+pub const INVALID_PERIOD_HELP: &str = "Pick a period from the list, or type one like `Last 7 days`, `45d`, `July 2026` or `2026-07`. Periods go up to 90 days, and months can't be in the future.";
+
 /// A stretch of time to summarize: the last few days, or a calendar month.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Period {
@@ -45,6 +48,24 @@ impl Period {
                 };
                 let start = month_start(year, month, tz);
                 let end = month_start(next_year, next_month, tz);
+                (start.min(now), end.min(now))
+            }
+        }
+    }
+
+    /// The bounds of the period just before this one, to compare against: the
+    /// same number of days again, or the whole calendar month before.
+    pub fn previous_bounds(self, now: DateTime<Utc>, tz: Tz) -> (DateTime<Utc>, DateTime<Utc>) {
+        match self {
+            Self::LastDays(days) => (now - Duration::days(2 * days), now - Duration::days(days)),
+            Self::Month { year, month } => {
+                let (previous_year, previous_month) = if month == 1 {
+                    (year - 1, 12)
+                } else {
+                    (year, month - 1)
+                };
+                let start = month_start(previous_year, previous_month, tz);
+                let end = month_start(year, month, tz);
                 (start.min(now), end.min(now))
             }
         }
@@ -280,5 +301,43 @@ mod tests {
 
         let (start, end) = Period::LastDays(7).bounds(now, paris);
         assert_eq!((start, end), (now - Duration::days(7), now));
+    }
+
+    #[test]
+    fn previous_bounds_end_where_the_period_starts() {
+        let now = Utc.with_ymd_and_hms(2026, 10, 1, 12, 0, 0).unwrap();
+        let paris: Tz = "Europe/Paris".parse().unwrap();
+
+        for period in [
+            Period::LastDays(14),
+            Period::Month {
+                year: 2026,
+                month: 7,
+            },
+            Period::Month {
+                year: 2026,
+                month: 1,
+            },
+            Period::Month {
+                year: 2026,
+                month: 10,
+            },
+        ] {
+            let (start, _) = period.bounds(now, paris);
+            let (previous_start, previous_end) = period.previous_bounds(now, paris);
+            assert_eq!(previous_end, start, "{period:?}");
+            assert!(previous_start < previous_end, "{period:?}");
+        }
+
+        // The same length again for rolling periods, the whole month before
+        // for a month (January reaches back into the previous year).
+        let (start, _) = Period::LastDays(14).previous_bounds(now, paris);
+        assert_eq!(start, now - Duration::days(28));
+        let (start, _) = Period::Month {
+            year: 2026,
+            month: 1,
+        }
+        .previous_bounds(now, chrono_tz::UTC);
+        assert_eq!(start, Utc.with_ymd_and_hms(2025, 12, 1, 0, 0, 0).unwrap());
     }
 }

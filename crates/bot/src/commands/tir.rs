@@ -33,11 +33,7 @@ pub async fn tir(
 ) -> Result<(), Error> {
     let Some(period) = period::parse(&period, Utc::now().date_naive()) else {
         tracing::debug!(input = %period, "could not parse TIR period");
-        send_error!(
-            ctx,
-            "Invalid Period",
-            "Pick a period from the list, or type one like `Last 7 days`, `45d`, `July 2026` or `2026-07`. Periods go up to 90 days, and months can't be in the future."
-        );
+        send_error!(ctx, "Invalid Period", period::INVALID_PERIOD_HELP);
         return Ok(());
     };
     let period_label = period.label();
