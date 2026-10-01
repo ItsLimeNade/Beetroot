@@ -49,7 +49,7 @@ pub async fn my_data(ctx: Context<'_>) -> Result<(), Error> {
     );
 
     let preferences = format!(
-        "**Active theme:** {}\n**Treatment mode:** {}\n**Show microboluses:** {} (threshold {} U)\n**Image mode:** {}\n**Fingerprick expiry:** {} s\n**Graph stickers:** {}\n**Always ephemeral:** {}",
+        "**Active theme:** {}\n**Treatment mode:** {}\n**Show microboluses:** {} (threshold {} U)\n**Image mode:** {}\n**Fingerprick expiry:** {} s\n**Graph stickers:** {}\n**BG sticker:** {}\n**Always ephemeral:** {}",
         user.active_theme.as_deref().unwrap_or("Default"),
         user.treatment_mode,
         yes_no(user.display_microbolus),
@@ -57,6 +57,7 @@ pub async fn my_data(ctx: Context<'_>) -> Result<(), Error> {
         yes_no(user.bg_image_mode),
         user.mbg_expiry_time,
         user.graph_sticker_count,
+        yes_no(user.bg_sticker),
         yes_no(user.force_ephemeral),
     );
 

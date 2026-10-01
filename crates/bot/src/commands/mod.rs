@@ -3,6 +3,7 @@ pub mod add_sticker;
 pub mod allow;
 pub mod analyze_units;
 pub mod bg;
+pub mod bg_sticker;
 pub mod block;
 pub mod changelog;
 pub mod convert;

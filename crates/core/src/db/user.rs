@@ -37,6 +37,7 @@ impl User {
             mbg_expiry_time: self.mbg_expiry_time.unwrap_or(30),
             last_seen_version: self.last_seen_version,
             bg_image_mode: self.bg_image_mode.unwrap_or(false),
+            bg_sticker: self.bg_sticker.unwrap_or(false),
             active_theme: self.active_theme,
             treatment_mode: self
                 .treatment_mode
@@ -188,6 +189,18 @@ impl Database {
     pub async fn set_bg_image_mode(&self, discord_id: u64, value: bool) -> CoreResult<()> {
         let id = discord_id as i64;
         sqlx::query("UPDATE users SET bg_image_mode = ? WHERE discord_id = ?")
+            .bind(value)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// Set whether the `/bg` embed shows a reaction sticker instead of the
+    /// user's profile picture.
+    pub async fn set_bg_sticker(&self, discord_id: u64, value: bool) -> CoreResult<()> {
+        let id = discord_id as i64;
+        sqlx::query("UPDATE users SET bg_sticker = ? WHERE discord_id = ?")
             .bind(value)
             .bind(id)
             .execute(&self.pool)

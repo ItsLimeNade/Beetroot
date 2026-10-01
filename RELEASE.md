@@ -19,6 +19,7 @@ v1.0.0-pre2 | ...one giant leap for diabetics
 - Added an `at` option to `/bg` and `/graph` to look back in time (e.g. `2h`, `1d`, `1w`, `1h30m`)
 - Added `/treatment-mode` to choose how carbs and insulin are drawn on `/graph` (Contextual or Timeline)
 - Added `/graph-stickers` to choose how many stickers appear on your graph (up to 30)
+- Added `/bg-sticker` to show a sticker reacting to your blood sugar on `/bg` instead of your profile picture
 - `/bg` cards now show a short, actionable hint (like "verify reading" or "monitor") instead of just restating your status
 - Stickers now appear only on `/graph`; the `/bg` card and `/tir` are kept clean
 - Added `/delete-account` to wipe all of your stored data

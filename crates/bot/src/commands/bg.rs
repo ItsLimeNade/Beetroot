@@ -1,8 +1,10 @@
 use crate::data::{Context, Error};
 use crate::utils::duration_parser::parse_ago_duration;
 use crate::utils::emojis;
+use crate::utils::sticker_assets;
 use crate::utils::targets::resolve_profile_targets_mgdl;
 use crate::utils::theme_assets;
+use beetroot_core::models::StickerCategory;
 use bonbon::prelude::*;
 use cinnamon::models::properties::PropertyType;
 use image::codecs::png::{CompressionType, FilterType, PngEncoder};
@@ -441,9 +443,43 @@ pub async fn bg(
     let icon_bytes = tokio::fs::read("assets/images/nightscout_icon.png").await?;
     let icon_attachment = CreateAttachment::bytes(icon_bytes, "nightscout_icon.png");
 
+    // The data owner can swap their profile picture for a sticker reacting to
+    // the reading. Falls back to the avatar when no sticker fits.
+    let reaction_sticker_url = if user_data.bg_sticker {
+        let state = if (entry.sgv as f64) > target_high {
+            StickerCategory::High
+        } else if (entry.sgv as f64) < target_low {
+            StickerCategory::Low
+        } else {
+            StickerCategory::InRange
+        };
+        // mg/dL per minute. Ignore pairs too far apart to describe a trend.
+        let rate = prev_entry.and_then(|prev| {
+            let dt_min = (entry.date - prev.date) as f32 / 60_000.0;
+            (dt_min != 0.0 && dt_min.abs() <= 15.0)
+                .then_some((entry.sgv as f32 - prev.sgv as f32) / dt_min)
+        });
+
+        match ctx
+            .data()
+            .database
+            .get_all_user_stickers(target_id.get())
+            .await
+        {
+            Ok(stickers) => sticker_assets::pick_reaction_sticker(&stickers, state, rate)
+                .map(|s| s.sticker_url.clone()),
+            Err(e) => {
+                tracing::warn!("[STICKER] Failed to load stickers for /bg: {}", e);
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     let mut embed = CreateEmbed::new().title(title).color(color);
-    if let Some(avatar_url) = target_user.avatar_url() {
-        embed = embed.thumbnail(avatar_url);
+    if let Some(thumbnail_url) = reaction_sticker_url.or_else(|| target_user.avatar_url()) {
+        embed = embed.thumbnail(thumbnail_url);
     }
 
     let is_data_old = duration.num_minutes() > 15;

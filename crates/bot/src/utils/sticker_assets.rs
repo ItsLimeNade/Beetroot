@@ -24,6 +24,47 @@ pub fn to_bonbon_category(cat: beetroot_core::models::StickerCategory) -> Bonbon
     }
 }
 
+/// Rate of change (mg/dL per minute) at which a reading counts as rising or
+/// dropping fast. Matches bonbon's default `fast_rate_threshold`.
+const FAST_RATE_THRESHOLD: f32 = 2.0;
+
+/// Pick the sticker that best reacts to a single reading, for `/bg`.
+///
+/// Prefers a fast rise/drop sticker when the glucose is moving quickly, then
+/// one for the current state (`Low`, `InRange` or `High`), then a `Background`
+/// sticker. When several stickers fit, one is chosen at random.
+pub fn pick_reaction_sticker(
+    db_stickers: &[DbSticker],
+    state: beetroot_core::models::StickerCategory,
+    rate: Option<f32>,
+) -> Option<&DbSticker> {
+    use beetroot_core::models::StickerCategory as C;
+
+    let fast = rate.and_then(|r| {
+        if r >= FAST_RATE_THRESHOLD {
+            Some(C::FastRise)
+        } else if r <= -FAST_RATE_THRESHOLD {
+            Some(C::FastDrop)
+        } else {
+            None
+        }
+    });
+
+    fast.into_iter()
+        .chain([state, C::Background])
+        .find_map(|category| {
+            let matching: Vec<&DbSticker> = db_stickers
+                .iter()
+                .filter(|s| s.category == category)
+                .collect();
+            if matching.is_empty() {
+                None
+            } else {
+                Some(matching[rand::random_range(0..matching.len())])
+            }
+        })
+}
+
 /// Download every unique sticker URL once, then build the list of
 /// `bonbon::Sticker` instances ready for `StickerSet::with_stickers`.
 pub async fn load_bonbon_stickers(db_stickers: &[DbSticker]) -> Vec<BonbonSticker> {
@@ -163,4 +204,61 @@ fn looks_like_webpage(content_type: &str) -> bool {
         || ct == "application/json"
         || ct == "application/xml"
         || ct == "application/xhtml+xml"
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use beetroot_core::models::StickerCategory as C;
+
+    fn sticker(id: i64, category: C) -> DbSticker {
+        DbSticker {
+            id,
+            discord_id: 1,
+            sticker_url: format!("https://example.com/{id}.png"),
+            display_name: None,
+            category,
+        }
+    }
+
+    #[test]
+    fn reaction_sticker_matches_state() {
+        let stickers = [
+            sticker(1, C::Low),
+            sticker(2, C::High),
+            sticker(3, C::Background),
+        ];
+        let picked = pick_reaction_sticker(&stickers, C::High, Some(0.5));
+        assert_eq!(picked.map(|s| s.id), Some(2));
+    }
+
+    #[test]
+    fn reaction_sticker_prefers_fast_rate() {
+        let stickers = [
+            sticker(1, C::InRange),
+            sticker(2, C::FastRise),
+            sticker(3, C::FastDrop),
+        ];
+        let rising = pick_reaction_sticker(&stickers, C::InRange, Some(2.5));
+        assert_eq!(rising.map(|s| s.id), Some(2));
+        let dropping = pick_reaction_sticker(&stickers, C::InRange, Some(-3.0));
+        assert_eq!(dropping.map(|s| s.id), Some(3));
+    }
+
+    #[test]
+    fn reaction_sticker_falls_back() {
+        // No fast sticker: fall back to the state sticker.
+        let stickers = [sticker(1, C::Low), sticker(2, C::Background)];
+        let picked = pick_reaction_sticker(&stickers, C::Low, Some(-4.0));
+        assert_eq!(picked.map(|s| s.id), Some(1));
+
+        // No state sticker either: fall back to a background one.
+        let picked = pick_reaction_sticker(&stickers, C::High, None);
+        assert_eq!(picked.map(|s| s.id), Some(2));
+
+        // Nothing fits.
+        let stickers = [sticker(1, C::Low)];
+        assert!(pick_reaction_sticker(&stickers, C::InRange, None).is_none());
+        assert!(pick_reaction_sticker(&[], C::InRange, None).is_none());
+    }
 }
