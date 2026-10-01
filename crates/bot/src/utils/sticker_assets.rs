@@ -1,7 +1,9 @@
 use anyhow::{Result, anyhow};
 use beetroot_core::models::Sticker as DbSticker;
 use bonbon::prelude::{Sticker as BonbonSticker, StickerCategory as BonbonCategory, StickerSource};
+use futures::StreamExt;
 use std::collections::HashMap;
+use tokio::sync::Semaphore;
 
 /// Maximum allowed sticker size (10 MiB).
 const MAX_STICKER_BYTES: usize = 10 * 1024 * 1024;
@@ -10,6 +12,20 @@ const MAX_STICKER_BYTES: usize = 10 * 1024 * 1024;
 /// download but not the pixels it expands to, so a tiny highly-compressible
 /// image could still blow up memory when decoded; this rejects such bombs.
 const MAX_STICKER_DIMENSION: u32 = 4096;
+
+/// Longest edge a sticker is handed to bonbon at. Graph stickers are drawn at
+/// a fraction of the canvas height (~360px), so anything bigger only costs
+/// memory: a 4096x4096 source decodes to 64 MiB of RGBA and its resize needs
+/// several times that again, per sticker, per render.
+const STICKER_RENDER_DIMENSION: u32 = 512;
+
+/// How many sticker downloads may be in flight at once, which bounds the raw
+/// payloads held in memory to this many times [`MAX_STICKER_BYTES`].
+const STICKER_FETCH_CONCURRENCY: usize = 4;
+
+/// Only one oversized sticker is decoded at a time, across all commands, so the
+/// full-resolution pixels of at most one image are ever alive.
+static DOWNSCALE_SLOT: Semaphore = Semaphore::const_new(1);
 
 /// Convert our DB enum to bonbon's enum.
 pub fn to_bonbon_category(cat: beetroot_core::models::StickerCategory) -> BonbonCategory {
@@ -40,8 +56,11 @@ pub async fn load_bonbon_stickers(db_stickers: &[DbSticker]) -> Vec<BonbonSticke
             .collect()
     };
 
-    let downloads = unique_urls.iter().map(|u| download_bytes(u));
-    let results = futures::future::join_all(downloads).await;
+    let results: Vec<Result<Vec<u8>>> = futures::stream::iter(unique_urls.clone())
+        .map(fetch_sticker)
+        .buffered(STICKER_FETCH_CONCURRENCY)
+        .collect()
+        .await;
 
     let mut cache: HashMap<String, Vec<u8>> = HashMap::new();
     for (url, res) in unique_urls.into_iter().zip(results) {
@@ -65,11 +84,37 @@ pub async fn load_bonbon_stickers(db_stickers: &[DbSticker]) -> Vec<BonbonSticke
         .collect()
 }
 
-async fn download_bytes(url: &str) -> Result<Vec<u8>> {
+/// Download a sticker and shrink it to [`STICKER_RENDER_DIMENSION`] if needed.
+async fn fetch_sticker(url: String) -> Result<Vec<u8>> {
+    let (bytes, width, height) = download_bytes(&url).await?;
+    if width.max(height) <= STICKER_RENDER_DIMENSION {
+        return Ok(bytes);
+    }
+
+    let _slot = DOWNSCALE_SLOT.acquire().await?;
+    tokio::task::spawn_blocking(move || downscale(&bytes)).await?
+}
+
+/// Decode an oversized sticker and re-encode it as a PNG that fits within
+/// [`STICKER_RENDER_DIMENSION`], preserving the aspect ratio.
+fn downscale(bytes: &[u8]) -> Result<Vec<u8>> {
+    let small = image::load_from_memory(bytes)
+        .map_err(|e| anyhow!("could not decode sticker image: {e}"))?
+        .thumbnail(STICKER_RENDER_DIMENSION, STICKER_RENDER_DIMENSION);
+
+    let mut out = Vec::new();
+    small
+        .write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Png)
+        .map_err(|e| anyhow!("could not re-encode sticker image: {e}"))?;
+    Ok(out)
+}
+
+/// Download a sticker, returning its bytes and pixel dimensions.
+async fn download_bytes(url: &str) -> Result<(Vec<u8>, u32, u32)> {
     let parsed = url::Url::parse(url).map_err(|e| anyhow!("invalid sticker URL: {e}"))?;
     crate::utils::net::check_public_url(&parsed).map_err(|e| anyhow!(e))?;
 
-    let response = crate::utils::net::guarded_client()
+    let mut response = crate::utils::net::guarded_client()
         .get(parsed)
         .send()
         .await?;
@@ -91,9 +136,22 @@ async fn download_bytes(url: &str) -> Result<Vec<u8>> {
         ));
     }
 
-    let bytes = response.bytes().await?;
-    if bytes.len() > MAX_STICKER_BYTES {
-        return Err(anyhow!("Sticker image too large ({} bytes)", bytes.len()));
+    if let Some(len) = response.content_length()
+        && len > MAX_STICKER_BYTES as u64
+    {
+        return Err(anyhow!("Sticker image too large ({len} bytes)"));
+    }
+
+    // Read chunk by chunk so an oversized (or length-less) body is abandoned at
+    // the cap instead of being buffered whole before the size check.
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response.chunk().await? {
+        if bytes.len() + chunk.len() > MAX_STICKER_BYTES {
+            return Err(anyhow!(
+                "Sticker image too large (over {MAX_STICKER_BYTES} bytes)"
+            ));
+        }
+        bytes.extend_from_slice(&chunk);
     }
 
     let (width, height) = image::ImageReader::new(std::io::Cursor::new(&bytes))
@@ -107,7 +165,7 @@ async fn download_bytes(url: &str) -> Result<Vec<u8>> {
         ));
     }
 
-    Ok(bytes.to_vec())
+    Ok((bytes, width, height))
 }
 
 /// Validate that a URL points to a valid image. Used by `/add-sticker`
@@ -163,4 +221,33 @@ fn looks_like_webpage(content_type: &str) -> bool {
         || ct == "application/json"
         || ct == "application/xml"
         || ct == "application/xhtml+xml"
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn png(width: u32, height: u32) -> Vec<u8> {
+        let img = image::RgbaImage::from_pixel(width, height, image::Rgba([200, 60, 90, 255]));
+        let mut out = Vec::new();
+        image::DynamicImage::ImageRgba8(img)
+            .write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Png)
+            .unwrap();
+        out
+    }
+
+    #[test]
+    fn downscale_fits_render_dimension_and_keeps_aspect() {
+        let small = downscale(&png(2048, 1024)).unwrap();
+        let img = image::load_from_memory(&small).unwrap();
+        assert_eq!(
+            (img.width(), img.height()),
+            (STICKER_RENDER_DIMENSION, STICKER_RENDER_DIMENSION / 2)
+        );
+    }
+
+    #[test]
+    fn downscale_rejects_garbage() {
+        assert!(downscale(b"definitely not an image").is_err());
+    }
 }

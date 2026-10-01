@@ -1,4 +1,5 @@
 use crate::data::{Context, Error};
+use crate::utils::render;
 use crate::utils::targets::resolve_profile_targets_mgdl;
 use crate::utils::theme_assets;
 use bonbon::prelude::*;
@@ -81,11 +82,11 @@ pub async fn tir(
     );
 
     let entries = match client
+        .entries()
         .sgv()
-        .get()
-        .from(start_time)
+        .list()
+        .since(start_time)
         .limit(120_000)
-        .send()
         .await
     {
         Ok(e) => {
@@ -116,11 +117,10 @@ pub async fn tir(
         return Ok(());
     }
 
-    let profiles = client.profiles().get().await.ok();
-    let (target_low, target_high, is_mmol) = profiles
+    let profile = client.profiles().current().await.ok().flatten();
+    let (target_low, target_high, is_mmol) = profile
         .as_ref()
-        .and_then(|p| p.first())
-        .and_then(|p| p.store.get(&p.default_profile_name))
+        .and_then(|p| p.default_entry())
         .map(|store| {
             let (low_mg, high_mg, mmol) = resolve_profile_targets_mgdl(store);
             (low_mg, high_mg, mmol)
@@ -142,7 +142,7 @@ pub async fn tir(
 
     let period_label = period.label().to_string();
 
-    let tir_image = tokio::task::spawn_blocking(move || {
+    let tir_image = render::run_blocking(move || {
         let graph_entries: Vec<GraphEntry> = entries.into_iter().map(GraphEntry::from).collect();
 
         let builder = TimeInRangeBuilder::new()
@@ -162,9 +162,9 @@ pub async fn tir(
 
         builder.build().map_err(|e| anyhow::anyhow!(e.to_string()))
     })
-    .await??;
+    .await?;
 
-    let img_buffer = tokio::task::spawn_blocking(move || {
+    let img_buffer = render::run_blocking(move || {
         let mut buffer = Vec::with_capacity(120_000);
         let encoder = image::codecs::png::PngEncoder::new_with_quality(
             &mut buffer,
@@ -180,7 +180,7 @@ pub async fn tir(
         )?;
         Ok::<Vec<u8>, anyhow::Error>(buffer)
     })
-    .await??;
+    .await?;
 
     let attachment = CreateAttachment::bytes(img_buffer, "tir.png");
 

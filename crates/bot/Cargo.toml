@@ -4,8 +4,8 @@ version = "1.1.2"
 edition = "2024"
 
 [dependencies]
-cinnamon = "1.0.3"
-bonbon = {version = "0.4.2", features = ["cinnamon", "beetroot"]}
+cinnamon = "2.0.0-alpha.1"
+bonbon = {version = "0.7.0", features = ["cinnamon", "beetroot"]}
 poise = {git = "https://github.com/serenity-rs/poise", rev = "932351a"}
 tokio = { version = "1.49.0", features = ["full"] }
 serde = { version = "1.0.228", features = ["derive"] }
@@ -22,9 +22,9 @@ base64 = "0.22"
 url = "2.5.8"
 image = "0.25.9"
 rand = "0.10.0"
-# Pinned to 0.12 to match cinnamon's reqwest, so the SSRF-guarded client can be
+# Pinned to 0.13 to match cinnamon's reqwest, so the SSRF-guarded client can be
 # injected into cinnamon's Nightscout client (see utils::net).
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.13", features = ["json", "form", "query"] }
 futures = "0.3.32"
 urlencoding = "2"
 axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "tokio"] }

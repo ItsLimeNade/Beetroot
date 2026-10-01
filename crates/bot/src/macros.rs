@@ -140,8 +140,9 @@ macro_rules! verify_nightscout_connection {
             let check_result = match client_result {
                 Ok(client) => {
                     client
+                        .entries()
                         .sgv()
-                        .get()
+                        .list()
                         .limit(1)
                         .send()
                         .await
@@ -163,17 +164,30 @@ macro_rules! verify_nightscout_connection {
     };
 }
 
-/// Fetches entries, treatments, and profiles in parallel.
-/// Returns `(entries, treatments, profiles)`.
+/// Fetches entries, treatments, and the current profile in parallel.
+/// Returns `(entries, treatments, profile)`.
 /// If entries fail, sends an error and returns early. Treatments/Profiles fail gracefully (empty/None).
 #[macro_export]
 macro_rules! fetch_graph_data {
     ($ctx:expr, $client:expr, $start:expr, $end:expr) => {{
-        let entries_fut = $client.sgv().get().from($start).limit(5000).send();
-        let treatments_fut = $client.treatments().get().from($start).limit(5000).send();
+        let entries_fut = $client
+            .entries()
+            .sgv()
+            .list()
+            .since($start)
+            .until($end)
+            .limit(5000)
+            .send();
+        let treatments_fut = $client
+            .treatments()
+            .list()
+            .since($start)
+            .until($end)
+            .limit(5000)
+            .send();
 
         let profile = $client.profiles();
-        let profiles_fut = profile.get();
+        let profiles_fut = profile.current();
 
         let (entries_res, treatments_res, profiles_res) =
             tokio::join!(entries_fut, treatments_fut, profiles_fut);
@@ -200,7 +214,7 @@ macro_rules! fetch_graph_data {
         };
 
         let profiles = match profiles_res {
-            Ok(p) => Some(p),
+            Ok(p) => p,
             Err(e) => {
                 tracing::warn!("Failed to fetch profiles: {}", e);
                 None

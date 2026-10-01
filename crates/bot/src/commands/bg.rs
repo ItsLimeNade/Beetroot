@@ -1,10 +1,12 @@
 use crate::data::{Context, Error};
 use crate::utils::duration_parser::parse_ago_duration;
 use crate::utils::emojis;
+use crate::utils::render;
 use crate::utils::targets::resolve_profile_targets_mgdl;
 use crate::utils::theme_assets;
 use bonbon::prelude::*;
-use cinnamon::models::properties::PropertyType;
+use cinnamon::model::properties::Property;
+use cinnamon::model::{Direction, EventType, Glucose, Units};
 use image::codecs::png::{CompressionType, FilterType, PngEncoder};
 use image::{ExtendedColorType, ImageEncoder};
 use macros::track_analytics;
@@ -68,12 +70,12 @@ pub async fn bg(
             let target_time = now - ago;
             let window_start = target_time - chrono::Duration::hours(3);
             match client
+                .entries()
                 .sgv()
-                .get()
-                .from(window_start)
-                .to(target_time + chrono::Duration::minutes(5))
+                .list()
+                .since(window_start)
+                .until(target_time + chrono::Duration::minutes(5))
                 .limit(50)
-                .send()
                 .await
             {
                 Ok(e) if !e.is_empty() => e,
@@ -90,7 +92,7 @@ pub async fn bg(
                 }
             }
         } else {
-            match client.sgv().get().limit(36).send().await {
+            match client.entries().sgv().list().limit(36).await {
                 Ok(e) if !e.is_empty() => e,
                 _ => {
                     send_error!(
@@ -105,26 +107,16 @@ pub async fn bg(
 
         let properties_fut = client
             .properties()
-            .get()
-            .only(&[PropertyType::Iob, PropertyType::Cob])
+            .only([Property::Iob, Property::Cob])
             .send();
-        let profiles_builder = client.profiles();
-        let profile_fut = profiles_builder.get();
+        let profiles = client.profiles();
+        let profile_fut = profiles.current();
+        let server = client.server();
+        let status_fut = server.status();
 
-        let status_fut = {
-            let client = client.clone();
-            async move {
-                let url = client.base_url.join("api/v2/status.json").ok()?;
-                let req = client.auth(client.http.get(url));
-                let val: serde_json::Value = req.send().await.ok()?.json().await.ok()?;
-                val.pointer("/settings/customTitle")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string())
-            }
-        };
-
-        let (properties_result, profile_result, custom_title) =
+        let (properties_result, profile_result, status_result) =
             tokio::join!(properties_fut, profile_fut, status_fut);
+        let custom_title = custom_title(status_result);
 
         tracing::debug!(
             sparkline_entries = sparkline_entries.len(),
@@ -140,8 +132,7 @@ pub async fn bg(
         let (target_low, target_high, is_mmol) = profile_result
             .as_ref()
             .ok()
-            .and_then(|profiles| profiles.first())
-            .and_then(|profile| profile.store.get(&profile.default_profile_name))
+            .and_then(|profile| profile.as_ref()?.default_entry())
             .map(resolve_profile_targets_mgdl)
             .unwrap_or((72.0, 180.0, false));
 
@@ -155,19 +146,21 @@ pub async fn bg(
         } else {
             None
         };
-        let delta = prev.map(|p| entry.sgv as f64 - p.sgv as f64).unwrap_or(0.0);
+        let sgv_mgdl = entry.sgv.as_mgdl() as f32;
+        let delta = prev
+            .map(|p| entry.sgv.as_mgdl() - p.sgv.as_mgdl())
+            .unwrap_or(0.0);
 
-        let entry_time = entry.datetime().unwrap_or(now);
-        let duration = now.signed_duration_since(entry_time);
+        let duration = now.signed_duration_since(entry.date.to_datetime());
         let age_str = if duration.num_minutes() < 60 {
             format!("{} min ago", duration.num_minutes())
         } else {
             format!("{} h ago", duration.num_hours())
         };
 
-        let current_status = if (entry.sgv as f32) < target_low {
+        let current_status = if sgv_mgdl < target_low {
             GlucoseStatus::Low
-        } else if (entry.sgv as f32) > target_high {
+        } else if sgv_mgdl > target_high {
             GlucoseStatus::High
         } else {
             GlucoseStatus::InRange
@@ -177,15 +170,17 @@ pub async fn bg(
             props
                 .iob
                 .as_ref()
-                .filter(|i| i.iob > 0.0)
-                .map(|i| format!("IOB {:.2}u", i.iob))
+                .and_then(|i| i.iob)
+                .filter(|iob| *iob > 0.0)
+                .map(|iob| format!("IOB {:.2}u", iob))
         });
         let cob_str = properties_result.as_ref().ok().and_then(|props| {
             props
                 .cob
                 .as_ref()
-                .filter(|c| c.cob > 0.0)
-                .map(|c| format!("COB {:.0}g", c.cob))
+                .and_then(|c| c.cob)
+                .filter(|cob| *cob > 0.0)
+                .map(|cob| format!("COB {:.0}g", cob))
         });
 
         let sparkline_points: Vec<SparklinePoint> = sorted
@@ -197,7 +192,7 @@ pub async fn bg(
                 } else {
                     0.0
                 };
-                let sgv_mgdl = e.sgv as f32;
+                let sgv_mgdl = e.sgv.as_mgdl() as f32;
                 let status = if sgv_mgdl < target_low {
                     GlucoseStatus::Low
                 } else if sgv_mgdl > target_high {
@@ -205,49 +200,33 @@ pub async fn bg(
                 } else {
                     GlucoseStatus::InRange
                 };
-                let sgv = if is_mmol {
-                    e.sgv as f32 / 18.0
-                } else {
-                    e.sgv as f32
-                };
-                SparklinePoint { t, sgv, status }
+                SparklinePoint {
+                    t,
+                    sgv: sgv_mgdl,
+                    status,
+                }
             })
             .collect();
 
-        let display_sgv = if is_mmol {
-            entry.sgv as f32 / 18.0
-        } else {
-            entry.sgv as f32
-        };
-        let display_delta = if is_mmol { delta / 18.0 } else { delta };
-        let (unit_str, delta_str) = if is_mmol {
-            (
-                "mmol/L".to_string(),
-                format!("{:+.1} mmol/L", display_delta),
-            )
-        } else {
-            ("mg/dL".to_string(), format!("{:+.0} mg/dL", display_delta))
-        };
-
         let current_rate = sorted.windows(2).last().and_then(|w| {
-            let dt_min = (w[1].date - w[0].date) as f32 / 60_000.0;
-            (dt_min > 0.0).then_some((w[1].sgv as f32 - w[0].sgv as f32) / dt_min)
+            let dt_min = (w[1].date.as_millis() - w[0].date.as_millis()) as f32 / 60_000.0;
+            let rise = (w[1].sgv.as_mgdl() - w[0].sgv.as_mgdl()) as f32;
+            (dt_min > 0.0).then_some(rise / dt_min)
         });
 
         let info_pill = pick_info_pill(
-            entry.sgv as f32,
+            sgv_mgdl,
             current_status,
             current_rate,
             duration.num_minutes(),
         );
 
         let data = BgCardData {
-            current_sgv: display_sgv,
+            current_sgv: sgv_mgdl,
             status: current_status,
-            trend_arrow: entry.direction.as_arrow().to_string(),
-            delta_str,
+            trend_arrow: trend_arrow(entry.direction.as_ref()).to_string(),
+            delta: Some(delta as f32),
             age_str,
-            unit_str,
             time_str: now.format("%H:%M").to_string(),
             watermark_str: custom_title
                 .filter(|t| !t.trim().is_empty())
@@ -265,9 +244,16 @@ pub async fn bg(
             user_data.active_theme.as_deref(),
         )
         .await;
-        let img_buffer = tokio::task::spawn_blocking(move || {
+        let img_buffer = render::run_blocking(move || {
             let builder = BgCardBuilder::new()
                 .with_data(data)
+                .with_units(UnitDisplay::Dual {
+                    primary: if is_mmol {
+                        UnitPreference::MmolL
+                    } else {
+                        UnitPreference::MgDl
+                    },
+                })
                 .with_theme(theme)
                 .with_scale(4.0);
 
@@ -289,7 +275,7 @@ pub async fn bg(
             )?;
             Ok::<Vec<u8>, anyhow::Error>(buffer)
         })
-        .await??;
+        .await?;
 
         ctx.send(
             poise::CreateReply::default()
@@ -306,20 +292,20 @@ pub async fn bg(
         let window = chrono::Duration::minutes(10);
 
         let result = client
+            .entries()
             .sgv()
-            .get()
-            .from(target_time - window)
-            .to(target_time + window)
+            .list()
+            .since(target_time - window)
+            .until(target_time + window)
             .limit(50)
-            .send()
             .await;
 
         match result {
             Ok(mut e) if !e.is_empty() => {
                 e.sort_by_key(|entry| {
-                    let entry_time =
-                        chrono::DateTime::from_timestamp_millis(entry.date).unwrap_or(now);
-                    (entry_time - target_time).num_seconds().unsigned_abs()
+                    (entry.date.to_datetime() - target_time)
+                        .num_seconds()
+                        .unsigned_abs()
                 });
                 e
             }
@@ -336,8 +322,7 @@ pub async fn bg(
             }
         }
     } else {
-        let entries_builder = client.sgv();
-        match entries_builder.get().limit(2).send().await {
+        match client.entries().sgv().list().limit(2).await {
             Ok(e) if !e.is_empty() => e,
             _ => {
                 send_error!(
@@ -350,31 +335,20 @@ pub async fn bg(
         }
     };
 
-    let properties_builder = client
+    let properties_fut = client
         .properties()
-        .get()
-        .only(&[PropertyType::Iob, PropertyType::Cob]);
-    let properties_fut = properties_builder.send();
+        .only([Property::Iob, Property::Cob])
+        .send();
 
-    let profiles_builder = client.profiles();
-    let profile_fut = profiles_builder.get();
+    let profiles = client.profiles();
+    let profile_fut = profiles.current();
 
-    // cinnamon's Status struct expects numeric fields that some NS instances return as strings;
-    // fetch raw JSON and extract only the custom title to avoid the deserialization bug.
-    let status_fut = {
-        let client = client.clone();
-        async move {
-            let url = client.base_url.join("api/v2/status.json").ok()?;
-            let req = client.auth(client.http.get(url));
-            let val: serde_json::Value = req.send().await.ok()?.json().await.ok()?;
-            val.pointer("/settings/customTitle")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string())
-        }
-    };
+    let server = client.server();
+    let status_fut = server.status();
 
-    let (properties_result, profile_result, custom_title) =
+    let (properties_result, profile_result, status_result) =
         tokio::join!(properties_fut, profile_fut, status_fut);
+    let custom_title = custom_title(status_result);
 
     tracing::debug!(entries = entries.len(), "bg data fetched");
     crate::log_medical!(
@@ -388,37 +362,31 @@ pub async fn bg(
     let entry = &entries[0];
     let prev_entry = entries.get(1);
 
+    let sgv_mgdl = entry.sgv.as_mgdl();
     let delta = if let Some(prev) = prev_entry {
-        entry.sgv as f64 - prev.sgv as f64
+        sgv_mgdl - prev.sgv.as_mgdl()
     } else {
         0.0
     };
 
-    let (target_low, target_high) = if let Ok(profiles) = profile_result {
-        if let Some(profile) = profiles.first() {
-            let default_name = &profile.default_profile_name;
-            if let Some(store) = profile.store.get(default_name) {
-                let low = store.target_low.first().map(|x| x.value).unwrap_or(4.0);
-                let high = store.target_high.first().map(|x| x.value).unwrap_or(10.0);
-                let is_mmol = store.units.starts_with("mmol");
-                if is_mmol {
-                    (low * 18.0, high * 18.0)
-                } else {
-                    (low, high)
-                }
-            } else {
-                (72.0, 180.0)
-            }
+    let default_profile = profile_result
+        .as_ref()
+        .ok()
+        .and_then(|profile| profile.as_ref()?.default_entry());
+    let (target_low, target_high) = if let Some(store) = default_profile {
+        let low = store.target_low.first().map(|x| x.value).unwrap_or(4.0);
+        let high = store.target_high.first().map(|x| x.value).unwrap_or(10.0);
+        let is_mmol = store.units() == Some(Units::MmolL);
+        if is_mmol {
+            (low * 18.0, high * 18.0)
         } else {
-            (72.0, 180.0)
+            (low, high)
         }
     } else {
         (72.0, 180.0)
     };
 
-    let entry_time = entry.datetime().unwrap_or(now);
-
-    let duration = now.signed_duration_since(entry_time);
+    let duration = now.signed_duration_since(entry.date.to_datetime());
 
     let time_ago = if duration.num_minutes() < 60 {
         format!("{} minutes ago", duration.num_minutes())
@@ -428,9 +396,9 @@ pub async fn bg(
         format!("{} days ago", duration.num_days())
     };
 
-    let color = if (entry.sgv as f64) > target_high {
+    let color = if sgv_mgdl > target_high {
         Colour::from_rgb(227, 177, 11)
-    } else if (entry.sgv as f64) < target_low {
+    } else if sgv_mgdl < target_low {
         Colour::from_rgb(235, 47, 47)
     } else {
         Colour::from_rgb(87, 189, 79)
@@ -459,8 +427,8 @@ pub async fn bg(
         );
     }
 
-    let sgv_val = entry.sgv;
-    let mmol_val = entry.sgv as f64 / 18.0;
+    let sgv_val = sgv_mgdl;
+    let mmol_val = sgv_mgdl / 18.0;
     let delta_mmol = delta / 18.0;
 
     let delta_str = format!("{:+}", delta);
@@ -486,24 +454,24 @@ pub async fn bg(
     embed = embed
         .field("mg/dL", mgdl_field, true)
         .field("mmol/L", mmol_field, true)
-        .field("Trend", entry.direction.as_arrow(), true);
+        .field("Trend", trend_arrow(entry.direction.as_ref()), true);
 
     if let Ok(props) = properties_result {
-        if let Some(iob) = props.iob
-            && iob.iob > 0.0
+        if let Some(iob) = props.iob.and_then(|i| i.iob)
+            && iob > 0.0
         {
             embed = embed.field(
                 format!("{} IOB", emojis::micro_bolus()),
-                format!("{:.2}u", iob.iob),
+                format!("{:.2}u", iob),
                 true,
             );
         }
-        if let Some(cob) = props.cob
-            && cob.cob > 0.0
+        if let Some(cob) = props.cob.and_then(|c| c.cob)
+            && cob > 0.0
         {
             embed = embed.field(
                 format!("{} COB", emojis::carbs()),
-                format!("{:.0}g", cob.cob),
+                format!("{:.0}g", cob),
                 true,
             );
         }
@@ -513,34 +481,35 @@ pub async fn bg(
         let expiry_mins = user_data.mbg_expiry_time;
         let since = now - chrono::Duration::minutes(expiry_mins);
 
+        let mbg = client.entries().mbg();
         let (mbg_res, bgcheck_res) = tokio::join!(
-            client.mbg().get().limit(1).send(),
-            client.treatments().get().from(since).limit(10).send()
+            mbg.latest(),
+            client.treatments().list().since(since).limit(10).send()
         );
 
         crate::log_medical!(mbg = ?mbg_res, bgcheck = ?bgcheck_res, "bg fingerprick lookup");
 
-        let from_mbg = mbg_res.ok().and_then(|list| {
-            list.into_iter().next().and_then(|mbg| {
-                let t = mbg.datetime()?;
-                let age = now.signed_duration_since(t).num_minutes();
-                if age <= expiry_mins {
-                    Some((mbg.mbg as f64, age))
-                } else {
-                    None
-                }
-            })
+        let from_mbg = mbg_res.ok().flatten().and_then(|mbg| {
+            let age = now
+                .signed_duration_since(mbg.date.to_datetime())
+                .num_minutes();
+            if age <= expiry_mins {
+                Some((mbg.mbg.as_mgdl(), age))
+            } else {
+                None
+            }
         });
 
         let from_bgcheck = bgcheck_res.ok().and_then(|treatments| {
             treatments
                 .into_iter()
-                .filter(|t| t.event_type == "BG Check")
+                .filter(|t| t.event_type == Some(EventType::BgCheck))
                 .filter_map(|t| {
-                    let glucose = t.glucose?;
-                    let dt = chrono::DateTime::parse_from_rfc3339(&t.created_at).ok()?;
+                    // `glucose` is stored in the treatment's own units.
+                    let units = t.units.as_deref().and_then(Units::parse);
+                    let glucose = Glucose::new(t.glucose?, units.unwrap_or_default()).as_mgdl();
                     let age = now
-                        .signed_duration_since(dt.with_timezone(&chrono::Utc))
+                        .signed_duration_since(t.time()?.to_datetime())
                         .num_minutes();
                     if age <= expiry_mins {
                         Some((glucose, age))
@@ -583,6 +552,27 @@ pub async fn bg(
     .await?;
 
     Ok(())
+}
+
+/// The site's custom title from its status, if it could be fetched.
+fn custom_title(status: cinnamon::Result<cinnamon::model::system::Status>) -> Option<String> {
+    status.ok()?.settings?.custom_title
+}
+
+/// Arrow shown for a trend. Sticks to glyphs the card font is known to render.
+fn trend_arrow(direction: Option<&Direction>) -> &'static str {
+    match direction {
+        Some(Direction::TripleUp) => "↑↑↑",
+        Some(Direction::DoubleUp) => "↑↑",
+        Some(Direction::SingleUp) => "↑",
+        Some(Direction::FortyFiveUp) => "↗",
+        Some(Direction::Flat) => "→",
+        Some(Direction::FortyFiveDown) => "↘",
+        Some(Direction::SingleDown) => "↓",
+        Some(Direction::DoubleDown) => "↓↓",
+        Some(Direction::TripleDown) => "↓↓↓",
+        _ => "↮",
+    }
 }
 
 fn pick_info_pill(
