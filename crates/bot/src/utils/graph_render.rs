@@ -198,6 +198,9 @@ pub async fn render_png(
         shown
     };
 
+    // Keeps the peak clear of the top of the plot.
+    let scaling = graph_data::y_scaling(&entries, &treatments, start, start + duration);
+
     let graph_width: u32 = 1275 * 2;
     let graph_height: u32 = 825 * 2;
 
@@ -211,12 +214,7 @@ pub async fn render_png(
         let mut builder = GlucoseGraphBuilder::new()
             .with_treatment_mode(treatment_mode)
             .with_microbolus_threshold(microbolus_threshold)
-            .with_scaling(GraphScaling::Dynamic {
-                clamp_min: 40.0,
-                clamp_max: 400.0,
-                default_min: 60.0,
-                default_max: 200.0,
-            })
+            .with_scaling(scaling)
             .with_trace(false)
             .with_layout(layout)
             .with_theme(theme)

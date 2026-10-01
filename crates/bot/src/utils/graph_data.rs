@@ -1,4 +1,4 @@
-use bonbon::prelude::{GraphTreatment, MiniGraph, OnBoard, SeriesPoint};
+use bonbon::prelude::{GraphEntry, GraphScaling, GraphTreatment, MiniGraph, OnBoard, SeriesPoint};
 use chrono::{DateTime, Duration, Utc};
 
 /// How far before the graph's start treatments are fetched, so doses and meals
@@ -19,6 +19,54 @@ const CARB_ABSORPTION_HOURS: i64 = 3;
 /// on board. Below these the value would read as zero on the graph.
 const MIN_REPORTED_IOB: f32 = 0.05;
 const MIN_REPORTED_COB: f32 = 0.5;
+
+/// The glucose range a graph shows when the readings fit inside it, and the
+/// widest it normally stretches to, in mg/dL.
+const DEFAULT_Y_RANGE: (f32, f32) = (60.0, 200.0);
+const Y_CLAMP: (f32, f32) = (40.0, 400.0);
+
+/// Least clear space kept between the highest value drawn and the top of the
+/// plot, in mg/dL, so the peak never touches the frame.
+const PEAK_HEADROOM_MGDL: f32 = 20.0;
+
+/// The vertical scale for a graph spanning `start` to `end`: the default
+/// range, growing as the readings need, with the top always at least
+/// [`PEAK_HEADROOM_MGDL`] above the highest reading or fingerprick shown.
+pub fn y_scaling(
+    entries: &[GraphEntry],
+    treatments: &[GraphTreatment],
+    start: DateTime<Utc>,
+    end: DateTime<Utc>,
+) -> GraphScaling {
+    let shown = |date: DateTime<Utc>| date >= start && date <= end;
+    let peak = entries
+        .iter()
+        .filter(|e| shown(e.date))
+        .map(|e| e.sgv)
+        .chain(
+            treatments
+                .iter()
+                .filter(|t| shown(t.date))
+                .filter_map(|t| t.mbg),
+        )
+        .filter(|v| v.is_finite())
+        .fold(None, |peak: Option<f32>, v| {
+            Some(peak.map_or(v, |p| p.max(v)))
+        });
+
+    // Rounded up to a ten so the top of the plot stays a round number.
+    let top = peak.map_or(DEFAULT_Y_RANGE.1, |peak| {
+        ((peak + PEAK_HEADROOM_MGDL) / 10.0).ceil() * 10.0
+    });
+
+    GraphScaling::Dynamic {
+        clamp_min: Y_CLAMP.0,
+        // A reading past the usual ceiling still gets its headroom.
+        clamp_max: Y_CLAMP.1.max(top),
+        default_min: DEFAULT_Y_RANGE.0,
+        default_max: DEFAULT_Y_RANGE.1.max(top),
+    }
+}
 
 /// The mini graphs worth drawing under a glucose graph spanning `start` to
 /// `end`: IOB and/or COB, each only when there is something on board at some
@@ -194,6 +242,71 @@ mod tests {
                 _ => "other",
             })
             .collect()
+    }
+
+    fn top_of(scaling: GraphScaling) -> (f32, f32) {
+        match scaling {
+            GraphScaling::Dynamic {
+                clamp_max,
+                default_max,
+                ..
+            } => (default_max, clamp_max),
+            GraphScaling::Static { max, .. } => (max, max),
+        }
+    }
+
+    fn readings(values: &[(i64, f32)]) -> Vec<GraphEntry> {
+        values
+            .iter()
+            .map(|&(minutes, sgv)| GraphEntry {
+                sgv,
+                date: at(minutes),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn y_scaling_keeps_headroom_above_the_peak() {
+        let (start, end) = (at(0), at(180));
+
+        // Well inside the default range: nothing changes.
+        let calm = readings(&[(10, 110.0), (60, 150.0)]);
+        assert_eq!(top_of(y_scaling(&calm, &[], start, end)), (200.0, 400.0));
+
+        // A peak of 190 would sit 10 below the default top: make room.
+        let near = readings(&[(10, 110.0), (60, 190.0)]);
+        assert_eq!(top_of(y_scaling(&near, &[], start, end)), (210.0, 400.0));
+
+        // A peak above the default top, rounded up to the next ten.
+        let high = readings(&[(10, 110.0), (60, 263.0)]);
+        assert_eq!(top_of(y_scaling(&high, &[], start, end)), (290.0, 400.0));
+
+        // Even past the usual ceiling.
+        let extreme = readings(&[(60, 395.0)]);
+        assert_eq!(top_of(y_scaling(&extreme, &[], start, end)), (420.0, 420.0));
+    }
+
+    #[test]
+    fn y_scaling_only_counts_what_is_shown() {
+        let (start, end) = (at(0), at(180));
+
+        // A high reading before the window does not stretch the graph.
+        let earlier = readings(&[(-10, 300.0), (60, 120.0)]);
+        assert_eq!(top_of(y_scaling(&earlier, &[], start, end)), (200.0, 400.0));
+
+        // A fingerprick in the window does.
+        let fingerprick = GraphTreatment {
+            mbg: Some(245.0),
+            ..treatment(90, None, None)
+        };
+        let calm = readings(&[(60, 120.0)]);
+        assert_eq!(
+            top_of(y_scaling(&calm, &[fingerprick], start, end)),
+            (270.0, 400.0)
+        );
+
+        // No data: the default range.
+        assert_eq!(top_of(y_scaling(&[], &[], start, end)), (200.0, 400.0));
     }
 
     #[test]
