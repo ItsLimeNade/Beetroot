@@ -1,9 +1,6 @@
 use chrono::{DateTime, Datelike, Duration, Month, NaiveDate, TimeZone, Utc};
 use chrono_tz::Tz;
 
-/// The rolling periods offered first, in days.
-const PRESET_DAYS: [i64; 5] = [1, 7, 14, 30, 90];
-
 /// Longest rolling period accepted, in days.
 const MAX_DAYS: i64 = 90;
 
@@ -12,9 +9,6 @@ const SUGGESTED_MONTHS: u32 = 120;
 
 /// Discord shows at most 25 autocomplete choices.
 const MAX_SUGGESTIONS: usize = 25;
-
-/// What to tell someone whose period could not be read by [`parse`].
-pub const INVALID_PERIOD_HELP: &str = "Pick a period from the list, or type one like `Last 7 days`, `45d`, `July 2026` or `2026-07`. Periods go up to 90 days, and months can't be in the future.";
 
 /// A stretch of time to summarize: the last few days, or a calendar month.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -53,23 +47,164 @@ impl Period {
         }
     }
 
+    /// The calendar month before this one. `None` for a rolling period,
+    /// whose "before" is not a period of its own (see
+    /// [`previous_bounds`](Self::previous_bounds)).
+    pub fn previous(self) -> Option<Period> {
+        match self {
+            Self::LastDays(_) => None,
+            Self::Month { year, month: 1 } => Some(Self::Month {
+                year: year - 1,
+                month: 12,
+            }),
+            Self::Month { year, month } => Some(Self::Month {
+                year,
+                month: month - 1,
+            }),
+        }
+    }
+
     /// The bounds of the period just before this one, to compare against: the
     /// same number of days again, or the whole calendar month before.
     pub fn previous_bounds(self, now: DateTime<Utc>, tz: Tz) -> (DateTime<Utc>, DateTime<Utc>) {
-        match self {
-            Self::LastDays(days) => (now - Duration::days(2 * days), now - Duration::days(days)),
-            Self::Month { year, month } => {
-                let (previous_year, previous_month) = if month == 1 {
-                    (year - 1, 12)
-                } else {
-                    (year, month - 1)
-                };
-                let start = month_start(previous_year, previous_month, tz);
-                let end = month_start(year, month, tz);
-                (start.min(now), end.min(now))
+        match (self, self.previous()) {
+            (_, Some(previous)) => previous.bounds(now, tz),
+            (Self::LastDays(days), _) => {
+                (now - Duration::days(2 * days), now - Duration::days(days))
             }
+            // A month always has a month before it.
+            (Self::Month { .. }, None) => self.bounds(now, tz),
         }
     }
+}
+
+/// Which periods a command offers and accepts. What makes a sensible period
+/// depends on what is drawn from it: a typical day cannot be worked out from
+/// one day, and a breakdown by weekday needs every weekday covered.
+#[derive(Debug, Clone, Copy)]
+pub struct Picker {
+    /// The rolling periods suggested first, in days.
+    presets: &'static [i64],
+    /// Shortest period accepted, in days. The month in progress is only
+    /// offered once it is this many days old.
+    min_days: i64,
+    /// Rolling periods read in weeks ("Last 4 weeks").
+    weeks: bool,
+    /// Why shorter periods are refused, for the error message.
+    reason: &'static str,
+}
+
+impl Picker {
+    /// Anything from a day up: totals such as time in range.
+    pub const ANY: Self = Self {
+        presets: &[1, 7, 14, 30, 90],
+        min_days: 1,
+        weeks: false,
+        reason: "",
+    };
+
+    /// For graphs of a typical day (glucose profile, comparison), which need
+    /// several days behind each time of day.
+    pub const TYPICAL_DAY: Self = Self {
+        presets: &[7, 14, 30, 90],
+        min_days: 7,
+        weeks: false,
+        reason: "A typical day needs at least a week of readings behind it.",
+    };
+
+    /// For a breakdown by hour of the day. A single day works, but is not
+    /// worth suggesting.
+    pub const BY_HOUR: Self = Self {
+        presets: &[7, 14, 30, 90],
+        min_days: 1,
+        weeks: false,
+        reason: "",
+    };
+
+    /// For a breakdown by day of the week: whole weeks, so every weekday
+    /// counts the same number of times.
+    pub const BY_WEEKDAY: Self = Self {
+        presets: &[14, 28, 56, 84],
+        min_days: 7,
+        weeks: true,
+        reason: "A breakdown by day of the week needs at least 7 days, so every weekday is covered.",
+    };
+
+    /// How a period reads in this picker, e.g. "Last 4 weeks" where
+    /// [`Period::label`] says "Last 28 days". [`parse`] reads both.
+    pub fn label(&self, period: Period) -> String {
+        match period {
+            Period::LastDays(days) if self.weeks && days >= 14 && days % 7 == 0 => {
+                format!("Last {} weeks", days / 7)
+            }
+            _ => period.label(),
+        }
+    }
+
+    /// Whether the month in progress has enough days behind it to be used.
+    fn month_is_ready(&self, period: Period, today: NaiveDate) -> bool {
+        let in_progress = period
+            == Period::Month {
+                year: today.year(),
+                month: today.month(),
+            };
+        !in_progress || today.day() as i64 >= self.min_days
+    }
+
+    /// The calendar months this picker offers, newest first.
+    pub fn months(&self, today: NaiveDate) -> impl Iterator<Item = Period> + '_ {
+        recent_months(today).filter(move |&period| self.month_is_ready(period, today))
+    }
+
+    /// Autocomplete choices for what the user has typed so far: the rolling
+    /// periods, then calendar months from the current one back.
+    pub fn suggestions(&self, partial: &str, today: NaiveDate) -> Vec<String> {
+        let needle = partial.trim().to_lowercase();
+        let presets = self.presets.iter().map(|&days| Period::LastDays(days));
+
+        presets
+            .chain(self.months(today))
+            .map(|period| self.label(period))
+            .filter(|label| label.to_lowercase().contains(&needle))
+            .take(MAX_SUGGESTIONS)
+            .collect()
+    }
+
+    /// Reads a period typed or picked for this picker. The error is a message
+    /// fit to show the user.
+    pub fn read(&self, input: &str, today: NaiveDate) -> Result<Period, String> {
+        let example = self.presets.get(1).or(self.presets.first()).copied();
+        let example = self.label(Period::LastDays(example.unwrap_or(14)));
+
+        let Some(period) = parse(input, today) else {
+            return Err(format!(
+                "Pick a period from the list, or type one like `{example}`, `45d`, `July 2026` or `2026-07`. Periods go up to {MAX_DAYS} days, and months can't be in the future."
+            ));
+        };
+
+        match period {
+            Period::LastDays(days) if days < self.min_days => {
+                Err(format!("{} Try `{example}`.", self.reason))
+            }
+            Period::Month { .. } if !self.month_is_ready(period, today) => Err(format!(
+                "{} has only just started. {} Try `{example}`.",
+                period.label(),
+                self.reason
+            )),
+            _ => Ok(period),
+        }
+    }
+}
+
+/// Calendar months from the current one back, newest first.
+fn recent_months(today: NaiveDate) -> impl Iterator<Item = Period> {
+    (0..SUGGESTED_MONTHS).map(move |back| {
+        let index = today.year() * 12 + today.month0() as i32 - back as i32;
+        Period::Month {
+            year: index.div_euclid(12),
+            month: index.rem_euclid(12) as u32 + 1,
+        }
+    })
 }
 
 /// Midnight on the first day of a month in `tz`, as a UTC instant.
@@ -93,31 +228,9 @@ fn month_name(month: u32) -> &'static str {
         .unwrap_or("?")
 }
 
-/// Autocomplete choices for what the user has typed so far: the rolling
-/// periods, then calendar months from the current one back.
-pub fn suggestions(partial: &str, today: NaiveDate) -> Vec<String> {
-    let needle = partial.trim().to_lowercase();
-
-    let presets = PRESET_DAYS.into_iter().map(Period::LastDays);
-    let months = (0..SUGGESTED_MONTHS).map(|back| {
-        let index = today.year() * 12 + today.month0() as i32 - back as i32;
-        Period::Month {
-            year: index.div_euclid(12),
-            month: index.rem_euclid(12) as u32 + 1,
-        }
-    });
-
-    presets
-        .chain(months)
-        .map(Period::label)
-        .filter(|label| label.to_lowercase().contains(&needle))
-        .take(MAX_SUGGESTIONS)
-        .collect()
-}
-
-/// Reads a period as picked from [`suggestions`] or typed by hand:
-/// "Last 7 days", "7d", "24h", "July 2026", "jul 2026", "2026-07", "July"
-/// (the most recent one), "this month" or "last month".
+/// Reads a period as picked from a [`Picker`]'s suggestions or typed by hand:
+/// "Last 7 days", "7d", "24h", "Last 4 weeks", "4w", "July 2026", "jul 2026",
+/// "2026-07", "July" (the most recent one), "this month" or "last month".
 ///
 /// `None` for anything else, for months that have not started yet, and for
 /// rolling periods outside 1 to [`MAX_DAYS`] days.
@@ -143,16 +256,19 @@ pub fn parse(input: &str, today: NaiveDate) -> Option<Period> {
         _ => {}
     }
 
-    // "last 7 days", "7 days", "7d"
-    let days_text = text.strip_prefix("last ").unwrap_or(&text);
-    if let Some(number) = ["days", "day", "d"]
-        .iter()
-        .find_map(|suffix| days_text.strip_suffix(suffix))
-        && let Ok(days) = number.trim().parse::<i64>()
-    {
-        return (1..=MAX_DAYS)
-            .contains(&days)
-            .then_some(Period::LastDays(days));
+    // "last 7 days", "7 days", "7d", "last 4 weeks", "4w"
+    let rolling = text.strip_prefix("last ").unwrap_or(&text);
+    for (suffixes, days_each) in [(["weeks", "week", "w"], 7), (["days", "day", "d"], 1)] {
+        if let Some(number) = suffixes
+            .iter()
+            .find_map(|suffix| rolling.strip_suffix(suffix))
+            && let Ok(count) = number.trim().parse::<i64>()
+        {
+            let days = count * days_each;
+            return (1..=MAX_DAYS)
+                .contains(&days)
+                .then_some(Period::LastDays(days));
+        }
     }
 
     // "2026-07"
@@ -191,7 +307,7 @@ mod tests {
 
     #[test]
     fn suggests_presets_then_months() {
-        let all = suggestions("", today());
+        let all = Picker::ANY.suggestions("", today());
         assert_eq!(all.len(), 25);
         assert_eq!(
             &all[..7],
@@ -210,7 +326,7 @@ mod tests {
     #[test]
     fn suggestions_narrow_as_you_type() {
         assert_eq!(
-            suggestions("July 202", today()),
+            Picker::ANY.suggestions("July 202", today()),
             [
                 "July 2026",
                 "July 2025",
@@ -221,17 +337,119 @@ mod tests {
                 "July 2020"
             ]
         );
-        assert_eq!(suggestions("last 1", today()), ["Last 14 days"]);
+        assert_eq!(Picker::ANY.suggestions("last 1", today()), ["Last 14 days"]);
         // Wraps correctly across a year boundary.
-        assert_eq!(suggestions("december 2025", today()), ["December 2025"]);
+        assert_eq!(
+            Picker::ANY.suggestions("december 2025", today()),
+            ["December 2025"]
+        );
     }
 
     #[test]
     fn every_suggestion_parses_back() {
-        for label in suggestions("", today()) {
-            let period = parse(&label, today()).unwrap_or_else(|| panic!("{label}"));
-            assert_eq!(period.label(), label);
+        for picker in [
+            Picker::ANY,
+            Picker::TYPICAL_DAY,
+            Picker::BY_HOUR,
+            Picker::BY_WEEKDAY,
+        ] {
+            for label in picker.suggestions("", today()) {
+                let period = picker
+                    .read(&label, today())
+                    .unwrap_or_else(|e| panic!("{label}: {e}"));
+                assert_eq!(picker.label(period), label);
+            }
         }
+    }
+
+    #[test]
+    fn each_picker_suggests_what_suits_its_graph() {
+        let first = |picker: Picker, n: usize| picker.suggestions("", today())[..n].to_vec();
+
+        // A typical day: no single day, and no month that has just started
+        // (today is the 1st of October).
+        assert_eq!(
+            first(Picker::TYPICAL_DAY, 5),
+            [
+                "Last 7 days",
+                "Last 14 days",
+                "Last 30 days",
+                "Last 90 days",
+                "September 2026"
+            ]
+        );
+        // Once the month is a week old it is offered again.
+        let later = NaiveDate::from_ymd_opt(2026, 10, 7).unwrap();
+        assert_eq!(
+            Picker::TYPICAL_DAY.suggestions("oct", later)[0],
+            "October 2026"
+        );
+
+        // By weekday: whole weeks.
+        assert_eq!(
+            first(Picker::BY_WEEKDAY, 5),
+            [
+                "Last 2 weeks",
+                "Last 4 weeks",
+                "Last 8 weeks",
+                "Last 12 weeks",
+                "September 2026"
+            ]
+        );
+
+        // By hour: a day is not suggested, but the month in progress is.
+        assert_eq!(
+            first(Picker::BY_HOUR, 5),
+            [
+                "Last 7 days",
+                "Last 14 days",
+                "Last 30 days",
+                "Last 90 days",
+                "October 2026"
+            ]
+        );
+    }
+
+    #[test]
+    fn pickers_refuse_periods_too_short_for_their_graph() {
+        // A typical day needs a week.
+        assert_eq!(
+            Picker::TYPICAL_DAY.read("last 14 days", today()),
+            Ok(Period::LastDays(14))
+        );
+        assert_eq!(
+            Picker::TYPICAL_DAY.read("7d", today()),
+            Ok(Period::LastDays(7))
+        );
+        let too_short = Picker::TYPICAL_DAY.read("3d", today()).unwrap_err();
+        assert!(too_short.contains("at least a week"), "{too_short}");
+        let just_started = Picker::TYPICAL_DAY.read("this month", today()).unwrap_err();
+        assert!(just_started.starts_with("October 2026 has only just started."));
+        assert_eq!(
+            Picker::TYPICAL_DAY.read("September 2026", today()),
+            month(2026, 9).ok_or(String::new())
+        );
+
+        // By hour takes a single day; totals too.
+        assert_eq!(
+            Picker::BY_HOUR.read("24h", today()),
+            Ok(Period::LastDays(1))
+        );
+        assert_eq!(
+            Picker::ANY.read("this month", today()),
+            month(2026, 10).ok_or(String::new())
+        );
+
+        // By weekday needs every weekday.
+        assert!(Picker::BY_WEEKDAY.read("3d", today()).is_err());
+        assert_eq!(
+            Picker::BY_WEEKDAY.read("Last 4 weeks", today()),
+            Ok(Period::LastDays(28))
+        );
+
+        // Nonsense gets the format help, with an example in the picker's words.
+        let help = Picker::BY_WEEKDAY.read("soon", today()).unwrap_err();
+        assert!(help.contains("`Last 4 weeks`"), "{help}");
     }
 
     #[test]
@@ -241,6 +459,10 @@ mod tests {
         assert_eq!(parse("last 7 days", today()), Some(Period::LastDays(7)));
         assert_eq!(parse(" 45d ", today()), Some(Period::LastDays(45)));
         assert_eq!(parse("3 days", today()), Some(Period::LastDays(3)));
+        assert_eq!(parse("Last 4 weeks", today()), Some(Period::LastDays(28)));
+        assert_eq!(parse("2w", today()), Some(Period::LastDays(14)));
+        assert_eq!(parse("1 week", today()), Some(Period::LastDays(7)));
+        assert_eq!(parse("13 weeks", today()), None);
         assert_eq!(parse("0d", today()), None);
         assert_eq!(parse("365d", today()), None);
     }
@@ -333,6 +555,15 @@ mod tests {
         // for a month (January reaches back into the previous year).
         let (start, _) = Period::LastDays(14).previous_bounds(now, paris);
         assert_eq!(start, now - Duration::days(28));
+        assert_eq!(Period::LastDays(14).previous(), None);
+        assert_eq!(
+            Period::Month {
+                year: 2026,
+                month: 1
+            }
+            .previous(),
+            month(2025, 12)
+        );
         let (start, _) = Period::Month {
             year: 2026,
             month: 1,

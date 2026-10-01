@@ -1,6 +1,6 @@
 use crate::data::{Context, Error};
 use crate::utils::graph_render::ProfileSettings;
-use crate::utils::period::{self, Period};
+use crate::utils::period::{Period, Picker};
 use crate::utils::render;
 use crate::utils::theme_assets;
 use bonbon::prelude::*;
@@ -12,8 +12,8 @@ use serenity::all::CreateAttachment;
 
 /// Suggests the rolling periods, then calendar months, narrowing as the user
 /// types (e.g. "July 202" lists every July).
-pub async fn autocomplete_period(_ctx: Context<'_>, partial: &str) -> Vec<String> {
-    period::suggestions(partial, Utc::now().date_naive())
+async fn autocomplete_period(_ctx: Context<'_>, partial: &str) -> Vec<String> {
+    Picker::ANY.suggestions(partial, Utc::now().date_naive())
 }
 
 /// Shows your Time in Range distribution over a chosen period.
@@ -31,10 +31,13 @@ pub async fn tir(
     period: String,
     #[description = "View another user's Time in Range"] user: Option<serenity::User>,
 ) -> Result<(), Error> {
-    let Some(period) = period::parse(&period, Utc::now().date_naive()) else {
-        tracing::debug!(input = %period, "could not parse TIR period");
-        send_error!(ctx, "Invalid Period", period::INVALID_PERIOD_HELP);
-        return Ok(());
+    let period = match Picker::ANY.read(&period, Utc::now().date_naive()) {
+        Ok(period) => period,
+        Err(message) => {
+            tracing::debug!(input = %period, "could not read TIR period");
+            send_error!(ctx, "Invalid Period", message);
+            return Ok(());
+        }
     };
     let period_label = period.label();
 

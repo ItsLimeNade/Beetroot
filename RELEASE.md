@@ -29,9 +29,9 @@ v1.0.0-pre2 | ...one giant leap for diabetics
 - Graphs now always leave at least 20 mg/dL of space above the highest reading, so the peak no longer touches the top of the plot
 - Less than 1 g of carbs on board now counts as none: `/bg` no longer shows `COB 0g`, and graphs skip the COB mini graph
 - `/graph` has a `smoothing` option to denoise (or un-denoise) a single graph without changing your `/denoise` setting
-- Added `/compare` to put your last 7, 14 or 30 days next to the period before: a typical day for each, plus how your average, GMI, SD and CV changed
-- Added `/agp` for your glucose profile: the median and usual range at each time of day, over the last N days or a named month
-- Added `/breakdown` for your time in range by hour of the day or day of the week, with how each changed from the period before
+- Added `/compare` to put two periods side by side (by default the last 14 days and the 14 before, or any month `against` another): a typical day for each, plus how your average, GMI, SD and CV changed
+- Added `/agp` for your glucose profile: the median and usual range at each time of day, over a week or more or a named month
+- Added `/breakdown` for your time in range by hour of the day or day of the week (in whole weeks), with how each changed from the period before
 - Added `/search` to look through your Nightscout history (`lows`, `highs`, `in-range`, `carbs`, `insulin`), sort the results (lowest, highest, longest, shortest, most recent...) and open any of them on a graph centered on that moment
 - `/bg` cards now show a short, actionable hint (like "verify reading" or "monitor") instead of just restating your status
 - Stickers now appear only on `/graph`; the `/bg` card and `/tir` are kept clean

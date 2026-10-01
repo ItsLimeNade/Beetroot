@@ -1,7 +1,6 @@
-use crate::commands::tir::autocomplete_period;
 use crate::data::{Context, Error};
 use crate::utils::graph_render::ProfileSettings;
-use crate::utils::period::{self, Period};
+use crate::utils::period::{Period, Picker};
 use crate::utils::render;
 use crate::utils::theme_assets;
 use bonbon::prelude::*;
@@ -14,9 +13,6 @@ use serenity::all::CreateAttachment;
 /// Most readings fetched for the period, and again for the one before it.
 const ENTRY_LIMIT: usize = 120_000;
 
-/// Period broken down when none is given.
-const DEFAULT_PERIOD: Period = Period::LastDays(14);
-
 /// How the readings are split into columns.
 #[derive(Debug, Clone, Copy, poise::ChoiceParameter)]
 pub enum BreakdownChoice {
@@ -24,6 +20,55 @@ pub enum BreakdownChoice {
     Hour,
     #[name = "Day of the week"]
     Weekday,
+}
+
+impl BreakdownChoice {
+    fn grouping(self) -> Grouping {
+        match self {
+            Self::Hour => Grouping::Hour,
+            Self::Weekday => Grouping::Weekday,
+        }
+    }
+
+    /// The periods that suit this split: days for hours, whole weeks for
+    /// weekdays.
+    fn picker(self) -> Picker {
+        match self {
+            Self::Hour => Picker::BY_HOUR,
+            Self::Weekday => Picker::BY_WEEKDAY,
+        }
+    }
+
+    /// The period broken down when none is given. Weekdays get four weeks:
+    /// two would leave each column resting on just two days.
+    fn default_period(self) -> Period {
+        match self {
+            Self::Hour => Period::LastDays(14),
+            Self::Weekday => Period::LastDays(28),
+        }
+    }
+}
+
+/// Suggests periods for the split picked in the command's `by` option (hours
+/// when it is not filled in yet).
+async fn autocomplete_period(ctx: Context<'_>, partial: &str) -> Vec<String> {
+    let by_weekday = match ctx {
+        poise::Context::Application(app) => app.args.iter().any(|option| {
+            // Choices arrive as their position in the list.
+            option.name == "by"
+                && matches!(
+                    option.value,
+                    serenity::ResolvedValue::Integer(index) if index == BreakdownChoice::Weekday as i64
+                )
+        }),
+        poise::Context::Prefix(_) => false,
+    };
+    let by = if by_weekday {
+        BreakdownChoice::Weekday
+    } else {
+        BreakdownChoice::Hour
+    };
+    by.picker().suggestions(partial, Utc::now().date_naive())
 }
 
 /// Breaks your time in range down by hour of the day or day of the week.
@@ -39,27 +84,26 @@ pub async fn breakdown(
     #[description = "Split by hour of the day or by day of the week (default: hour)"] by: Option<
         BreakdownChoice,
     >,
-    #[description = "How far back, or a month: 'Last 30 days', 'July 2026'... (default: last 14 days)"]
+    #[description = "How far back, or a month: 'Last 4 weeks', 'July 2026'... (default: 14 days, or 4 weeks by day)"]
     #[autocomplete = "autocomplete_period"]
     period: Option<String>,
     #[description = "View another user's breakdown"] user: Option<serenity::User>,
 ) -> Result<(), Error> {
-    let grouping = match by.unwrap_or(BreakdownChoice::Hour) {
-        BreakdownChoice::Hour => Grouping::Hour,
-        BreakdownChoice::Weekday => Grouping::Weekday,
-    };
+    let by = by.unwrap_or(BreakdownChoice::Hour);
+    let grouping = by.grouping();
+    let picker = by.picker();
     let period = match period.as_deref() {
-        None => DEFAULT_PERIOD,
-        Some(input) => match period::parse(input, Utc::now().date_naive()) {
-            Some(period) => period,
-            None => {
-                tracing::debug!(input = %input, "could not parse breakdown period");
-                send_error!(ctx, "Invalid Period", period::INVALID_PERIOD_HELP);
+        None => by.default_period(),
+        Some(input) => match picker.read(input, Utc::now().date_naive()) {
+            Ok(period) => period,
+            Err(message) => {
+                tracing::debug!(input = %input, "could not read breakdown period");
+                send_error!(ctx, "Invalid Period", message);
                 return Ok(());
             }
         },
     };
-    let period_label = period.label();
+    let period_label = picker.label(period);
 
     let target_user = user.as_ref().unwrap_or(ctx.author());
     let target_id = target_user.id;

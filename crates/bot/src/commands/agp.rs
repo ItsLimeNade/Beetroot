@@ -1,7 +1,6 @@
-use crate::commands::tir::autocomplete_period;
 use crate::data::{Context, Error};
 use crate::utils::graph_render::ProfileSettings;
-use crate::utils::period::{self, Period};
+use crate::utils::period::{Period, Picker};
 use crate::utils::render;
 use crate::utils::theme_assets;
 use bonbon::prelude::*;
@@ -15,6 +14,12 @@ use serenity::all::CreateAttachment;
 /// profile.
 const DEFAULT_PERIOD: Period = Period::LastDays(14);
 
+/// Suggests periods a typical day can be drawn from: a week or more, or a
+/// month with at least a week behind it.
+async fn autocomplete_period(_ctx: Context<'_>, partial: &str) -> Vec<String> {
+    Picker::TYPICAL_DAY.suggestions(partial, Utc::now().date_naive())
+}
+
 /// Shows your typical day: median glucose and its usual range by time of day.
 #[poise::command(
     slash_command,
@@ -25,18 +30,18 @@ const DEFAULT_PERIOD: Period = Period::LastDays(14);
 #[track_analytics("agp")]
 pub async fn agp(
     ctx: Context<'_>,
-    #[description = "How far back, or a month: 'Last 30 days', 'July 2026'... (default: last 14 days)"]
+    #[description = "A week or more, or a month: 'Last 30 days', 'July 2026'... (default: last 14 days)"]
     #[autocomplete = "autocomplete_period"]
     period: Option<String>,
     #[description = "View another user's glucose profile"] user: Option<serenity::User>,
 ) -> Result<(), Error> {
     let period = match period.as_deref() {
         None => DEFAULT_PERIOD,
-        Some(input) => match period::parse(input, Utc::now().date_naive()) {
-            Some(period) => period,
-            None => {
-                tracing::debug!(input = %input, "could not parse AGP period");
-                send_error!(ctx, "Invalid Period", period::INVALID_PERIOD_HELP);
+        Some(input) => match Picker::TYPICAL_DAY.read(input, Utc::now().date_naive()) {
+            Ok(period) => period,
+            Err(message) => {
+                tracing::debug!(input = %input, "could not read AGP period");
+                send_error!(ctx, "Invalid Period", message);
                 return Ok(());
             }
         },
