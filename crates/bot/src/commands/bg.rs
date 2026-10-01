@@ -157,7 +157,7 @@ pub async fn bg(
         } else {
             None
         };
-        let delta = prev.map(|p| entry.sgv as f64 - p.sgv as f64).unwrap_or(0.0);
+        let delta = prev.map(|p| entry.sgv as f32 - p.sgv as f32);
 
         let entry_time = entry.datetime().unwrap_or(now);
         let duration = now.signed_duration_since(entry_time);
@@ -207,28 +207,20 @@ pub async fn bg(
                 } else {
                     GlucoseStatus::InRange
                 };
-                let sgv = if is_mmol {
-                    e.sgv as f32 / 18.0
-                } else {
-                    e.sgv as f32
-                };
-                SparklinePoint { t, sgv, status }
+                SparklinePoint {
+                    t,
+                    sgv: sgv_mgdl,
+                    status,
+                }
             })
             .collect();
 
-        let display_sgv = if is_mmol {
-            entry.sgv as f32 / 18.0
-        } else {
-            entry.sgv as f32
-        };
-        let display_delta = if is_mmol { delta / 18.0 } else { delta };
-        let (unit_str, delta_str) = if is_mmol {
-            (
-                "mmol/L".to_string(),
-                format!("{:+.1} mmol/L", display_delta),
-            )
-        } else {
-            ("mg/dL".to_string(), format!("{:+.0} mg/dL", display_delta))
+        let unit_display = UnitDisplay::Dual {
+            primary: if is_mmol {
+                UnitPreference::MmolL
+            } else {
+                UnitPreference::MgDl
+            },
         };
 
         let current_rate = sorted.windows(2).last().and_then(|w| {
@@ -244,12 +236,11 @@ pub async fn bg(
         );
 
         let data = BgCardData {
-            current_sgv: display_sgv,
+            current_sgv: entry.sgv as f32,
             status: current_status,
             trend_arrow: entry.direction.as_arrow().to_string(),
-            delta_str,
+            delta,
             age_str,
-            unit_str,
             time_str: now.format("%H:%M").to_string(),
             watermark_str: custom_title
                 .filter(|t| !t.trim().is_empty())
@@ -270,6 +261,7 @@ pub async fn bg(
         let img_buffer = tokio::task::spawn_blocking(move || {
             let builder = BgCardBuilder::new()
                 .with_data(data)
+                .with_units(unit_display)
                 .with_theme(theme)
                 .with_scale(4.0);
 
@@ -529,7 +521,7 @@ pub async fn bg(
             && iob.iob > 0.0
         {
             embed = embed.field(
-                format!("{} IOB", emojis::micro_bolus()),
+                format!("IOB {}", emojis::micro_bolus()),
                 format!("{:.2}u", iob.iob),
                 true,
             );
@@ -538,7 +530,7 @@ pub async fn bg(
             && cob.cob > 0.0
         {
             embed = embed.field(
-                format!("{} COB", emojis::carbs()),
+                format!("COB {}", emojis::carbs()),
                 format!("{:.0}g", cob.cob),
                 true,
             );

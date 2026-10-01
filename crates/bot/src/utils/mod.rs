@@ -1,5 +1,6 @@
 pub mod duration_parser;
 pub mod emojis;
+pub mod graph_data;
 pub mod net;
 pub mod sticker_assets;
 pub mod targets;

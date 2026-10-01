@@ -143,7 +143,10 @@ pub async fn tir(
     let period_label = period.label().to_string();
 
     let tir_image = tokio::task::spawn_blocking(move || {
-        let graph_entries: Vec<GraphEntry> = entries.into_iter().map(GraphEntry::from).collect();
+        let graph_entries: Vec<GraphEntry> = entries
+            .into_iter()
+            .map(crate::utils::graph_data::graph_entry)
+            .collect();
 
         let builder = TimeInRangeBuilder::new()
             .with_entries(graph_entries)

@@ -163,20 +163,35 @@ macro_rules! verify_nightscout_connection {
     };
 }
 
-/// Fetches entries, treatments, and profiles in parallel.
-/// Returns `(entries, treatments, profiles)`.
-/// If entries fail, sends an error and returns early. Treatments/Profiles fail gracefully (empty/None).
+/// Fetches entries, treatments, profiles, and device statuses in parallel.
+/// Returns `(entries, treatments, profiles, device_statuses)`.
+/// Treatments reach back before `$start` so earlier doses and meals still count toward IOB/COB.
+/// If entries fail, sends an error and returns early. Treatments/Profiles/Device statuses fail gracefully (empty/None).
 #[macro_export]
 macro_rules! fetch_graph_data {
     ($ctx:expr, $client:expr, $start:expr, $end:expr) => {{
         let entries_fut = $client.sgv().get().from($start).limit(5000).send();
-        let treatments_fut = $client.treatments().get().from($start).limit(5000).send();
+        let treatments_start = $start
+            - chrono::Duration::hours($crate::utils::graph_data::ON_BOARD_LOOKBACK_HOURS);
+        let treatments_fut = $client
+            .treatments()
+            .get()
+            .from(treatments_start)
+            .limit(5000)
+            .send();
+        let device_statuses_fut = $client
+            .devicestatus()
+            .get()
+            .from($start)
+            .to($end)
+            .limit(2000)
+            .send();
 
         let profile = $client.profiles();
         let profiles_fut = profile.get();
 
-        let (entries_res, treatments_res, profiles_res) =
-            tokio::join!(entries_fut, treatments_fut, profiles_fut);
+        let (entries_res, treatments_res, profiles_res, device_statuses_res) =
+            tokio::join!(entries_fut, treatments_fut, profiles_fut, device_statuses_fut);
 
         let entries = match entries_res {
             Ok(e) => e,
@@ -207,6 +222,14 @@ macro_rules! fetch_graph_data {
             }
         };
 
-        (entries, treatments, profiles)
+        let device_statuses = match device_statuses_res {
+            Ok(d) => d,
+            Err(e) => {
+                tracing::warn!("Failed to fetch device statuses: {}", e);
+                Vec::new()
+            }
+        };
+
+        (entries, treatments, profiles, device_statuses)
     }};
 }

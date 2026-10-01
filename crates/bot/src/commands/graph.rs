@@ -1,5 +1,6 @@
 use crate::data::{Context, Error};
 use crate::utils::duration_parser::parse_ago_duration;
+use crate::utils::graph_data;
 use crate::utils::sticker_assets;
 use crate::utils::targets::resolve_profile_targets_mgdl;
 use crate::utils::theme_assets;
@@ -79,12 +80,13 @@ pub async fn graph(
         "rendering glucose graph"
     );
 
-    let (entries, treatments, profiles) =
+    let (entries, treatments, profiles, device_statuses) =
         fetch_graph_data!(ctx, client, start_time, graph_end_time);
     tracing::debug!(
         entries = entries.len(),
         treatments = treatments.len(),
         has_profiles = profiles.is_some(),
+        device_statuses = device_statuses.len(),
         "fetched graph data"
     );
 
@@ -98,17 +100,17 @@ pub async fn graph(
         return Ok(());
     }
 
-    // Extract targets, timezone, and unit preference from profile
-    let (target_low, target_high, user_tz, is_mmol) = profiles
+    // Extract targets, timezone, unit preference, and insulin duration from profile
+    let (target_low, target_high, user_tz, is_mmol, dia_hours) = profiles
         .as_ref()
         .and_then(|p| p.first())
         .and_then(|p| p.store.get(&p.default_profile_name))
         .map(|store| {
             let tz: Tz = store.timezone.parse().unwrap_or(chrono_tz::UTC);
             let (low_mg, high_mg, mmol) = resolve_profile_targets_mgdl(store);
-            (low_mg, high_mg, tz, mmol)
+            (low_mg, high_mg, tz, mmol, Some(store.dia))
         })
-        .unwrap_or((72.0, 180.0, chrono_tz::UTC, false));
+        .unwrap_or((72.0, 180.0, chrono_tz::UTC, false, None));
 
     tracing::debug!(tz = %user_tz, is_mmol, "resolved profile settings");
     crate::log_medical!(target_low, target_high, is_mmol, "graph target range");
@@ -149,6 +151,24 @@ pub async fn graph(
         None
     };
 
+    let entries: Vec<GraphEntry> = entries.into_iter().map(graph_data::graph_entry).collect();
+    let treatments: Vec<GraphTreatment> = treatments
+        .into_iter()
+        .filter_map(graph_data::graph_treatment)
+        .collect();
+
+    // IOB/COB mini graphs, only the ones with something on board in the window.
+    let (reported_iob, reported_cob) = graph_data::reported_on_board(&device_statuses);
+    let mini_graphs = graph_data::mini_graphs(
+        reported_iob,
+        reported_cob,
+        &treatments,
+        dia_hours,
+        graph_end_time - Duration::hours(duration_hours),
+        graph_end_time,
+    );
+    tracing::debug!(mini_graphs = mini_graphs.len(), "mini graphs resolved");
+
     let graph_image = tokio::task::spawn_blocking(move || {
         let layout = LayoutConfig {
             width: graph_width,
@@ -178,6 +198,7 @@ pub async fn graph(
             .with_timezone(user_tz)
             .add_entries(entries)
             .add_treatments(treatments)
+            .with_mini_graphs(mini_graphs)
             .with_time_axis(TimeAxisMode::EquallyDistributed { count: 6 })
             .with_fixed_duration(Duration::hours(duration_hours));
 

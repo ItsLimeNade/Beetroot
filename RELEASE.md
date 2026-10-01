@@ -20,6 +20,9 @@ v1.0.0-pre2 | ...one giant leap for diabetics
 - Added `/treatment-mode` to choose how carbs and insulin are drawn on `/graph` (Contextual or Timeline)
 - Added `/graph-stickers` to choose how many stickers appear on your graph (up to 30)
 - Added `/bg-sticker` to show a sticker reacting to your blood sugar on `/bg` instead of your profile picture
+- `/graph` now shows IOB and COB mini graphs under the glucose plot when there is insulin or carbs on board (from your loop's reported values, or worked out from your treatments)
+- The IOB and COB icons on `/bg` now sit after the text
+- Image-mode `/bg` now shows your reading and delta in both mg/dL and mmol/L
 - `/bg` cards now show a short, actionable hint (like "verify reading" or "monitor") instead of just restating your status
 - Stickers now appear only on `/graph`; the `/bg` card and `/tir` are kept clean
 - Added `/delete-account` to wipe all of your stored data
