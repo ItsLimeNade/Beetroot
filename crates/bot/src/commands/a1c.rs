@@ -28,7 +28,13 @@ pub async fn a1c(ctx: Context<'_>) -> Result<(), Error> {
     let ago = now - lookback;
     debug!(from = %ago, to = %now, "querying SGV window");
 
-    let result = client.sgv().get().limit(120_000).from(ago).send().await;
+    let result = client
+        .entries()
+        .sgv()
+        .list()
+        .limit(120_000)
+        .since(ago)
+        .await;
 
     let icon_bytes = tokio::fs::read("assets/images/nightscout_icon.png").await?;
     let icon_attachment = CreateAttachment::bytes(icon_bytes, "nightscout_icon.png");
@@ -48,79 +54,65 @@ pub async fn a1c(ctx: Context<'_>) -> Result<(), Error> {
         Ok(entries) if !entries.is_empty() => {
             debug!(
                 count = entries.len(),
-                newest = ?entries.first().and_then(|e| e.datetime()),
-                oldest = ?entries.last().and_then(|e| e.datetime()),
+                newest = ?entries.first().map(|e| e.date.to_datetime()),
+                oldest = ?entries.last().map(|e| e.date.to_datetime()),
                 "received SGV entries"
             );
 
             let tolerance = chrono::Duration::days(5);
-            let oldest_entry = entries.last().unwrap();
+            let oldest_utc = entries.last().unwrap().date.to_datetime();
+            let data_gap = oldest_utc - ago;
 
-            match oldest_entry.datetime() {
-                Some(oldest_utc) => {
-                    let data_gap = oldest_utc - ago;
+            debug!(
+                data_gap_days = data_gap.num_minutes() as f64 / 1440.0,
+                tolerance_days = tolerance.num_minutes() as f64 / 1440.0,
+                insufficient = data_gap > tolerance,
+                "evaluated data coverage"
+            );
 
-                    debug!(
-                        data_gap_days = data_gap.num_minutes() as f64 / 1440.0,
-                        tolerance_days = tolerance.num_minutes() as f64 / 1440.0,
-                        insufficient = data_gap > tolerance,
-                        "evaluated data coverage"
-                    );
-
-                    let has_warning = data_gap > tolerance;
-                    if has_warning {
-                        warn!(
-                            missing_days = data_gap.num_minutes() as f64 / 1440.0,
-                            "insufficient A1C data coverage, adding warning field"
-                        );
-                        embed = embed.field(
-                            format!("{} Incomplete Data", emojis::date_invalid()),
-                            format!(
-                                "Data only goes back {:.0} days instead of ~90. \
-                                 This estimate may be less accurate.",
-                                (now - oldest_utc).num_days()
-                            ),
-                            false,
-                        );
-                    }
-
-                    let eag = calc_eag(&entries);
-                    let a1c = calc_a1c(eag);
-
-                    debug!(count = entries.len(), has_warning, "computed A1C estimate");
-                    // eAG and A1C are the user's average glucose: medical data.
-                    crate::log_medical!(eag, a1c, "A1C estimate values");
-
-                    let color = if has_warning {
-                        Colour::from_rgb(235, 47, 47) // red - incomplete data
-                    } else {
-                        Colour::from_rgb(87, 189, 79) // green - full coverage
-                    };
-
-                    embed = embed
-                        .color(color)
-                        .field(
-                            format!("{} Data Range", emojis::date_valid()),
-                            format!(
-                                "<t:{}:D> → <t:{}:D>",
-                                oldest_utc.timestamp(),
-                                now.timestamp()
-                            ),
-                            false,
-                        )
-                        .field("Readings Used", format!("{}", entries.len()), true)
-                        .field("A1C Estimation", format!("{:.1}%", a1c), true);
-                }
-                None => {
-                    warn!(date = oldest_entry.date, "oldest entry has an out-of-range timestamp");
-                    send_error!(
-                        ctx,
-                        "Error Parsing Time",
-                        "There was an error while parsing the time for the last entry."
-                    );
-                    return Ok(());
-                }
+            let has_warning = data_gap > tolerance;
+            if has_warning {
+                warn!(
+                    missing_days = data_gap.num_minutes() as f64 / 1440.0,
+                    "insufficient A1C data coverage, adding warning field"
+                );
+                embed = embed.field(
+                    format!("{} Incomplete Data", emojis::date_invalid()),
+                    format!(
+                        "Data only goes back {:.0} days instead of ~90. \
+                         This estimate may be less accurate.",
+                        (now - oldest_utc).num_days()
+                    ),
+                    false,
+                );
             }
+
+            let eag = calc_eag(&entries);
+            let a1c = calc_a1c(eag);
+
+            debug!(count = entries.len(), has_warning, "computed A1C estimate");
+            // eAG and A1C are the user's average glucose: medical data.
+            crate::log_medical!(eag, a1c, "A1C estimate values");
+
+            let color = if has_warning {
+                Colour::from_rgb(235, 47, 47) // red - incomplete data
+            } else {
+                Colour::from_rgb(87, 189, 79) // green - full coverage
+            };
+
+            embed = embed
+                .color(color)
+                .field(
+                    format!("{} Data Range", emojis::date_valid()),
+                    format!(
+                        "<t:{}:D> → <t:{}:D>",
+                        oldest_utc.timestamp(),
+                        now.timestamp()
+                    ),
+                    false,
+                )
+                .field("Readings Used", format!("{}", entries.len()), true)
+                .field("A1C Estimation", format!("{:.1}%", a1c), true);
         }
         Ok(_) => {
             debug!("query returned 0 entries");
@@ -149,9 +141,9 @@ pub async fn a1c(ctx: Context<'_>) -> Result<(), Error> {
 /// Calculates the estimated average glucose of the given dataset.
 ///
 /// Returns f64 to avoid integer truncation in the A1C formula.
-fn calc_eag(entries: &[cinnamon::models::entries::SgvEntry]) -> f64 {
+fn calc_eag(entries: &[cinnamon::model::Sgv]) -> f64 {
     // Bug fix #5: sum as f64, divide as f64
-    entries.iter().map(|s| s.sgv as f64).sum::<f64>() / entries.len() as f64
+    entries.iter().map(|s| s.sgv.as_mgdl()).sum::<f64>() / entries.len() as f64
 }
 
 /// Calculates estimated A1C from estimated average glucose (eAG).

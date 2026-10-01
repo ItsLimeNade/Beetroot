@@ -140,8 +140,9 @@ macro_rules! verify_nightscout_connection {
             let check_result = match client_result {
                 Ok(client) => {
                     client
+                        .entries()
                         .sgv()
-                        .get()
+                        .list()
                         .limit(1)
                         .send()
                         .await

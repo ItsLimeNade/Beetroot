@@ -1,6 +1,5 @@
 use crate::data::{Context, Error};
 use crate::utils::emojis;
-use crate::utils::graph_data;
 use crate::utils::graph_render::{self, ProfileSettings};
 use crate::utils::search::{
     self, Extreme, Hit, Kind, MIN_EPISODE_MINUTES, Reading, Sort, find_episodes, sort_hits,
@@ -10,7 +9,6 @@ use beetroot_core::models::UserDecrypted;
 use bonbon::prelude::GraphTreatment;
 use chrono::{DateTime, Duration, Utc};
 use chrono_tz::Tz;
-use cinnamon::client::NightscoutClient;
 use futures::StreamExt;
 use macros::track_analytics;
 use poise::serenity_prelude::{self as serenity, ComponentInteractionDataKind};
@@ -400,14 +398,15 @@ async fn run(ctx: Context<'_>, request: Request) -> Result<(), Error> {
         "searching nightscout history"
     );
 
-    let profiles = client.profiles().get().await.ok();
-    let settings = ProfileSettings::from_profiles(profiles.as_deref());
+    let profile = client.profiles().current().await.ok().flatten();
+    let settings = ProfileSettings::from_profile(profile.as_ref());
 
     let found = if request.kind.is_episode() {
         let entries = match client
+            .entries()
             .sgv()
-            .get()
-            .from(start)
+            .list()
+            .since(start)
             .limit(ENTRY_LIMIT)
             .send()
             .await
@@ -440,11 +439,9 @@ async fn run(ctx: Context<'_>, request: Request) -> Result<(), Error> {
         let truncated = entries.len() >= ENTRY_LIMIT;
         let mut readings: Vec<Reading> = entries
             .iter()
-            .filter_map(|e| {
-                Some(Reading {
-                    date: DateTime::from_timestamp_millis(e.date)?,
-                    sgv: e.sgv as f32,
-                })
+            .map(|e| Reading {
+                date: e.date.to_datetime(),
+                sgv: e.sgv.as_mgdl() as f32,
             })
             .collect();
         readings.sort_by_key(|r| r.date);
@@ -460,8 +457,8 @@ async fn run(ctx: Context<'_>, request: Request) -> Result<(), Error> {
     } else {
         let treatments = match client
             .treatments()
-            .get()
-            .from(start)
+            .list()
+            .since(start)
             .limit(TREATMENT_LIMIT)
             .send()
             .await
@@ -482,7 +479,7 @@ async fn run(ctx: Context<'_>, request: Request) -> Result<(), Error> {
         let truncated = treatments.len() >= TREATMENT_LIMIT;
         let treatments: Vec<GraphTreatment> = treatments
             .into_iter()
-            .filter_map(graph_data::graph_treatment)
+            .filter_map(|t| GraphTreatment::try_from(t).ok())
             .collect();
 
         let mut found = find_treatments(&request, &treatments, &user_data);
@@ -765,7 +762,7 @@ fn find_treatments(
 /// to show the user.
 async fn render_hit(
     ctx: Context<'_>,
-    client: &NightscoutClient,
+    client: &cinnamon::Client,
     user_data: &UserDecrypted,
     session: &Session,
     index: usize,

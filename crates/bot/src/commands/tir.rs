@@ -1,6 +1,7 @@
 use crate::data::{Context, Error};
 use crate::utils::graph_render::ProfileSettings;
 use crate::utils::period::{self, Period};
+use crate::utils::render;
 use crate::utils::theme_assets;
 use bonbon::prelude::*;
 use chrono::Utc;
@@ -56,8 +57,8 @@ pub async fn tir(
     crate::tips::safe_defer_with(ctx, reply_ephemeral).await?;
 
     // The profile comes first: a named month starts at midnight in its timezone.
-    let profiles = client.profiles().get().await.ok();
-    let settings = ProfileSettings::from_profiles(profiles.as_deref());
+    let profile = client.profiles().current().await.ok().flatten();
+    let settings = ProfileSettings::from_profile(profile.as_ref());
     let (target_low, target_high, is_mmol) =
         (settings.target_low, settings.target_high, settings.is_mmol);
 
@@ -70,14 +71,14 @@ pub async fn tir(
     );
 
     let entries = match client
+        .entries()
         .sgv()
-        .get()
-        .from(start_time)
+        .list()
+        .since(start_time)
         // Nightscout returns the newest matches first, so a past month needs
         // its end bound or everything after it would crowd it out.
-        .to(end_time)
+        .until(end_time)
         .limit(120_000)
-        .send()
         .await
     {
         Ok(e) => {
@@ -124,11 +125,8 @@ pub async fn tir(
         "assets resolved, rendering image"
     );
 
-    let tir_image = tokio::task::spawn_blocking(move || {
-        let graph_entries: Vec<GraphEntry> = entries
-            .into_iter()
-            .map(crate::utils::graph_data::graph_entry)
-            .collect();
+    let tir_image = render::run_blocking(move || {
+        let graph_entries: Vec<GraphEntry> = entries.into_iter().map(GraphEntry::from).collect();
 
         let builder = TimeInRangeBuilder::new()
             .with_entries(graph_entries)
@@ -147,9 +145,9 @@ pub async fn tir(
 
         builder.build().map_err(|e| anyhow::anyhow!(e.to_string()))
     })
-    .await??;
+    .await?;
 
-    let img_buffer = tokio::task::spawn_blocking(move || {
+    let img_buffer = render::run_blocking(move || {
         let mut buffer = Vec::with_capacity(120_000);
         let encoder = image::codecs::png::PngEncoder::new_with_quality(
             &mut buffer,
@@ -165,7 +163,7 @@ pub async fn tir(
         )?;
         Ok::<Vec<u8>, anyhow::Error>(buffer)
     })
-    .await??;
+    .await?;
 
     let attachment = CreateAttachment::bytes(img_buffer, "tir.png");
 

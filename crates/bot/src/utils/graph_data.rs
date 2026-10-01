@@ -1,9 +1,5 @@
-use bonbon::prelude::{GraphEntry, GraphTreatment, MiniGraph, OnBoard, SeriesPoint};
+use bonbon::prelude::{GraphTreatment, MiniGraph, OnBoard, SeriesPoint};
 use chrono::{DateTime, Duration, Utc};
-use cinnamon::models::devicestatus::DeviceStatus;
-use cinnamon::models::entries::SgvEntry;
-use cinnamon::models::treatments::Treatment;
-use serde_json::Value;
 
 /// How far before the graph's start treatments are fetched, so doses and meals
 /// given earlier still count toward what is on board when the graph begins.
@@ -23,109 +19,6 @@ const CARB_ABSORPTION_HOURS: i64 = 3;
 /// on board. Below these the value would read as zero on the graph.
 const MIN_REPORTED_IOB: f32 = 0.05;
 const MIN_REPORTED_COB: f32 = 0.5;
-
-pub fn graph_entry(entry: SgvEntry) -> GraphEntry {
-    GraphEntry {
-        sgv: entry.sgv as f32,
-        date: DateTime::from_timestamp_millis(entry.date).unwrap_or_else(Utc::now),
-    }
-}
-
-/// `None` when the treatment has no readable timestamp, so it cannot be placed
-/// on a graph.
-pub fn graph_treatment(t: Treatment) -> Option<GraphTreatment> {
-    let date = DateTime::parse_from_rfc3339(&t.created_at)
-        .ok()?
-        .with_timezone(&Utc);
-    // `glucose` is stored in the treatment's own units.
-    let is_mmol = t
-        .units
-        .as_deref()
-        .is_some_and(|u| u.trim().to_ascii_lowercase().starts_with("mmol"));
-
-    Some(GraphTreatment {
-        insulin: t.insulin.map(|v| v as f32),
-        carbs: t.carbs.map(|v| v as f32),
-        mbg: t.glucose.map(|v| if is_mmol { v * 18.0 } else { v } as f32),
-        date,
-        is_isf: false,
-    })
-}
-
-/// Splits Nightscout device statuses into the insulin on board and carbs on
-/// board an AID system reported, as `(iob, cob)`.
-///
-/// Reads the `openaps` block (AAPS, Trio, OpenAPS) and the `loop` block
-/// (Loop). Statuses without a readable date or without a value are skipped.
-pub fn reported_on_board(statuses: &[DeviceStatus]) -> (Vec<SeriesPoint>, Vec<SeriesPoint>) {
-    let mut iob = Vec::new();
-    let mut cob = Vec::new();
-    for status in statuses {
-        let Some(date) = status_time(status) else {
-            continue;
-        };
-        let openaps = status.openaps.as_ref();
-        let suggested = openaps.and_then(|o| o.get("suggested"));
-        let enacted = openaps.and_then(|o| o.get("enacted"));
-        // cinnamon's `loop_` field is not renamed, so the `loop` block lands
-        // in the flattened extras.
-        let loop_ = status.extra.get("loop").or(status.loop_.as_ref());
-
-        // oref0 uploads `iob` as a list of forecasts, the current one first.
-        let iob_value = openaps
-            .and_then(|o| o.get("iob"))
-            .and_then(|iob| match iob {
-                Value::Array(forecasts) => forecasts.first(),
-                other => Some(other),
-            })
-            .and_then(|iob| number(iob, "iob"))
-            .or_else(|| suggested.and_then(|s| number(s, "IOB")))
-            .or_else(|| {
-                loop_
-                    .and_then(|l| l.get("iob"))
-                    .and_then(|v| number(v, "iob"))
-            });
-        let cob_value = suggested
-            .and_then(|s| number(s, "COB"))
-            .or_else(|| enacted.and_then(|e| number(e, "COB")))
-            .or_else(|| {
-                loop_
-                    .and_then(|l| l.get("cob"))
-                    .and_then(|v| number(v, "cob"))
-            });
-
-        if let Some(value) = iob_value {
-            iob.push(SeriesPoint {
-                value: value as f32,
-                date,
-            });
-        }
-        if let Some(value) = cob_value {
-            cob.push(SeriesPoint {
-                value: value as f32,
-                date,
-            });
-        }
-    }
-    (iob, cob)
-}
-
-fn number(value: &Value, key: &str) -> Option<f64> {
-    value.get(key).and_then(Value::as_f64)
-}
-
-fn status_time(status: &DeviceStatus) -> Option<DateTime<Utc>> {
-    DateTime::parse_from_rfc3339(&status.created_at)
-        .ok()
-        .map(|d| d.with_timezone(&Utc))
-        .or_else(|| {
-            status
-                .extra
-                .get("mills")
-                .and_then(Value::as_i64)
-                .and_then(DateTime::from_timestamp_millis)
-        })
-}
 
 /// The mini graphs worth drawing under a glucose graph spanning `start` to
 /// `end`: IOB and/or COB, each only when there is something on board at some
@@ -264,14 +157,9 @@ fn on_board_series(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
 
     fn at(minutes: i64) -> DateTime<Utc> {
         DateTime::from_timestamp(1_800_000_000, 0).unwrap() + Duration::minutes(minutes)
-    }
-
-    fn status(value: Value) -> DeviceStatus {
-        serde_json::from_value(value).unwrap()
     }
 
     fn treatment(minutes: i64, insulin: Option<f32>, carbs: Option<f32>) -> GraphTreatment {
@@ -306,37 +194,6 @@ mod tests {
                 _ => "other",
             })
             .collect()
-    }
-
-    #[test]
-    fn reads_reported_on_board_from_every_uploader() {
-        let statuses = [
-            // AAPS / Trio: `iob` is an object, COB sits in `suggested`.
-            status(json!({
-                "created_at": "2026-01-01T10:00:00Z",
-                "openaps": { "iob": { "iob": 1.25 }, "suggested": { "COB": 20 } }
-            })),
-            // oref0: `iob` is a list of forecasts, COB only in `enacted`.
-            status(json!({
-                "created_at": "2026-01-01T10:05:00Z",
-                "openaps": { "iob": [{ "iob": -0.4 }, { "iob": -0.3 }], "enacted": { "COB": 0 } }
-            })),
-            // Loop.
-            status(json!({
-                "created_at": "2026-01-01T10:10:00Z",
-                "loop": { "iob": { "iob": 2.5 }, "cob": { "cob": 12.0 } }
-            })),
-            // Unreadable date, pump-only status: both skipped.
-            status(json!({ "created_at": "yesterday", "loop": { "iob": { "iob": 9.0 } } })),
-            status(json!({ "created_at": "2026-01-01T10:15:00Z", "pump": { "reservoir": 80 } })),
-        ];
-
-        let (iob, cob) = reported_on_board(&statuses);
-        let values = |points: &[SeriesPoint]| points.iter().map(|p| p.value).collect::<Vec<_>>();
-
-        assert_eq!(values(&iob), vec![1.25, -0.4, 2.5]);
-        assert_eq!(values(&cob), vec![20.0, 0.0, 12.0]);
-        assert_eq!(iob[2].date.to_rfc3339(), "2026-01-01T10:10:00+00:00");
     }
 
     #[test]
@@ -456,18 +313,5 @@ mod tests {
         assert!((value_at(60) - (2.0 + 0.4)).abs() < 1e-4);
         // The bolus has worn off; the microbolus is two hours in.
         assert!((value_at(180) - 0.2).abs() < 1e-4);
-    }
-
-    #[test]
-    fn converts_treatment_glucose_to_mgdl() {
-        let t: Treatment = serde_json::from_value(json!({
-            "eventType": "BG Check",
-            "created_at": "2026-01-01T10:00:00Z",
-            "glucose": 5.5,
-            "units": "mmol"
-        }))
-        .unwrap();
-        let converted = graph_treatment(t).unwrap();
-        assert_eq!(converted.mbg, Some(99.0));
     }
 }

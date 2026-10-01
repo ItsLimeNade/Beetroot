@@ -1,6 +1,7 @@
 use crate::data::Error;
 use crate::utils::denoise::{self, Strength};
 use crate::utils::graph_data;
+use crate::utils::render;
 use crate::utils::sticker_assets;
 use crate::utils::targets::resolve_profile_targets_mgdl;
 use crate::utils::theme_assets;
@@ -9,12 +10,7 @@ use beetroot_core::models::UserDecrypted;
 use bonbon::prelude::*;
 use chrono::{DateTime, Duration, Utc};
 use chrono_tz::Tz;
-use cinnamon::client::NightscoutClient;
-use cinnamon::error::NightscoutError;
-use cinnamon::models::devicestatus::DeviceStatus;
-use cinnamon::models::entries::SgvEntry;
-use cinnamon::models::profile::ProfileSet;
-use cinnamon::models::treatments::Treatment;
+use cinnamon::model::{DeviceStatus, ProfileStore, Sgv, Treatment};
 use image::ImageEncoder;
 
 /// What a graph needs from the data owner's Nightscout profile.
@@ -32,18 +28,21 @@ pub struct ProfileSettings {
 impl ProfileSettings {
     /// Reads the default profile, falling back to 72-180 mg/dL in UTC when
     /// there is none.
-    pub fn from_profiles(profiles: Option<&[ProfileSet]>) -> Self {
-        profiles
-            .and_then(|p| p.first())
-            .and_then(|p| p.store.get(&p.default_profile_name))
+    pub fn from_profile(profile: Option<&ProfileStore>) -> Self {
+        profile
+            .and_then(|p| p.default_entry())
             .map(|store| {
                 let (target_low, target_high, is_mmol) = resolve_profile_targets_mgdl(store);
                 Self {
                     target_low,
                     target_high,
-                    timezone: store.timezone.parse().unwrap_or(chrono_tz::UTC),
+                    timezone: store
+                        .timezone
+                        .as_deref()
+                        .and_then(|tz| tz.parse().ok())
+                        .unwrap_or(chrono_tz::UTC),
                     is_mmol,
-                    dia_hours: Some(store.dia),
+                    dia_hours: store.dia,
                 }
             })
             .unwrap_or(Self {
@@ -58,7 +57,7 @@ impl ProfileSettings {
 
 /// Everything Nightscout holds for one graph's time window.
 pub struct WindowData {
-    pub entries: Vec<SgvEntry>,
+    pub entries: Vec<Sgv>,
     pub treatments: Vec<Treatment>,
     pub device_statuses: Vec<DeviceStatus>,
 }
@@ -70,25 +69,32 @@ pub struct WindowData {
 /// toward IOB/COB. Only failing to fetch entries is an error; treatments and
 /// device statuses fail gracefully (empty).
 pub async fn fetch_window(
-    client: &NightscoutClient,
+    client: &cinnamon::Client,
     start: DateTime<Utc>,
     end: DateTime<Utc>,
-) -> Result<WindowData, NightscoutError> {
+) -> Result<WindowData, cinnamon::Error> {
     // Nightscout returns the newest matches first, so without an upper bound a
     // window far in the past would be crowded out by everything after it.
-    let entries_fut = client.sgv().get().from(start).to(end).limit(5000).send();
+    let entries_fut = client
+        .entries()
+        .sgv()
+        .list()
+        .since(start)
+        .until(end)
+        .limit(5000)
+        .send();
     let treatments_fut = client
         .treatments()
-        .get()
-        .from(start - Duration::hours(graph_data::ON_BOARD_LOOKBACK_HOURS))
-        .to(end)
+        .list()
+        .since(start - Duration::hours(graph_data::ON_BOARD_LOOKBACK_HOURS))
+        .until(end)
         .limit(5000)
         .send();
     let device_statuses_fut = client
         .devicestatus()
-        .get()
-        .from(start)
-        .to(end)
+        .list()
+        .since(start)
+        .until(end)
         .limit(2000)
         .send();
 
@@ -128,9 +134,6 @@ pub async fn render_png(
     let owner_id = user_data.discord_id;
     let theme =
         theme_assets::resolve_user_theme(db, owner_id, user_data.active_theme.as_deref()).await;
-    let user_stickers = db.get_all_user_stickers(owner_id).await?;
-    let bonbon_stickers = sticker_assets::load_bonbon_stickers(&user_stickers).await;
-
     // The data owner's graph preferences.
     let treatment_mode = if user_data.treatment_mode == "timeline" {
         TreatmentDisplayMode::Timeline
@@ -141,17 +144,22 @@ pub async fn render_png(
         .graph_sticker_count
         .clamp(0, crate::commands::graph_stickers::MAX_GRAPH_STICKERS)
         as usize;
+
+    // Stickers are downloaded on every render, so skip that entirely when the
+    // owner has turned them off.
+    let bonbon_stickers = if sticker_count > 0 {
+        let user_stickers = db.get_all_user_stickers(owner_id).await?;
+        sticker_assets::load_bonbon_stickers(&user_stickers).await
+    } else {
+        Vec::new()
+    };
     tracing::debug!(
         unique_stickers = bonbon_stickers.len(),
         sticker_count,
         "graph assets and prefs resolved"
     );
 
-    let entries: Vec<GraphEntry> = data
-        .entries
-        .into_iter()
-        .map(graph_data::graph_entry)
-        .collect();
+    let entries: Vec<GraphEntry> = data.entries.into_iter().map(GraphEntry::from).collect();
     // The data owner's smoothing preference.
     let entries = match Strength::from_level(user_data.graph_denoise) {
         Some(strength) => denoise::denoise(entries, strength),
@@ -160,11 +168,11 @@ pub async fn render_png(
     let treatments: Vec<GraphTreatment> = data
         .treatments
         .into_iter()
-        .filter_map(graph_data::graph_treatment)
+        .filter_map(|t| GraphTreatment::try_from(t).ok())
         .collect();
 
     // IOB/COB mini graphs, only the ones with something on board in the window.
-    let (reported_iob, reported_cob) = graph_data::reported_on_board(&data.device_statuses);
+    let (reported_iob, reported_cob) = on_board_from_device_statuses(&data.device_statuses);
     let mut mini_graphs = graph_data::mini_graphs(
         reported_iob,
         reported_cob,
@@ -193,7 +201,7 @@ pub async fn render_png(
     let graph_width: u32 = 1275 * 2;
     let graph_height: u32 = 825 * 2;
 
-    let graph_image = tokio::task::spawn_blocking(move || {
+    let graph_image = render::run_blocking(move || {
         let layout = LayoutConfig {
             width: graph_width,
             height: graph_height,
@@ -241,9 +249,9 @@ pub async fn render_png(
 
         builder.build().map_err(|e| anyhow::anyhow!(e.to_string()))
     })
-    .await??;
+    .await?;
 
-    let img_buffer = tokio::task::spawn_blocking(move || {
+    let img_buffer = render::run_blocking(move || {
         let mut buffer = Vec::with_capacity(200_000);
         let encoder = image::codecs::png::PngEncoder::new_with_quality(
             &mut buffer,
@@ -259,7 +267,7 @@ pub async fn render_png(
         )?;
         Ok::<Vec<u8>, anyhow::Error>(buffer)
     })
-    .await??;
+    .await?;
 
     Ok(img_buffer)
 }

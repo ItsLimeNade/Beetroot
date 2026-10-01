@@ -77,7 +77,7 @@ pub async fn graph(
     let profiles_service = client.profiles();
     let (window_res, profiles_res) = tokio::join!(
         graph_render::fetch_window(&client, start_time, graph_end_time),
-        profiles_service.get()
+        profiles_service.current()
     );
 
     let data = match window_res {
@@ -92,17 +92,17 @@ pub async fn graph(
             return Ok(());
         }
     };
-    let profiles = match profiles_res {
-        Ok(p) => Some(p),
+    let profile = match profiles_res {
+        Ok(p) => p,
         Err(e) => {
-            tracing::warn!("Failed to fetch profiles: {}", e);
+            tracing::warn!("Failed to fetch profile: {}", e);
             None
         }
     };
     tracing::debug!(
         entries = data.entries.len(),
         treatments = data.treatments.len(),
-        has_profiles = profiles.is_some(),
+        has_profile = profile.is_some(),
         device_statuses = data.device_statuses.len(),
         "fetched graph data"
     );
@@ -118,7 +118,7 @@ pub async fn graph(
     }
 
     // Targets, timezone, unit preference, and insulin duration from the profile
-    let settings = ProfileSettings::from_profiles(profiles.as_deref());
+    let settings = ProfileSettings::from_profile(profile.as_ref());
 
     tracing::debug!(tz = %settings.timezone, is_mmol = settings.is_mmol, "resolved profile settings");
     crate::log_medical!(
