@@ -27,6 +27,7 @@ v1.0.0-pre2 | ...one giant leap for diabetics
 - `/theme` now suggests theme names as you type instead of making you remember them
 - Added `/denoise` to smooth sensor jitter out of the readings on your graphs, with Light, Medium and Strong settings (off by default; `/bg`, `/tir` and `/search` still use raw readings)
 - Graphs now always leave at least 20 mg/dL of space above the highest reading, so the peak no longer touches the top of the plot
+- Less than 1 g of carbs on board now counts as none: `/bg` no longer shows `COB 0g`, and graphs skip the COB mini graph
 - Added `/search` to look through your Nightscout history (`lows`, `highs`, `in-range`, `carbs`, `insulin`), sort the results (lowest, highest, longest, shortest, most recent...) and open any of them on a graph centered on that moment
 - `/bg` cards now show a short, actionable hint (like "verify reading" or "monitor") instead of just restating your status
 - Stickers now appear only on `/graph`; the `/bg` card and `/tir` are kept clean

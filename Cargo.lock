@@ -414,9 +414,9 @@ dependencies = [
 
 [[package]]
 name = "bonbon"
-version = "0.7.0"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "621401b10f1130e1e51f267a383c30b78d3986360f2d895b9b43197307dee024"
+checksum = "7d11b9472704fdcc1cfba288d86468b2fd2439549542a41d22a541a7ef6308f2"
 dependencies = [
  "ab_glyph",
  "chrono",

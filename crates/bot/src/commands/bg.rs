@@ -15,6 +15,10 @@ use macros::track_analytics;
 use poise::serenity_prelude as serenity;
 use serenity::all::{Colour, CreateAttachment, CreateEmbed, CreateEmbedFooter};
 
+/// Less than a gram of carbs is the tail of an absorption model, not
+/// something on board: it counts as zero and is not shown.
+const MIN_COB_GRAMS: f64 = 1.0;
+
 #[poise::command(
     slash_command,
     install_context = "Guild|User",
@@ -179,7 +183,7 @@ pub async fn bg(
                 .cob
                 .as_ref()
                 .and_then(|c| c.cob)
-                .filter(|cob| *cob > 0.0)
+                .filter(|cob| *cob >= MIN_COB_GRAMS)
                 .map(|cob| format!("COB {:.0}g", cob))
         });
 
@@ -502,7 +506,7 @@ pub async fn bg(
             );
         }
         if let Some(cob) = props.cob.and_then(|c| c.cob)
-            && cob > 0.0
+            && cob >= MIN_COB_GRAMS
         {
             embed = embed.field(
                 format!("COB {}", emojis::carbs()),

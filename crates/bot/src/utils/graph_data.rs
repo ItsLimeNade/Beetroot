@@ -16,9 +16,10 @@ const DEFAULT_DIA_HOURS: f64 = 4.0;
 const CARB_ABSORPTION_HOURS: i64 = 3;
 
 /// Smallest reported IOB (units) and COB (grams) that count as something being
-/// on board. Below these the value would read as zero on the graph.
+/// on board. Below these the value would read as zero on the graph (bonbon
+/// draws less than a gram of carbs as none).
 const MIN_REPORTED_IOB: f32 = 0.05;
-const MIN_REPORTED_COB: f32 = 0.5;
+const MIN_REPORTED_COB: f32 = 1.0;
 
 /// The glucose range a graph shows when the readings fit inside it, and the
 /// widest it normally stretches to, in mg/dL.
