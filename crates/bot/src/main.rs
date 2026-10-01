@@ -68,6 +68,7 @@ async fn main() -> anyhow::Result<()> {
             commands::treatment_mode::treatment_mode(),
             commands::graph_stickers::graph_stickers(),
             commands::bg_sticker::bg_sticker(),
+            commands::denoise::denoise(),
             commands::url::url(),
             commands::token::token(),
             commands::telemetry::telemetry(),

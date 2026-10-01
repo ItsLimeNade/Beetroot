@@ -8,6 +8,7 @@ pub mod block;
 pub mod changelog;
 pub mod convert;
 pub mod delete_account;
+pub mod denoise;
 pub mod ephemeral;
 pub mod fingerprick_expiry;
 pub mod graph;

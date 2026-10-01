@@ -1,4 +1,5 @@
 use crate::data::Error;
+use crate::utils::denoise::{self, Strength};
 use crate::utils::graph_data;
 use crate::utils::sticker_assets;
 use crate::utils::targets::resolve_profile_targets_mgdl;
@@ -151,6 +152,11 @@ pub async fn render_png(
         .into_iter()
         .map(graph_data::graph_entry)
         .collect();
+    // The data owner's smoothing preference.
+    let entries = match Strength::from_level(user_data.graph_denoise) {
+        Some(strength) => denoise::denoise(entries, strength),
+        None => entries,
+    };
     let treatments: Vec<GraphTreatment> = data
         .treatments
         .into_iter()

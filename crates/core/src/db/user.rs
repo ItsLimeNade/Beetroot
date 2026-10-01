@@ -45,6 +45,7 @@ impl User {
             graph_sticker_count: self
                 .graph_sticker_count
                 .unwrap_or(DEFAULT_GRAPH_STICKER_COUNT),
+            graph_denoise: self.graph_denoise.unwrap_or(0),
             telemetry_accepted: self.telemetry_accepted,
         })
     }
@@ -234,6 +235,17 @@ impl Database {
         let id = discord_id as i64;
         sqlx::query("UPDATE users SET graph_sticker_count = ? WHERE discord_id = ?")
             .bind(count)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// Set how strongly graphs smooth glucose readings (0 = off, up to 3).
+    pub async fn set_graph_denoise(&self, discord_id: u64, level: i64) -> CoreResult<()> {
+        let id = discord_id as i64;
+        sqlx::query("UPDATE users SET graph_denoise = ? WHERE discord_id = ?")
+            .bind(level)
             .bind(id)
             .execute(&self.pool)
             .await?;

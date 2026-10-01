@@ -60,6 +60,10 @@ pub const TIPS: &[Tip] = &[
         text: "Use `/bg-sticker` to swap your profile picture on `/bg` for a sticker that reacts to your blood sugar.",
     },
     Tip {
+        id: "denoise",
+        text: "Use `/denoise` to smooth sensor jitter out of your graphs.",
+    },
+    Tip {
         id: "search",
         text: "Use `/search` to find your lows, highs, meals and more, then open any of them on a graph.",
     },
