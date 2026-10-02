@@ -42,6 +42,10 @@ v1.0.0-pre2 | ...one giant leap for diabetics
 ### Fixes
 - `/microbolus` settings now actually apply to graphs: doses up to your threshold are drawn as small unlabelled ticks, and turning the display off hides them (they still count toward IOB)
 - `/graph` with a far-back `at` (more than a couple of weeks) no longer comes back empty: the request is now bounded to the graph's window
+- `/bg` with `at` now shows the right delta (it could come out with the wrong sign) and no longer marks the reading as outdated just because you looked back in time
+- Image-mode `/bg` now shows the time in your Nightscout profile's timezone instead of UTC, and with `at` it shows the time you looked back to
+- `/bg` in embed mode now reads your target range the same way as the graphs, so a profile with missing or odd targets falls back to 72-180 mg/dL
+- Added a short per-user cooldown to `/bg`
 - Token encryption now fails closed instead of falling back to a public hard-coded key, so a leaked database can no longer be decrypted with the source code. `ENCRYPTION_SALT` was renamed to `ENCRYPTION_KEY` (existing values still work)
 - Added SSRF protection to Nightscout and sticker fetching: private, loopback and cloud-metadata addresses are blocked, redirects are re-checked, and outbound requests now have timeouts
 - Stopped dumping glucose, treatments and profiles to the logs. The new logging system never records medical data or Discord IDs unless you opt in with `LOG_SENSITIVE=true`

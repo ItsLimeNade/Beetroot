@@ -1,14 +1,15 @@
 use crate::data::{Context, Error};
 use crate::utils::duration_parser::parse_ago_duration;
 use crate::utils::emojis;
+use crate::utils::graph_render::ProfileSettings;
 use crate::utils::render;
 use crate::utils::sticker_assets;
-use crate::utils::targets::resolve_profile_targets_mgdl;
 use crate::utils::theme_assets;
 use beetroot_core::models::StickerCategory;
 use bonbon::prelude::*;
+use chrono::{DateTime, Duration, Utc};
 use cinnamon::model::properties::Property;
-use cinnamon::model::{Direction, EventType, Glucose, Units};
+use cinnamon::model::{Direction, EventType, Glucose, Sgv, Units};
 use image::codecs::png::{CompressionType, FilterType, PngEncoder};
 use image::{ExtendedColorType, ImageEncoder};
 use macros::track_analytics;
@@ -19,10 +20,22 @@ use serenity::all::{Colour, CreateAttachment, CreateEmbed, CreateEmbedFooter};
 /// something on board: it counts as zero and is not shown.
 const MIN_COB_GRAMS: f64 = 1.0;
 
+/// How far from the moment asked for with `at` a reading may be and still
+/// stand for it.
+const LOOKBACK_WINDOW_MINUTES: i64 = 10;
+
+/// How much further back than that window the search reaches, so the closest
+/// reading still has the one before it to measure its delta against.
+const PREVIOUS_READING_MINUTES: i64 = 15;
+
+/// A reading older than this is flagged as outdated.
+const STALE_MINUTES: i64 = 15;
+
 #[poise::command(
     slash_command,
     install_context = "Guild|User",
-    interaction_context = "Guild|BotDm|PrivateChannel"
+    interaction_context = "Guild|BotDm|PrivateChannel",
+    user_cooldown = 3
 )]
 #[track_analytics("bg")]
 /// Checks your current blood glucose, IOB and COB.
@@ -69,18 +82,19 @@ pub async fn bg(
 
     crate::tips::safe_defer_with(ctx, reply_ephemeral).await?;
 
-    let now = chrono::Utc::now();
+    let now = Utc::now();
+    // The moment the reading is for: the one asked for with `at`, or now.
+    let reference = lookback.map_or(now, |ago| now - ago);
 
     if user_data.bg_image_mode {
-        let sparkline_entries = if let Some(ago) = lookback {
-            let target_time = now - ago;
-            let window_start = target_time - chrono::Duration::hours(3);
+        let sparkline_entries = if lookback.is_some() {
+            let window_start = reference - Duration::hours(3);
             match client
                 .entries()
                 .sgv()
                 .list()
                 .since(window_start)
-                .until(target_time + chrono::Duration::minutes(5))
+                .until(reference + Duration::minutes(5))
                 .limit(50)
                 .await
             {
@@ -135,12 +149,10 @@ pub async fn bg(
             "bg/image raw data dump"
         );
 
-        let (target_low, target_high, is_mmol) = profile_result
-            .as_ref()
-            .ok()
-            .and_then(|profile| profile.as_ref()?.default_entry())
-            .map(resolve_profile_targets_mgdl)
-            .unwrap_or((72.0, 180.0, false));
+        let settings =
+            ProfileSettings::from_profile(profile_result.as_ref().ok().and_then(Option::as_ref));
+        let (target_low, target_high, is_mmol) =
+            (settings.target_low, settings.target_high, settings.is_mmol);
 
         let mut sorted = sparkline_entries;
         sorted.sort_by_key(|e| e.date);
@@ -156,6 +168,11 @@ pub async fn bg(
         let delta = prev.map(|p| (entry.sgv.as_mgdl() - p.sgv.as_mgdl()) as f32);
 
         let duration = now.signed_duration_since(entry.date.to_datetime());
+        // With `at`, a reading is only outdated if it is from well before the
+        // moment asked for.
+        let stale_minutes = reference
+            .signed_duration_since(entry.date.to_datetime())
+            .num_minutes();
         let age_str = if duration.num_minutes() < 60 {
             format!("{} min ago", duration.num_minutes())
         } else {
@@ -218,12 +235,7 @@ pub async fn bg(
             (dt_min > 0.0).then_some(rise / dt_min)
         });
 
-        let info_pill = pick_info_pill(
-            sgv_mgdl,
-            current_status,
-            current_rate,
-            duration.num_minutes(),
-        );
+        let info_pill = pick_info_pill(sgv_mgdl, current_status, current_rate, stale_minutes);
 
         let data = BgCardData {
             current_sgv: sgv_mgdl,
@@ -231,7 +243,10 @@ pub async fn bg(
             trend_arrow: trend_arrow(entry.direction.as_ref()).to_string(),
             delta,
             age_str,
-            time_str: now.format("%H:%M").to_string(),
+            time_str: reference
+                .with_timezone(&settings.timezone)
+                .format("%H:%M")
+                .to_string(),
             watermark_str: custom_title
                 .filter(|t| !t.trim().is_empty())
                 .unwrap_or_else(|| format!("{}'s Nightscout", target_user.name)),
@@ -291,28 +306,21 @@ pub async fn bg(
         return Ok(());
     }
 
-    let entries = if let Some(ago) = lookback {
-        let target_time = now - ago;
-        let window = chrono::Duration::minutes(10);
+    // The reading shown, then the one before it when there is one.
+    let entries = if lookback.is_some() {
+        let window = Duration::minutes(LOOKBACK_WINDOW_MINUTES);
 
         let result = client
             .entries()
             .sgv()
             .list()
-            .since(target_time - window)
-            .until(target_time + window)
+            .since(reference - window - Duration::minutes(PREVIOUS_READING_MINUTES))
+            .until(reference + window)
             .limit(50)
             .await;
 
-        match result {
-            Ok(mut e) if !e.is_empty() => {
-                e.sort_by_key(|entry| {
-                    (entry.date.to_datetime() - target_time)
-                        .num_seconds()
-                        .unsigned_abs()
-                });
-                e
-            }
+        match result.map(|found| closest_with_previous(found, reference, window)) {
+            Ok(e) if !e.is_empty() => e,
             _ => {
                 send_error!(
                     ctx,
@@ -373,22 +381,9 @@ pub async fn bg(
         0.0
     };
 
-    let default_profile = profile_result
-        .as_ref()
-        .ok()
-        .and_then(|profile| profile.as_ref()?.default_entry());
-    let (target_low, target_high) = if let Some(store) = default_profile {
-        let low = store.target_low.first().map(|x| x.value).unwrap_or(4.0);
-        let high = store.target_high.first().map(|x| x.value).unwrap_or(10.0);
-        let is_mmol = store.units() == Some(Units::MmolL);
-        if is_mmol {
-            (low * 18.0, high * 18.0)
-        } else {
-            (low, high)
-        }
-    } else {
-        (72.0, 180.0)
-    };
+    let settings =
+        ProfileSettings::from_profile(profile_result.as_ref().ok().and_then(Option::as_ref));
+    let (target_low, target_high) = (settings.target_low as f64, settings.target_high as f64);
 
     let duration = now.signed_duration_since(entry.date.to_datetime());
 
@@ -453,7 +448,12 @@ pub async fn bg(
         embed = embed.thumbnail(thumbnail_url);
     }
 
-    let is_data_old = duration.num_minutes() > 15;
+    // With `at`, a reading is only outdated if it is from well before the
+    // moment asked for.
+    let stale_minutes = reference
+        .signed_duration_since(entry.date.to_datetime())
+        .num_minutes();
+    let is_data_old = stale_minutes > STALE_MINUTES;
     if is_data_old {
         embed = embed.field(
             format!(
@@ -461,7 +461,7 @@ pub async fn bg(
                 emojis::date_invalid(),
                 emojis::date_invalid()
             ),
-            format!("Data is {}min old!", duration.num_minutes()),
+            format!("Data is {stale_minutes}min old!"),
             false,
         );
     }
@@ -470,7 +470,7 @@ pub async fn bg(
     let mmol_val = sgv_mgdl / 18.0;
     let delta_mmol = delta / 18.0;
 
-    let delta_str = format!("{:+}", delta);
+    let delta_str = format!("{:+.0}", delta);
     let delta_mmol_str = format!("{:.1}", delta_mmol);
     let delta_mmol_formatted = if delta > 0.0 {
         format!("+{}", delta_mmol_str)
@@ -480,12 +480,12 @@ pub async fn bg(
 
     let (mgdl_field, mmol_field) = if is_data_old {
         (
-            format!("~~{} ({})~~", sgv_val, delta_str),
+            format!("~~{:.0} ({})~~", sgv_val, delta_str),
             format!("~~{:.1} ({})~~", mmol_val, delta_mmol_formatted),
         )
     } else {
         (
-            format!("{} ({})", sgv_val, delta_str),
+            format!("{:.0} ({})", sgv_val, delta_str),
             format!("{:.1} ({})", mmol_val, delta_mmol_formatted),
         )
     };
@@ -518,7 +518,7 @@ pub async fn bg(
 
     if lookback.is_none() {
         let expiry_mins = user_data.mbg_expiry_time;
-        let since = now - chrono::Duration::minutes(expiry_mins);
+        let since = now - Duration::minutes(expiry_mins);
 
         let mbg = client.entries().mbg();
         let (mbg_res, bgcheck_res) = tokio::join!(
@@ -593,6 +593,32 @@ pub async fn bg(
     Ok(())
 }
 
+/// The reading closest to `target`, then the one just before it when there is
+/// one. Empty when no reading is within `window` of `target`.
+fn closest_with_previous(
+    mut entries: Vec<Sgv>,
+    target: DateTime<Utc>,
+    window: Duration,
+) -> Vec<Sgv> {
+    entries.sort_by_key(|entry| entry.date);
+
+    let distance = |entry: &Sgv| (entry.date.to_datetime() - target).abs();
+    let closest = entries
+        .iter()
+        .enumerate()
+        .filter(|(_, entry)| distance(entry) <= window)
+        .min_by_key(|(_, entry)| distance(entry))
+        .map(|(index, _)| index);
+
+    match closest {
+        Some(index) => entries
+            .drain(index.saturating_sub(1)..=index)
+            .rev()
+            .collect(),
+        None => Vec::new(),
+    }
+}
+
 /// The site's custom title from its status, if it could be fetched.
 fn custom_title(status: cinnamon::Result<cinnamon::model::system::Status>) -> Option<String> {
     status.ok()?.settings?.custom_title
@@ -650,7 +676,7 @@ fn pick_info_pill(
             PillState::AlertHigh,
         ));
     }
-    if age_min > 15 {
+    if age_min > STALE_MINUTES {
         return Some(make(
             builtin_icons::WARNING,
             "Reading may be outdated",
@@ -709,5 +735,52 @@ fn pick_info_pill(
             PillState::AlertHigh,
         )),
         GlucoseStatus::InRange => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::TimeZone;
+
+    fn at(minute: u32) -> DateTime<Utc> {
+        Utc.with_ymd_and_hms(2026, 10, 2, 12, minute, 0).unwrap()
+    }
+
+    fn reading(mgdl: f64, minute: u32) -> Sgv {
+        Sgv::new(Glucose::new(mgdl, Units::default()), at(minute))
+    }
+
+    fn values(entries: &[Sgv]) -> Vec<f64> {
+        entries.iter().map(|e| e.sgv.as_mgdl()).collect()
+    }
+
+    #[test]
+    fn the_previous_reading_is_the_one_before_not_the_next_closest() {
+        // Nightscout order: newest first. The reading at :31 is closest to
+        // :30 and the one at :34 is next closest, but :26 is the one before.
+        let entries = vec![reading(140.0, 34), reading(120.0, 31), reading(100.0, 26)];
+        let found = closest_with_previous(entries, at(30), Duration::minutes(10));
+        assert_eq!(values(&found), vec![120.0, 100.0]);
+    }
+
+    #[test]
+    fn the_previous_reading_may_be_outside_the_window() {
+        let entries = vec![reading(120.0, 21), reading(100.0, 16)];
+        let found = closest_with_previous(entries, at(30), Duration::minutes(10));
+        assert_eq!(values(&found), vec![120.0, 100.0]);
+    }
+
+    #[test]
+    fn a_lone_reading_has_no_previous() {
+        let found = closest_with_previous(vec![reading(120.0, 31)], at(30), Duration::minutes(10));
+        assert_eq!(values(&found), vec![120.0]);
+    }
+
+    #[test]
+    fn readings_outside_the_window_do_not_count() {
+        let found = closest_with_previous(vec![reading(120.0, 15)], at(30), Duration::minutes(10));
+        assert!(found.is_empty());
+        assert!(closest_with_previous(Vec::new(), at(30), Duration::minutes(10)).is_empty());
     }
 }
