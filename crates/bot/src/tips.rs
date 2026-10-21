@@ -17,7 +17,7 @@ pub const TIPS: &[Tip] = &[
     },
     Tip {
         id: "image_mode",
-        text: "Use `/image-mode` to get `/bg` as a clean card image instead of an embed.",
+        text: "Prefer a classic embed? Use `/image-mode` to switch `/bg` between the card image and an embed.",
     },
     Tip {
         id: "allow",
@@ -112,6 +112,10 @@ pub const TIPS: &[Tip] = &[
         text: "Use `/delete-account` if you ever want to wipe all of your stored data.",
     },
     Tip {
+        id: "help",
+        text: "Use `/help` for a quick tour of everything Beetroot can do, and answers to common setup questions.",
+    },
+    Tip {
         id: "info",
         text: "Use `/info` to find the source code and a link to support the project.",
     },
@@ -141,7 +145,7 @@ pub const TIPS: &[Tip] = &[
     },
 ];
 
-const SKIP_FOR_COMMANDS: &[&str] = &["setup", "token"];
+const SKIP_FOR_COMMANDS: &[&str] = &["setup", "help", "token"];
 
 pub async fn pre_command_hook(ctx: Context<'_>) {
     if SKIP_FOR_COMMANDS.contains(&ctx.command().name.as_str()) {

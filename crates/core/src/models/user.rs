@@ -1,6 +1,10 @@
 use serde::{Deserialize, Serialize};
 
 pub const DEFAULT_GRAPH_STICKER_COUNT: i64 = 4;
+/// New users get `/bg` as a card image. The column's own default stays 0, so
+/// rows made before this (which can't tell "never chose" from "turned it off")
+/// keep the embed.
+pub const DEFAULT_BG_IMAGE_MODE: bool = true;
 
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct User {

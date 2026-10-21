@@ -140,6 +140,7 @@ pub async fn tir(
             .with_period_label(period_label)
             .with_extremes(true)
             .with_theme(theme)
+            .with_font(crate::utils::font::INTER)
             .with_scale(2.0);
 
         builder.build().map_err(|e| anyhow::anyhow!(e.to_string()))

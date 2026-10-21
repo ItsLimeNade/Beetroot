@@ -16,6 +16,7 @@ pub mod ephemeral;
 pub mod fingerprick_expiry;
 pub mod graph;
 pub mod graph_stickers;
+pub mod help;
 pub mod image_mode;
 pub mod info;
 pub mod microbolus;

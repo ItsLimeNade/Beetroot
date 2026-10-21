@@ -227,7 +227,8 @@ pub async fn breakdown(
                 },
             })
             .with_timezone(settings.timezone)
-            .with_theme(theme);
+            .with_theme(theme)
+            .with_font(crate::utils::font::INTER);
 
         if !previous.is_empty() {
             builder = builder.with_previous(previous);

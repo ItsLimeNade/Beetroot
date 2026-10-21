@@ -7,6 +7,7 @@ mod data;
 mod events;
 mod health;
 mod logging;
+mod onboarding;
 mod tips;
 mod utils;
 
@@ -42,6 +43,7 @@ async fn main() -> anyhow::Result<()> {
         commands: vec![
             commands::bg::bg(),
             commands::setup::setup(),
+            commands::help::help(),
             commands::graph::graph(),
             commands::tir::tir(),
             commands::a1c::a1c(),

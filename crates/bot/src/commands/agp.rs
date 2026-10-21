@@ -144,7 +144,8 @@ pub async fn agp(
                 },
             })
             .with_timezone(settings.timezone)
-            .with_theme(theme);
+            .with_theme(theme)
+            .with_font(crate::utils::font::INTER);
 
         builder.build().map_err(|e| anyhow::anyhow!(e.to_string()))
     })

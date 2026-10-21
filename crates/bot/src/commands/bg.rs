@@ -287,6 +287,7 @@ pub async fn bg(
                     },
                 })
                 .with_theme(theme)
+                .with_font(crate::utils::font::INTER)
                 .with_scale(4.0);
 
             let img = builder

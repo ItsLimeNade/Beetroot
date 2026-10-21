@@ -230,6 +230,7 @@ pub async fn render_png(
             .with_trace(false)
             .with_layout(layout)
             .with_theme(theme)
+            .with_font(crate::utils::font::INTER)
             .with_units(UnitDisplay::Dual {
                 primary: if settings.is_mmol {
                     UnitPreference::MmolL

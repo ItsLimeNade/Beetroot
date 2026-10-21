@@ -1,6 +1,7 @@
 pub mod denoise;
 pub mod duration_parser;
 pub mod emojis;
+pub mod font;
 pub mod graph_data;
 pub mod graph_render;
 pub mod net;
