@@ -31,6 +31,13 @@ const PREVIOUS_READING_MINUTES: i64 = 15;
 /// A reading older than this is flagged as outdated.
 const STALE_MINUTES: i64 = 15;
 
+/// How far back the image card's chart reaches.
+const CARD_WINDOW_HOURS: i64 = 3;
+
+/// Most readings fetched for the image card: three hours of a CGM reading
+/// every minute, with room to spare.
+const CARD_MAX_READINGS: usize = 200;
+
 #[poise::command(
     slash_command,
     install_context = "Guild|User",
@@ -88,14 +95,14 @@ pub async fn bg(
 
     if user_data.bg_image_mode {
         let sparkline_entries = if lookback.is_some() {
-            let window_start = reference - Duration::hours(3);
+            let window_start = reference - Duration::hours(CARD_WINDOW_HOURS);
             match client
                 .entries()
                 .sgv()
                 .list()
                 .since(window_start)
                 .until(reference + Duration::minutes(5))
-                .limit(50)
+                .limit(CARD_MAX_READINGS)
                 .await
             {
                 Ok(e) if !e.is_empty() => e,
@@ -112,7 +119,7 @@ pub async fn bg(
                 }
             }
         } else {
-            match client.entries().sgv().list().limit(36).await {
+            match client.entries().sgv().list().limit(CARD_MAX_READINGS).await {
                 Ok(e) if !e.is_empty() => e,
                 _ => {
                     send_error!(
@@ -156,6 +163,10 @@ pub async fn bg(
 
         let mut sorted = sparkline_entries;
         sorted.sort_by_key(|e| e.date);
+        // The chart covers the three hours up to the latest reading.
+        let window_ms = Duration::hours(CARD_WINDOW_HOURS).num_milliseconds();
+        let latest_ms = sorted.last().map_or(0, |e| e.date.as_millis());
+        sorted.retain(|e| latest_ms - e.date.as_millis() <= window_ms);
 
         let point_count = sorted.len();
         let entry = sorted.last().unwrap();
@@ -204,15 +215,13 @@ pub async fn bg(
                 .map(|cob| format!("COB {:.0}g", cob))
         });
 
+        // Each reading at its time in the window: bonbon groups them by
+        // quarter hour and tells how long the current status has lasted, so
+        // the position has to be the real time, not the reading's rank.
         let sparkline_points: Vec<SparklinePoint> = sorted
             .iter()
-            .enumerate()
-            .map(|(i, e)| {
-                let t = if point_count > 1 {
-                    i as f32 / (point_count - 1) as f32
-                } else {
-                    0.0
-                };
+            .map(|e| {
+                let t = 1.0 - (latest_ms - e.date.as_millis()) as f32 / window_ms as f32;
                 let sgv_mgdl = e.sgv.as_mgdl() as f32;
                 let status = if sgv_mgdl < target_low {
                     GlucoseStatus::Low
@@ -243,7 +252,10 @@ pub async fn bg(
             trend_arrow: trend_arrow(entry.direction.as_ref()).to_string(),
             delta,
             age_str,
-            time_str: reference
+            // Where the chart ends: the time of the latest reading.
+            time_str: entry
+                .date
+                .to_datetime()
                 .with_timezone(&settings.timezone)
                 .format("%H:%M")
                 .to_string(),
@@ -266,6 +278,7 @@ pub async fn bg(
         let img_buffer = render::run_blocking(move || {
             let builder = BgCardBuilder::new()
                 .with_data(data)
+                .with_targets(target_low, target_high)
                 .with_units(UnitDisplay::Dual {
                     primary: if is_mmol {
                         UnitPreference::MmolL
