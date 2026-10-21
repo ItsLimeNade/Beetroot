@@ -5,3 +5,9 @@ members = ["crates/bot", "crates/macros", "crates/core"]
 [profile.release]
 lto = "thin"
 strip = true
+
+# Build scripts and proc macros (sqlx's among them) are loaded by the
+# compiler itself, and on recent macOS a stripped one no longer loads
+# ("mis-aligned LINKEDIT string pool"). The bot's binary is still stripped.
+[profile.release.build-override]
+strip = false

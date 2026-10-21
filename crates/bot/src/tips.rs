@@ -17,7 +17,7 @@ pub const TIPS: &[Tip] = &[
     },
     Tip {
         id: "image_mode",
-        text: "Use `/image-mode` to get `/bg` as a clean card image instead of an embed.",
+        text: "Prefer a classic embed? Use `/image-mode` to switch `/bg` between the card image and an embed.",
     },
     Tip {
         id: "allow",
@@ -56,6 +56,30 @@ pub const TIPS: &[Tip] = &[
         text: "Use `/add-sticker` to add reaction stickers that show on your graph based on glucose state.",
     },
     Tip {
+        id: "bg_sticker",
+        text: "Use `/bg-sticker` to swap your profile picture on `/bg` for a sticker that reacts to your blood sugar.",
+    },
+    Tip {
+        id: "denoise",
+        text: "Use `/denoise` to smooth sensor jitter out of your graphs.",
+    },
+    Tip {
+        id: "compare",
+        text: "Use `/compare` to see your last two weeks next to the two before, with how your average, GMI and variability changed.",
+    },
+    Tip {
+        id: "agp",
+        text: "Use `/agp` to see your typical day: your median glucose and its usual range at each time of day.",
+    },
+    Tip {
+        id: "breakdown",
+        text: "Use `/breakdown` to see which hours of the day or days of the week your time in range slips.",
+    },
+    Tip {
+        id: "search",
+        text: "Use `/search` to find your lows, highs, meals and more, then open any of them on a graph.",
+    },
+    Tip {
         id: "add_sticker_menu",
         text: "Right-click any message and pick `Add Sticker` to save its image as a sticker instantly.",
     },
@@ -88,6 +112,10 @@ pub const TIPS: &[Tip] = &[
         text: "Use `/delete-account` if you ever want to wipe all of your stored data.",
     },
     Tip {
+        id: "help",
+        text: "Use `/help` for a quick tour of everything Beetroot can do, and answers to common setup questions.",
+    },
+    Tip {
         id: "info",
         text: "Use `/info` to find the source code and a link to support the project.",
     },
@@ -117,7 +145,7 @@ pub const TIPS: &[Tip] = &[
     },
 ];
 
-const SKIP_FOR_COMMANDS: &[&str] = &["setup", "token"];
+const SKIP_FOR_COMMANDS: &[&str] = &["setup", "help", "token"];
 
 pub async fn pre_command_hook(ctx: Context<'_>) {
     if SKIP_FOR_COMMANDS.contains(&ctx.command().name.as_str()) {

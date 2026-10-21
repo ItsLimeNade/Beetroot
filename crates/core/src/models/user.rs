@@ -1,6 +1,10 @@
 use serde::{Deserialize, Serialize};
 
 pub const DEFAULT_GRAPH_STICKER_COUNT: i64 = 4;
+/// New users get `/bg` as a card image. The column's own default stays 0, so
+/// rows made before this (which can't tell "never chose" from "turned it off")
+/// keep the embed.
+pub const DEFAULT_BG_IMAGE_MODE: bool = true;
 
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct User {
@@ -16,9 +20,11 @@ pub struct User {
     pub mbg_expiry_time: Option<i64>,
     pub last_seen_version: Option<String>,
     pub bg_image_mode: Option<bool>,
+    pub bg_sticker: Option<bool>,
     pub active_theme: Option<String>,
     pub treatment_mode: Option<String>,
     pub graph_sticker_count: Option<i64>,
+    pub graph_denoise: Option<i64>,
     /// `None` = never asked, `Some(true/false)` = opted in / out of telemetry.
     pub telemetry_accepted: Option<bool>,
 }
@@ -37,9 +43,12 @@ pub struct UserDecrypted {
     pub mbg_expiry_time: i64,
     pub last_seen_version: Option<String>,
     pub bg_image_mode: bool,
+    pub bg_sticker: bool,
     pub active_theme: Option<String>,
     pub treatment_mode: String,
     pub graph_sticker_count: i64,
+    /// Graph smoothing level: 0 = off, 1 = light, 2 = medium, 3 = strong.
+    pub graph_denoise: i64,
     /// `None` = never asked, `Some(true/false)` = opted in / out of telemetry.
     pub telemetry_accepted: Option<bool>,
 }

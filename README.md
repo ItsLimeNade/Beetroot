@@ -26,10 +26,14 @@ Beetroot is a Discord bot that helps you share and monitor your Nightscout blood
 
 ### Easy Setup
 - **Command:** `/setup`
-- Simple guided setup process
-- Enter your Nightscout URL and optional access token
+- A guided welcome with a short tour of what Beetroot can do, shown with sample images
+- Enter your Nightscout URL and optional access token (a link copied from Admin Tools with `?token=` works too)
+- Automatic connection testing: if it fails, Beetroot says why (a typo, a locked site, a sleeping host, a bad certificate…) and what to try, then reopens the form with what you typed
 - Choose privacy settings (public or private data sharing)
-- Automatic connection testing to verify your setup
+
+### Help
+- **Command:** `/help`
+- The same tour, plus answers to common setup questions, any time
 
 ### Token Management
 - **Command:** `/token`
@@ -52,8 +56,8 @@ Beetroot is a Discord bot that helps you share and monitor your Nightscout blood
 ## Getting Started
 
 1. **Set up your Nightscout site** - Make sure you have a working Nightscout installation
-2. **Run `/setup`** - Enter your Nightscout URL and choose your privacy settings
-3. **Add a token (optional)** - Use `/token` to add authentication if your site requires it
+2. **Run `/setup`** - It walks you through connecting your Nightscout (with a token if your site is locked) and choosing your privacy settings
+3. **Change things later** - `/url` and `/token` update your connection, `/help` shows everything Beetroot can do
 4. **Start using the bot** - Try `/bg` to see your current reading or `/graph` for trends
 
 ## How to run?
@@ -69,6 +73,12 @@ docker compose logs -f bot
 
 For a full walkthrough, including deploying with Portainer on a Raspberry Pi and
 how to browse the database, see the [deployment guide](GUIDE.md).
+
+### Image font
+
+Beetroot's images are set in [Inter](https://rsms.me/inter/), by Rasmus
+Andersson and the Inter Project Authors, under the SIL Open Font License 1.1
+(see [assets/fonts/Inter-LICENSE.txt](assets/fonts/Inter-LICENSE.txt)).
 
 ## Privacy & Data
 

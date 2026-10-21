@@ -110,6 +110,17 @@ pub async fn settings(ctx: Context<'_>) -> Result<(), Error> {
             format!("{} Graph Stickers", emojis::sticker_add()),
             user_data.graph_sticker_count.to_string(),
             true,
+        )
+        .field(
+            format!("{} Graph Denoising", emojis::image_mode()),
+            crate::utils::denoise::Strength::from_level(user_data.graph_denoise)
+                .map_or("Off", |s| s.label()),
+            true,
+        )
+        .field(
+            format!("{} BG Sticker", emojis::sticker_add()),
+            bool_label(user_data.bg_sticker),
+            true,
         );
 
     ctx.send(poise::CreateReply::default().embed(embed).ephemeral(true))

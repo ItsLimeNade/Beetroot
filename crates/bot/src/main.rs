@@ -7,6 +7,7 @@ mod data;
 mod events;
 mod health;
 mod logging;
+mod onboarding;
 mod tips;
 mod utils;
 
@@ -42,6 +43,7 @@ async fn main() -> anyhow::Result<()> {
         commands: vec![
             commands::bg::bg(),
             commands::setup::setup(),
+            commands::help::help(),
             commands::graph::graph(),
             commands::tir::tir(),
             commands::a1c::a1c(),
@@ -49,6 +51,10 @@ async fn main() -> anyhow::Result<()> {
             commands::add_sticker::add_sticker_context(),
             commands::analyze_units::analyze_units(),
             commands::stickers::stickers(),
+            commands::search::search(),
+            commands::compare::compare(),
+            commands::agp::agp(),
+            commands::breakdown::breakdown(),
             commands::theme::theme(),
             commands::nutrition::nutrition(),
             commands::info::info(),
@@ -66,6 +72,8 @@ async fn main() -> anyhow::Result<()> {
             commands::fingerprick_expiry::fingerprick_expiry(),
             commands::treatment_mode::treatment_mode(),
             commands::graph_stickers::graph_stickers(),
+            commands::bg_sticker::bg_sticker(),
+            commands::denoise::denoise(),
             commands::url::url(),
             commands::token::token(),
             commands::telemetry::telemetry(),

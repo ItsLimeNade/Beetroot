@@ -1,49 +1,19 @@
 use crate::data::{Context, Error};
+use crate::utils::graph_render::ProfileSettings;
+use crate::utils::period::{Period, Picker};
 use crate::utils::render;
-use crate::utils::targets::resolve_profile_targets_mgdl;
 use crate::utils::theme_assets;
 use bonbon::prelude::*;
-use chrono::{Duration, Utc};
+use chrono::Utc;
 use image::ImageEncoder;
 use macros::track_analytics;
 use poise::serenity_prelude as serenity;
 use serenity::all::CreateAttachment;
 
-/// How far back the Time-in-Range card looks.
-#[derive(Debug, Clone, Copy, poise::ChoiceParameter)]
-pub enum TirPeriodChoice {
-    #[name = "Last 24 hours"]
-    Day,
-    #[name = "Last 7 days"]
-    Week,
-    #[name = "Last 14 days"]
-    Fortnight,
-    #[name = "Last 30 days"]
-    Month,
-    #[name = "Last 90 days"]
-    Quarter,
-}
-
-impl TirPeriodChoice {
-    fn days(self) -> i64 {
-        match self {
-            Self::Day => 1,
-            Self::Week => 7,
-            Self::Fortnight => 14,
-            Self::Month => 30,
-            Self::Quarter => 90,
-        }
-    }
-
-    fn label(self) -> &'static str {
-        match self {
-            Self::Day => "Last 24 hours",
-            Self::Week => "Last 7 days",
-            Self::Fortnight => "Last 14 days",
-            Self::Month => "Last 30 days",
-            Self::Quarter => "Last 90 days",
-        }
-    }
+/// Suggests the rolling periods, then calendar months, narrowing as the user
+/// types (e.g. "July 202" lists every July).
+async fn autocomplete_period(_ctx: Context<'_>, partial: &str) -> Vec<String> {
+    Picker::ANY.suggestions(partial, Utc::now().date_naive())
 }
 
 /// Shows your Time in Range distribution over a chosen period.
@@ -56,9 +26,21 @@ impl TirPeriodChoice {
 #[track_analytics("tir")]
 pub async fn tir(
     ctx: Context<'_>,
-    #[description = "How far back to summarize"] period: TirPeriodChoice,
+    #[description = "How far back, or a month: 'Last 7 days', 'July 2026'..."]
+    #[autocomplete = "autocomplete_period"]
+    period: String,
     #[description = "View another user's Time in Range"] user: Option<serenity::User>,
 ) -> Result<(), Error> {
+    let period = match Picker::ANY.read(&period, Utc::now().date_naive()) {
+        Ok(period) => period,
+        Err(message) => {
+            tracing::debug!(input = %period, "could not read TIR period");
+            send_error!(ctx, "Invalid Period", message);
+            return Ok(());
+        }
+    };
+    let period_label = period.label();
+
     let target_user = user.as_ref().unwrap_or(ctx.author());
     let target_id = target_user.id;
 
@@ -73,11 +55,17 @@ pub async fn tir(
 
     crate::tips::safe_defer_with(ctx, reply_ephemeral).await?;
 
+    // The profile comes first: a named month starts at midnight in its timezone.
+    let profile = client.profiles().current().await.ok().flatten();
+    let settings = ProfileSettings::from_profile(profile.as_ref());
+    let (target_low, target_high, is_mmol) =
+        (settings.target_low, settings.target_high, settings.is_mmol);
+
     let now = Utc::now();
-    let start_time = now - Duration::days(period.days());
+    let (start_time, end_time) = period.bounds(now, settings.timezone);
     tracing::debug!(
         target_user = %crate::logging::redact(target_id.get()),
-        period_days = period.days(),
+        period = %period_label,
         "rendering time-in-range card"
     );
 
@@ -86,6 +74,9 @@ pub async fn tir(
         .sgv()
         .list()
         .since(start_time)
+        // Nightscout returns the newest matches first, so a past month needs
+        // its end bound or everything after it would crowd it out.
+        .until(end_time)
         .limit(120_000)
         .await
     {
@@ -109,23 +100,16 @@ pub async fn tir(
         send_error!(
             ctx,
             "No Data",
-            format!(
-                "No glucose entries found in the {}.",
-                period.label().to_lowercase()
-            )
+            match period {
+                Period::LastDays(_) => format!(
+                    "No glucose entries found in the {}.",
+                    period_label.to_lowercase()
+                ),
+                Period::Month { .. } => format!("No glucose entries found in {period_label}."),
+            }
         );
         return Ok(());
     }
-
-    let profile = client.profiles().current().await.ok().flatten();
-    let (target_low, target_high, is_mmol) = profile
-        .as_ref()
-        .and_then(|p| p.default_entry())
-        .map(|store| {
-            let (low_mg, high_mg, mmol) = resolve_profile_targets_mgdl(store);
-            (low_mg, high_mg, mmol)
-        })
-        .unwrap_or((72.0, 180.0, false));
 
     tracing::debug!(is_mmol, "resolved target range from profile");
     crate::log_medical!(target_low, target_high, is_mmol, "TIR target range");
@@ -139,8 +123,6 @@ pub async fn tir(
         theme = user_data.active_theme.as_deref().unwrap_or("default"),
         "assets resolved, rendering image"
     );
-
-    let period_label = period.label().to_string();
 
     let tir_image = render::run_blocking(move || {
         let graph_entries: Vec<GraphEntry> = entries.into_iter().map(GraphEntry::from).collect();
@@ -158,6 +140,7 @@ pub async fn tir(
             .with_period_label(period_label)
             .with_extremes(true)
             .with_theme(theme)
+            .with_font(crate::utils::font::INTER)
             .with_scale(2.0);
 
         builder.build().map_err(|e| anyhow::anyhow!(e.to_string()))

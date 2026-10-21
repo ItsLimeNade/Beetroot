@@ -1,7 +1,13 @@
+pub mod denoise;
 pub mod duration_parser;
 pub mod emojis;
+pub mod font;
+pub mod graph_data;
+pub mod graph_render;
 pub mod net;
+pub mod period;
 pub mod render;
+pub mod search;
 pub mod sticker_assets;
 pub mod targets;
 pub mod theme_assets;

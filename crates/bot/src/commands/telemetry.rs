@@ -90,7 +90,7 @@ pub async fn telemetry(
 
 /// Commands that manage telemetry consent themselves, so the one-time notice
 /// must not fire before them.
-const NOTICE_SKIP_COMMANDS: &[&str] = &["setup", "telemetry"];
+const NOTICE_SKIP_COMMANDS: &[&str] = &["setup", "help", "telemetry"];
 
 /// Reserved `seen_tips` id marking that the one-time telemetry notice was shown.
 const NOTICE_SEEN_ID: &str = "telemetry_consent_notice";

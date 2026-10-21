@@ -1,6 +1,8 @@
 use crate::crypto;
 use crate::error::{CoreError, CoreResult};
-use crate::models::user::{DEFAULT_GRAPH_STICKER_COUNT, User, UserDecrypted};
+use crate::models::user::{
+    DEFAULT_BG_IMAGE_MODE, DEFAULT_GRAPH_STICKER_COUNT, User, UserDecrypted,
+};
 
 use super::Database;
 
@@ -36,7 +38,8 @@ impl User {
             force_ephemeral: self.force_ephemeral.unwrap_or(false),
             mbg_expiry_time: self.mbg_expiry_time.unwrap_or(30),
             last_seen_version: self.last_seen_version,
-            bg_image_mode: self.bg_image_mode.unwrap_or(false),
+            bg_image_mode: self.bg_image_mode.unwrap_or(DEFAULT_BG_IMAGE_MODE),
+            bg_sticker: self.bg_sticker.unwrap_or(false),
             active_theme: self.active_theme,
             treatment_mode: self
                 .treatment_mode
@@ -44,6 +47,7 @@ impl User {
             graph_sticker_count: self
                 .graph_sticker_count
                 .unwrap_or(DEFAULT_GRAPH_STICKER_COUNT),
+            graph_denoise: self.graph_denoise.unwrap_or(0),
             telemetry_accepted: self.telemetry_accepted,
         })
     }
@@ -87,8 +91,8 @@ impl Database {
         };
 
         sqlx::query(
-            "INSERT INTO users (discord_id, nightscout_url, nightscout_token, is_private, graph_sticker_count)
-             VALUES (?, ?, ?, ?, ?)
+            "INSERT INTO users (discord_id, nightscout_url, nightscout_token, is_private, graph_sticker_count, bg_image_mode)
+             VALUES (?, ?, ?, ?, ?, ?)
              ON CONFLICT(discord_id) DO UPDATE SET
                  nightscout_url = excluded.nightscout_url,
                  nightscout_token = excluded.nightscout_token,
@@ -99,6 +103,7 @@ impl Database {
         .bind(&encrypted_token)
         .bind(is_private)
         .bind(DEFAULT_GRAPH_STICKER_COUNT)
+        .bind(DEFAULT_BG_IMAGE_MODE)
         .execute(&self.pool)
         .await?;
 
@@ -195,6 +200,18 @@ impl Database {
         Ok(())
     }
 
+    /// Set whether the `/bg` embed shows a reaction sticker instead of the
+    /// user's profile picture.
+    pub async fn set_bg_sticker(&self, discord_id: u64, value: bool) -> CoreResult<()> {
+        let id = discord_id as i64;
+        sqlx::query("UPDATE users SET bg_sticker = ? WHERE discord_id = ?")
+            .bind(value)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
     pub async fn set_mbg_expiry_time(&self, discord_id: u64, value: i64) -> CoreResult<()> {
         let id = discord_id as i64;
         sqlx::query("UPDATE users SET mbg_expiry_time = ? WHERE discord_id = ?")
@@ -221,6 +238,17 @@ impl Database {
         let id = discord_id as i64;
         sqlx::query("UPDATE users SET graph_sticker_count = ? WHERE discord_id = ?")
             .bind(count)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// Set how strongly graphs smooth glucose readings (0 = off, up to 3).
+    pub async fn set_graph_denoise(&self, discord_id: u64, level: i64) -> CoreResult<()> {
+        let id = discord_id as i64;
+        sqlx::query("UPDATE users SET graph_denoise = ? WHERE discord_id = ?")
+            .bind(level)
             .bind(id)
             .execute(&self.pool)
             .await?;
@@ -342,9 +370,12 @@ impl Database {
 
     pub async fn ensure_user_row(&self, discord_id: u64) -> CoreResult<()> {
         let id = discord_id as i64;
-        sqlx::query("INSERT OR IGNORE INTO users (discord_id, graph_sticker_count) VALUES (?, ?)")
-            .bind(id)
-            .bind(DEFAULT_GRAPH_STICKER_COUNT)
+        sqlx::query(
+            "INSERT OR IGNORE INTO users (discord_id, graph_sticker_count, bg_image_mode) VALUES (?, ?, ?)",
+        )
+        .bind(id)
+        .bind(DEFAULT_GRAPH_STICKER_COUNT)
+        .bind(DEFAULT_BG_IMAGE_MODE)
             .execute(&self.pool)
             .await?;
         Ok(())
@@ -411,5 +442,50 @@ impl Database {
         );
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::Database;
+    use sqlx::sqlite::SqlitePoolOptions;
+
+    /// Single-connection in-memory pool with all migrations applied.
+    async fn migrated_db() -> Database {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("create in-memory sqlite");
+        sqlx::migrate!().run(&pool).await.expect("run migrations");
+        Database::new(pool)
+    }
+
+    #[tokio::test]
+    async fn new_users_get_image_mode_and_keep_their_choice() {
+        let db = migrated_db().await;
+        let image_mode = |db: &Database, id| {
+            let db = db.clone();
+            async move { db.get_user(id).await.unwrap().unwrap().bg_image_mode }
+        };
+
+        db.update_user_nightscout(1, "https://example.com/", None, true)
+            .await
+            .unwrap();
+        assert!(image_mode(&db, 1).await);
+
+        // Running setup again leaves a choice alone.
+        db.set_bg_image_mode(1, false).await.unwrap();
+        db.update_user_nightscout(1, "https://example.org/", None, true)
+            .await
+            .unwrap();
+        assert!(!image_mode(&db, 1).await);
+
+        // A row made before setup, e.g. by a telemetry choice, starts with it on too.
+        db.ensure_user_row(2).await.unwrap();
+        db.update_user_nightscout(2, "https://example.com/", None, false)
+            .await
+            .unwrap();
+        assert!(image_mode(&db, 2).await);
     }
 }

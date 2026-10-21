@@ -15,6 +15,23 @@ pub struct ChangelogEntry {
 pub const CHANGELOG: &[ChangelogEntry] = &[
     ChangelogEntry {
         version: CURRENT_VERSION,
+        date: "2026-10-21",
+        changes: &[
+            "Added `/help` for a tour of everything Beetroot can do, and `/setup` now guides you and explains any connection problem",
+            "Added `/search` to find your lows, highs, meals and insulin, then open any of them on a graph",
+            "Added `/agp` to see your typical day, hour by hour",
+            "Added `/compare` to put your last two weeks next to the two before",
+            "Added `/breakdown` to see which hours or weekdays your time in range slips",
+            "`/graph` now shows insulin and carbs on board under your glucose",
+            "Added `/denoise` to smooth sensor jitter out of your graphs",
+            "Added `/bg-sticker` to swap your profile picture on `/bg` for a sticker that reacts to your glucose",
+            "`/tir` can now cover a whole month, and `/tir` and `/theme` suggest options as you type",
+            "A refreshed `/bg` card, with both mg/dL and mmol/L and a short hint like \"verify reading\"",
+            "Fixed `/bg` with `at` showing the wrong delta or time, and `/microbolus` settings not applying to graphs",
+        ],
+    },
+    ChangelogEntry {
+        version: "1.1.2",
         date: "2026-07-20",
         changes: &[
             "Fixed a bug where some nightscout instances couldn't use beetroot due to a compatibility issue."
@@ -115,4 +132,23 @@ fn build_embed(entries: &[&ChangelogEntry]) -> CreateEmbed {
         format!("[Read the full release notes on GitHub]({RELEASES_URL})"),
         false,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_entry_fits_in_an_embed_field() {
+        for entry in CHANGELOG {
+            let body = entry
+                .changes
+                .iter()
+                .map(|c| format!("- {}", c))
+                .collect::<Vec<_>>()
+                .join("\n");
+            // Discord rejects an embed field longer than 1024 characters.
+            assert!(body.chars().count() <= 1024, "v{} is too long", entry.version);
+        }
+    }
 }

@@ -161,6 +161,11 @@ pub fn shared_client() -> &'static reqwest::Client {
     })
 }
 
+/// Why [`check_public_url`] turns down an IP-literal host in internal/reserved
+/// space.
+pub const INTERNAL_ADDRESS: &str =
+    "That address points to an internal/reserved network and is not allowed.";
+
 /// Reject a URL whose scheme is not http(s) or whose host is an IP literal in an
 /// internal/reserved range. Host names are intentionally allowed through here
 /// and screened at connect time by [`SsrfResolver`].
@@ -176,12 +181,8 @@ pub fn check_public_url(url: &Url) -> Result<(), String> {
 
     match url.host() {
         None => Err("URL must have a host".to_string()),
-        Some(url::Host::Ipv4(ip)) if is_blocked_ipv4(ip) => Err(
-            "That address points to an internal/reserved network and is not allowed.".to_string(),
-        ),
-        Some(url::Host::Ipv6(ip)) if is_blocked_ipv6(ip) => Err(
-            "That address points to an internal/reserved network and is not allowed.".to_string(),
-        ),
+        Some(url::Host::Ipv4(ip)) if is_blocked_ipv4(ip) => Err(INTERNAL_ADDRESS.to_string()),
+        Some(url::Host::Ipv6(ip)) if is_blocked_ipv6(ip) => Err(INTERNAL_ADDRESS.to_string()),
         Some(_) => Ok(()),
     }
 }
@@ -189,8 +190,9 @@ pub fn check_public_url(url: &Url) -> Result<(), String> {
 /// Parse and normalize a user-supplied Nightscout URL.
 ///
 /// Accepts a bare host (assumes `https://`), enforces https, rejects
-/// IP-literal internal hosts, and appends a trailing slash. Shared by `/setup`
-/// and `/url` (previously duplicated in both).
+/// IP-literal internal hosts, drops any query or fragment (a copied link can
+/// carry a token there, and the URL is stored unencrypted), and appends a
+/// trailing slash. Shared by `/setup` and `/url` (previously duplicated in both).
 pub fn parse_and_normalize_url(input: &str) -> Result<Url, String> {
     let input = input.trim();
     if input.is_empty() {
@@ -212,6 +214,9 @@ pub fn parse_and_normalize_url(input: &str) -> Result<Url, String> {
     if url.scheme() != "https" {
         return Err("Nightscout URL must use https://".to_string());
     }
+
+    url.set_query(None);
+    url.set_fragment(None);
 
     if !url.path().ends_with('/')
         && let Ok(mut segments) = url.path_segments_mut()
@@ -318,6 +323,13 @@ mod tests {
     #[test]
     fn normalize_adds_scheme_and_trailing_slash() {
         let u = parse_and_normalize_url("example.com").unwrap();
+        assert_eq!(u.as_str(), "https://example.com/");
+    }
+
+    #[test]
+    fn normalize_drops_query_and_fragment() {
+        let u =
+            parse_and_normalize_url("https://example.com/?token=abc-0123456789abcdef#/").unwrap();
         assert_eq!(u.as_str(), "https://example.com/");
     }
 

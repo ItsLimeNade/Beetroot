@@ -1,24 +1,20 @@
 v1.0.0-pre2 | ...one giant leap for diabetics
 
 ### What's new?
-- Improved the docker files https://github.com/ItsLimeNade/Beetroot/commit/cfdf9149a0a9fd68ae8b77ae10ee9d58dde3470a
-- Added code of conduct.
-- Added contributing guidelines.
-- Added custom emojis for prettier results
-- Moved the sticker generation to the bonbon library
-- Removed all dashboard code
-- Added settings commands: `/settings` plus dedicated `/privacy`, `/allow`, `/block`, `/ephemeral`, `/image-mode`, `/microbolus` and `/fingerprick-expiry`
-- Updated duration parser
-- Added tips
-- Added `/theme` to create, edit, import and apply custom color themes to your graphs
-- Themes now style `/graph`, `/tir` and image-mode `/bg`
-- Added `/tir` Time in Range card over the last 7, 14, 30 or 90 days
-- Added `/nutrition` to look up calories, carbs and macros for any food
-- Added `/stickers` to view and remove the stickers on your graphs
-- Added image mode for `/bg` (a clean card image instead of an embed)
-- Added an `at` option to `/bg` and `/graph` to look back in time (e.g. `2h`, `1d`, `1w`, `1h30m`)
-- Added `/treatment-mode` to choose how carbs and insulin are drawn on `/graph` (Contextual or Timeline)
-- Added `/graph-stickers` to choose how many stickers appear on your graph (up to 30)
+- Added `/bg-sticker` to show a sticker reacting to your blood sugar on `/bg` instead of your profile picture
+- `/graph` now shows IOB and COB mini graphs under the glucose plot when there is insulin or carbs on board (from your loop's reported values, or worked out from your treatments)
+- The IOB and COB icons on `/bg` now sit after the text
+- Image-mode `/bg` now shows your reading and delta in both mg/dL and mmol/L
+- `/tir` can now summarize a named month (`July 2026`, `2026-07`...) as well as the last N days, with suggestions as you type
+- `/theme` now suggests theme names as you type instead of making you remember them
+- Added `/denoise` to smooth sensor jitter out of the readings on your graphs, with Light, Medium and Strong settings (off by default; `/bg`, `/tir` and `/search` still use raw readings)
+- Graphs now always leave at least 20 mg/dL of space above the highest reading, so the peak no longer touches the top of the plot
+- Less than 1 g of carbs on board now counts as none: `/bg` no longer shows `COB 0g`, and graphs skip the COB mini graph
+- `/graph` has a `smoothing` option to denoise (or un-denoise) a single graph without changing your `/denoise` setting
+- Added `/compare` to put two periods side by side (by default the last 14 days and the 14 before, or any month `against` another): a typical day for each, plus how your average, GMI, SD and CV changed
+- Added `/agp` for your glucose profile: the median and usual range at each time of day, over a week or more or a named month
+- Added `/breakdown` for your time in range by hour of the day or day of the week (in whole weeks), with how each changed from the period before
+- Added `/search` to look through your Nightscout history (`lows`, `highs`, `in-range`, `carbs`, `insulin`), sort the results (lowest, highest, longest, shortest, most recent...) and open any of them on a graph centered on that moment
 - `/bg` cards now show a short, actionable hint (like "verify reading" or "monitor") instead of just restating your status
 - Stickers now appear only on `/graph`; the `/bg` card and `/tir` are kept clean
 - Added `/delete-account` to wipe all of your stored data
@@ -26,6 +22,12 @@ v1.0.0-pre2 | ...one giant leap for diabetics
 - Added an in-bot changelog that shows what's new since your last use
 
 ### Fixes
+- `/microbolus` settings now actually apply to graphs: doses up to your threshold are drawn as small unlabelled ticks, and turning the display off hides them (they still count toward IOB)
+- `/graph` with a far-back `at` (more than a couple of weeks) no longer comes back empty: the request is now bounded to the graph's window
+- `/bg` with `at` now shows the right delta (it could come out with the wrong sign) and no longer marks the reading as outdated just because you looked back in time
+- Image-mode `/bg` now shows the time in your Nightscout profile's timezone instead of UTC, and with `at` it shows the time you looked back to
+- `/bg` in embed mode now reads your target range the same way as the graphs, so a profile with missing or odd targets falls back to 72-180 mg/dL
+- Added a short per-user cooldown to `/bg`
 - Token encryption now fails closed instead of falling back to a public hard-coded key, so a leaked database can no longer be decrypted with the source code. `ENCRYPTION_SALT` was renamed to `ENCRYPTION_KEY` (existing values still work)
 - Added SSRF protection to Nightscout and sticker fetching: private, loopback and cloud-metadata addresses are blocked, redirects are re-checked, and outbound requests now have timeouts
 - Stopped dumping glucose, treatments and profiles to the logs. The new logging system never records medical data or Discord IDs unless you opt in with `LOG_SENSITIVE=true`

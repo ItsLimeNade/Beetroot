@@ -19,21 +19,36 @@ macro_rules! send_error {
 #[macro_export]
 macro_rules! get_db_user {
     ($ctx:expr, $user_id:expr) => {{
-        use poise::serenity_prelude::{Colour, CreateEmbed};
+        use poise::serenity_prelude::{Colour, CreateEmbed, CreateEmbedFooter};
+        let user_id: u64 = $user_id;
         let db = &$ctx.data().database;
-        match db.get_user($user_id).await? {
+        match db.get_user(user_id).await? {
             Some(data) => data,
             None => {
-                let embed = CreateEmbed::new()
-                    .title(format!(
-                        "{} User Not Found",
-                        $crate::utils::emojis::wifi_off()
-                    ))
-                    .description("This user hasn't set up their Nightscout data yet.")
-                    .footer(poise::serenity_prelude::CreateEmbedFooter::new(
-                        "They need to run /setup first",
-                    ))
-                    .color(Colour::RED);
+                let embed = if user_id == $ctx.author().id.get() {
+                    CreateEmbed::new()
+                        .title(format!(
+                            "{} Let's connect your Nightscout",
+                            $crate::utils::emojis::wifi_add()
+                        ))
+                        .description(
+                            "You haven't connected your Nightscout yet. Run `/setup`: it \
+                             takes about a minute and shows you around.",
+                        )
+                        .footer(CreateEmbedFooter::new(
+                            "Curious first? /help shows everything Beetroot can do",
+                        ))
+                        .color(Colour::BLURPLE)
+                } else {
+                    CreateEmbed::new()
+                        .title(format!(
+                            "{} User Not Found",
+                            $crate::utils::emojis::wifi_off()
+                        ))
+                        .description("This user hasn't set up their Nightscout data yet.")
+                        .footer(CreateEmbedFooter::new("They need to run /setup first"))
+                        .color(Colour::RED)
+                };
 
                 $ctx.send(poise::CreateReply::default().embed(embed).ephemeral(true))
                     .await?;
@@ -130,97 +145,25 @@ macro_rules! get_nightscout_client {
 }
 
 /// Verifies a Nightscout connection by fetching 1 entry.
-/// If the connection fails, it sends a "Connection Failed" embed and returns early from the calling function.
+/// If the connection fails, it sends an embed saying why and what to try, and returns early from the calling function.
 #[macro_export]
 macro_rules! verify_nightscout_connection {
-    ($ctx:expr, $url:expr, $token:expr) => {
-        {
-            let client_result = $crate::utils::net::nightscout_client($url, $token.as_deref());
+    ($ctx:expr, $url:expr, $token:expr) => {{
+        use $crate::onboarding::connection::{Problem, probe};
 
-            let check_result = match client_result {
-                Ok(client) => {
-                    client
-                        .entries()
-                        .sgv()
-                        .list()
-                        .limit(1)
-                        .send()
-                        .await
-                        .map_err(|e| anyhow::anyhow!(e))
-                },
-                Err(e) => Err(anyhow::anyhow!(e)),
-            };
+        let token: Option<String> = $token;
+        let checked = match url::Url::parse($url) {
+            Ok(site) => probe(&site, token.as_deref()).await.map(|_| ()),
+            Err(e) => Err(Problem::BadUrl(e.to_string())),
+        };
 
-            if let Err(e) = check_result {
-                tracing::warn!(error = %e, "Nightscout connection check failed");
-                $crate::send_error!(
-                    $ctx,
-                    "Connection Failed",
-                    "Could not connect to Nightscout.\n\n**Troubleshooting:**\n• Is the URL correct?\n• Is the site online?\n• Is the token valid?"
-                );
-                return Ok(());
-            }
+        if let Err(problem) = checked {
+            tracing::warn!(
+                problem = problem.kind(),
+                "Nightscout connection check failed"
+            );
+            $crate::send_error!($ctx, problem.title(), problem.explain());
+            return Ok(());
         }
-    };
-}
-
-/// Fetches entries, treatments, and the current profile in parallel.
-/// Returns `(entries, treatments, profile)`.
-/// If entries fail, sends an error and returns early. Treatments/Profiles fail gracefully (empty/None).
-#[macro_export]
-macro_rules! fetch_graph_data {
-    ($ctx:expr, $client:expr, $start:expr, $end:expr) => {{
-        let entries_fut = $client
-            .entries()
-            .sgv()
-            .list()
-            .since($start)
-            .until($end)
-            .limit(5000)
-            .send();
-        let treatments_fut = $client
-            .treatments()
-            .list()
-            .since($start)
-            .until($end)
-            .limit(5000)
-            .send();
-
-        let profile = $client.profiles();
-        let profiles_fut = profile.current();
-
-        let (entries_res, treatments_res, profiles_res) =
-            tokio::join!(entries_fut, treatments_fut, profiles_fut);
-
-        let entries = match entries_res {
-            Ok(e) => e,
-            Err(e) => {
-                tracing::warn!(error = %e, "failed to fetch glucose entries");
-                $crate::send_error!(
-                    $ctx,
-                    "Fetch Error",
-                    "Could not retrieve glucose data. Please try again in a moment."
-                );
-                return Ok(());
-            }
-        };
-
-        let treatments = match treatments_res {
-            Ok(t) => t,
-            Err(e) => {
-                tracing::warn!("Failed to fetch treatments: {}", e);
-                Vec::new()
-            }
-        };
-
-        let profiles = match profiles_res {
-            Ok(p) => p,
-            Err(e) => {
-                tracing::warn!("Failed to fetch profiles: {}", e);
-                None
-            }
-        };
-
-        (entries, treatments, profiles)
     }};
 }
